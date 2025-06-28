@@ -24,6 +24,12 @@ pub trait Storage: Send + Sync {
         &self,
         message_id: &str,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+
+    /// Add a newsgroup to the server's list
+    async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve all newsgroups carried by the server
+    async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -65,6 +71,14 @@ pub mod sqlite {
                     message_id TEXT,
                     PRIMARY KEY(group_name, number),
                     FOREIGN KEY(message_id) REFERENCES messages(message_id)
+                )",
+            )
+            .execute(&pool)
+            .await?;
+            // table of available newsgroups
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS groups (
+                    name TEXT PRIMARY KEY
                 )",
             )
             .execute(&pool)
@@ -156,6 +170,22 @@ pub mod sqlite {
             } else {
                 Ok(None)
             }
+        }
+
+        async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("INSERT OR IGNORE INTO groups (name) VALUES (?)")
+                .bind(group)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query("SELECT name FROM groups ORDER BY name")
+                .fetch_all(&self.pool)
+                .await?;
+            let groups = rows.into_iter().map(|row| row.try_get::<String, _>("name").unwrap()).collect();
+            Ok(groups)
         }
     }
 }
