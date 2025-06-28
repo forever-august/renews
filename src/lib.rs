@@ -74,6 +74,7 @@ pub fn parse_message(input: &str) -> IResult<&str, Message> {
 }
 
 pub mod storage;
+pub mod wildmat;
 
 #[cfg(test)]
 mod tests {
