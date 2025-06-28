@@ -31,3 +31,13 @@ async fn numbering_is_per_group() {
     assert_eq!(storage.store_article("g1", &msg2).await.unwrap(), 2);
     assert_eq!(storage.store_article("g2", &msg1).await.unwrap(), 1);
 }
+
+#[tokio::test]
+async fn add_and_list_groups() {
+    let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
+    assert!(storage.list_groups().await.unwrap().is_empty());
+    storage.add_group("g1").await.unwrap();
+    storage.add_group("g2").await.unwrap();
+    let groups = storage.list_groups().await.unwrap();
+    assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
+}
