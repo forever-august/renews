@@ -1,0 +1,162 @@
+use async_trait::async_trait;
+use crate::Message;
+use std::error::Error;
+use std::sync::Arc;
+
+#[async_trait]
+pub trait Storage: Send + Sync {
+    /// Store `article` in `group` returning the assigned article number
+    async fn store_article(
+        &self,
+        group: &str,
+        article: &Message,
+    ) -> Result<u64, Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve an article by group name and article number
+    async fn get_article_by_number(
+        &self,
+        group: &str,
+        number: u64,
+    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve an article by its Message-ID header
+    async fn get_article_by_id(
+        &self,
+        message_id: &str,
+    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+}
+
+pub type DynStorage = Arc<dyn Storage>;
+
+pub mod sqlite {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+    use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+
+    #[derive(Clone)]
+    pub struct SqliteStorage {
+        pool: SqlitePool,
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Headers(Vec<(String, String)>);
+
+    impl SqliteStorage {
+        pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+            let pool = SqlitePoolOptions::new()
+                .max_connections(5)
+                .connect(path)
+                .await?;
+            // table storing unique messages keyed by Message-ID
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS messages (
+                    message_id TEXT PRIMARY KEY,
+                    headers TEXT,
+                    body TEXT
+                )",
+            )
+            .execute(&pool)
+            .await?;
+            // table mapping groups and numbers to message IDs
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS group_articles (
+                    group_name TEXT,
+                    number INTEGER,
+                    message_id TEXT,
+                    PRIMARY KEY(group_name, number),
+                    FOREIGN KEY(message_id) REFERENCES messages(message_id)
+                )",
+            )
+            .execute(&pool)
+            .await?;
+            Ok(Self { pool })
+        }
+
+        fn message_id(article: &Message) -> Option<String> {
+            article
+                .headers
+                .iter()
+                .find_map(|(k, v)| if k.eq_ignore_ascii_case("Message-ID") { Some(v.clone()) } else { None })
+        }
+    }
+
+    #[async_trait]
+    impl Storage for SqliteStorage {
+        async fn store_article(
+            &self,
+            group: &str,
+            article: &Message,
+        ) -> Result<u64, Box<dyn Error + Send + Sync>> {
+            let msg_id = Self::message_id(article).ok_or("missing Message-ID")?;
+            let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO messages (message_id, headers, body) VALUES (?, ?, ?)",
+            )
+            .bind(&msg_id)
+            .bind(&headers)
+            .bind(&article.body)
+            .execute(&self.pool)
+            .await?;
+            let next: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(number),0)+1 FROM group_articles WHERE group_name = ?",
+            )
+            .bind(group)
+            .fetch_one(&self.pool)
+            .await?;
+            sqlx::query(
+                "INSERT INTO group_articles (group_name, number, message_id) VALUES (?, ?, ?)",
+            )
+            .bind(group)
+            .bind(next)
+            .bind(&msg_id)
+            .execute(&self.pool)
+            .await?;
+            Ok(next as u64)
+        }
+
+        async fn get_article_by_number(
+            &self,
+            group: &str,
+            number: u64,
+        ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+            if let Some(row) = sqlx::query(
+                "SELECT m.headers, m.body FROM messages m \
+                 JOIN group_articles g ON m.message_id = g.message_id \
+                 WHERE g.group_name = ? AND g.number = ?",
+            )
+            .bind(group)
+            .bind(number as i64)
+            .fetch_optional(&self.pool)
+            .await?
+            {
+                let headers_str: String = row.try_get("headers")?;
+                let body: String = row.try_get("body")?;
+                let Headers(headers) = serde_json::from_str(&headers_str)?;
+                Ok(Some(Message { headers, body }))
+            } else {
+                Ok(None)
+            }
+        }
+
+        async fn get_article_by_id(
+            &self,
+            message_id: &str,
+        ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+            if let Some(row) = sqlx::query(
+                "SELECT headers, body FROM messages WHERE message_id = ?",
+            )
+            .bind(message_id)
+            .fetch_optional(&self.pool)
+            .await?
+            {
+                let headers_str: String = row.try_get("headers")?;
+                let body: String = row.try_get("body")?;
+                let Headers(headers) = serde_json::from_str(&headers_str)?;
+                Ok(Some(Message { headers, body }))
+            } else {
+                Ok(None)
+            }
+        }
+    }
+}
+

@@ -73,6 +73,8 @@ pub fn parse_message(input: &str) -> IResult<&str, Message> {
     Ok(("", Message { headers, body }))
 }
 
+pub mod storage;
+
 #[cfg(test)]
 mod tests {
     use super::*;
