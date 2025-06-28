@@ -30,6 +30,31 @@ pub trait Storage: Send + Sync {
 
     /// Retrieve all newsgroups carried by the server
     async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve newsgroups created after the specified time
+    async fn list_groups_since(
+        &self,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+
+    /// List all article numbers for a group
+    async fn list_article_numbers(
+        &self,
+        group: &str,
+    ) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>>;
+
+    /// List all message-ids for a group
+    async fn list_article_ids(
+        &self,
+        group: &str,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+
+    /// List message-ids for a group added after the specified time
+    async fn list_article_ids_since(
+        &self,
+        group: &str,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -69,16 +94,18 @@ pub mod sqlite {
                     group_name TEXT,
                     number INTEGER,
                     message_id TEXT,
+                    inserted_at INTEGER NOT NULL,
                     PRIMARY KEY(group_name, number),
                     FOREIGN KEY(message_id) REFERENCES messages(message_id)
                 )",
             )
             .execute(&pool)
             .await?;
-            // table of available newsgroups
+            // table of available newsgroups with creation time
             sqlx::query(
                 "CREATE TABLE IF NOT EXISTS groups (
-                    name TEXT PRIMARY KEY
+                    name TEXT PRIMARY KEY,
+                    created_at INTEGER NOT NULL
                 )",
             )
             .execute(&pool)
@@ -117,12 +144,14 @@ pub mod sqlite {
             .bind(group)
             .fetch_one(&self.pool)
             .await?;
+            let now = chrono::Utc::now().timestamp();
             sqlx::query(
-                "INSERT INTO group_articles (group_name, number, message_id) VALUES (?, ?, ?)",
+                "INSERT INTO group_articles (group_name, number, message_id, inserted_at) VALUES (?, ?, ?, ?)",
             )
             .bind(group)
             .bind(next)
             .bind(&msg_id)
+            .bind(now)
             .execute(&self.pool)
             .await?;
             Ok(next as u64)
@@ -173,8 +202,10 @@ pub mod sqlite {
         }
 
         async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-            sqlx::query("INSERT OR IGNORE INTO groups (name) VALUES (?)")
+            let now = chrono::Utc::now().timestamp();
+            sqlx::query("INSERT OR IGNORE INTO groups (name, created_at) VALUES (?, ?)")
                 .bind(group)
+                .bind(now)
                 .execute(&self.pool)
                 .await?;
             Ok(())
@@ -186,6 +217,72 @@ pub mod sqlite {
                 .await?;
             let groups = rows.into_iter().map(|row| row.try_get::<String, _>("name").unwrap()).collect();
             Ok(groups)
+        }
+
+        async fn list_groups_since(
+            &self,
+            since: chrono::DateTime<chrono::Utc>,
+        ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query(
+                "SELECT name FROM groups WHERE created_at > ? ORDER BY name"
+            )
+            .bind(since.timestamp())
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| r.try_get::<String, _>("name").unwrap())
+                .collect())
+        }
+
+        async fn list_article_numbers(
+            &self,
+            group: &str,
+        ) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query(
+                "SELECT number FROM group_articles WHERE group_name = ? ORDER BY number",
+            )
+            .bind(group)
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| r.try_get::<i64, _>("number").unwrap() as u64)
+                .collect())
+        }
+
+        async fn list_article_ids(
+            &self,
+            group: &str,
+        ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query(
+                "SELECT message_id FROM group_articles WHERE group_name = ? ORDER BY number",
+            )
+            .bind(group)
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| r.try_get::<String, _>("message_id").unwrap())
+                .collect())
+        }
+
+        async fn list_article_ids_since(
+            &self,
+            group: &str,
+            since: chrono::DateTime<chrono::Utc>,
+        ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query(
+                "SELECT message_id FROM group_articles WHERE group_name = ? AND inserted_at > ? ORDER BY number",
+            )
+            .bind(group)
+            .bind(since.timestamp())
+            .fetch_all(&self.pool)
+            .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| r.try_get::<String, _>("message_id").unwrap())
+                .collect())
         }
     }
 }
