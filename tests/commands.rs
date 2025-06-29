@@ -1,6 +1,6 @@
-use renews::{handle_client, parse_message};
-use renews::storage::{sqlite::SqliteStorage, Storage};
 use chrono::{Duration, Utc};
+use renews::storage::{Storage, sqlite::SqliteStorage};
+use renews::{handle_client, parse_message};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -145,7 +145,10 @@ async fn listgroup_and_navigation_commands() {
     line.clear();
 
     // requesting all groups since the epoch should return the "misc" group
-    write_half.write_all(b"NEWGROUPS 19700101 000000\r\n").await.unwrap();
+    write_half
+        .write_all(b"NEWGROUPS 19700101 000000\r\n")
+        .await
+        .unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("231"));
     let mut groups_list = Vec::new();
@@ -153,7 +156,9 @@ async fn listgroup_and_navigation_commands() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         groups_list.push(trimmed.to_string());
     }
     assert!(groups_list.contains(&"misc".to_string()));
@@ -174,7 +179,9 @@ async fn listgroup_and_navigation_commands() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         none = false;
     }
     assert!(none);
@@ -182,7 +189,10 @@ async fn listgroup_and_navigation_commands() {
     // clear buffer before issuing NEWNEWS
     line.clear();
 
-    write_half.write_all(b"NEWNEWS misc 19700101 000000\r\n").await.unwrap();
+    write_half
+        .write_all(b"NEWNEWS misc 19700101 000000\r\n")
+        .await
+        .unwrap();
     reader.read_line(&mut line).await.unwrap();
     eprintln!("NEWNEWS response: {}", line.trim_end());
     assert!(line.starts_with("230"));
@@ -240,8 +250,12 @@ async fn capabilities_and_misc_commands() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
-        if trimmed.starts_with("VERSION") { has_version = true; }
+        if trimmed == "." {
+            break;
+        }
+        if trimmed.starts_with("VERSION") {
+            has_version = true;
+        }
     }
     assert!(has_version);
     line.clear();
@@ -260,8 +274,12 @@ async fn capabilities_and_misc_commands() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
-        if trimmed == "CAPABILITIES" { has_cap = true; }
+        if trimmed == "." {
+            break;
+        }
+        if trimmed == "CAPABILITIES" {
+            has_cap = true;
+        }
     }
     assert!(has_cap);
 
@@ -274,12 +292,195 @@ async fn capabilities_and_misc_commands() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
-        if trimmed.starts_with("misc") { seen = true; }
+        if trimmed == "." {
+            break;
+        }
+        if trimmed.starts_with("misc") {
+            seen = true;
+        }
     }
     assert!(seen);
 
     line.clear();
+    write_half.write_all(b"QUIT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("205"));
+}
+
+#[tokio::test]
+async fn no_group_returns_412() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
+    storage.store_article("misc", &msg).await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"HEAD 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("412"));
+    line.clear();
+
+    write_half.write_all(b"QUIT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("205"));
+}
+
+#[tokio::test]
+async fn responses_include_number_and_id() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
+    storage.store_article("misc", &msg).await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"GROUP misc\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"HEAD 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "221 1 <1@test> article headers follow");
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        if line.trim_end() == "." {
+            break;
+        }
+    }
+    line.clear();
+
+    write_half.write_all(b"BODY 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "222 1 <1@test> article body follows");
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        if line.trim_end() == "." {
+            break;
+        }
+    }
+    line.clear();
+
+    write_half.write_all(b"STAT 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "223 1 <1@test> article exists");
+    line.clear();
+
+    write_half.write_all(b"ARTICLE 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "220 1 <1@test> article follows");
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        if line.trim_end() == "." {
+            break;
+        }
+    }
+    line.clear();
+
+    write_half.write_all(b"QUIT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("205"));
+}
+
+#[tokio::test]
+async fn post_and_dot_stuffing() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"GROUP misc\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"POST\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("340"));
+    line.clear();
+    let article = b"Message-ID: <3@test>\r\nSubject: P\r\n\r\n..keep\r\nregular\r\n.\r\n";
+    write_half.write_all(article).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("240"));
+    line.clear();
+
+    let stored = storage
+        .get_article_by_id("<3@test>")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.body, ".keep\r\nregular\r\n");
+
+    write_half.write_all(b"BODY 1\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "222 1 <3@test> article body follows");
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "..keep");
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "regular");
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), ".");
+    line.clear();
+
     write_half.write_all(b"QUIT\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("205"));
