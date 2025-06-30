@@ -1,0 +1,15 @@
+[Unit]
+Description=Renews NNTP server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/renews
+WorkingDirectory=/opt/renews
+Restart=on-failure
+User=renews
+Group=renews
+
+[Install]
+WantedBy=multi-user.target
+
