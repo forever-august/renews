@@ -90,6 +90,7 @@ pub fn parse_message(input: &str) -> IResult<&str, Message> {
 
 pub mod storage;
 pub mod wildmat;
+pub mod config;
 
 use crate::storage::DynStorage;
 use std::error::Error;
