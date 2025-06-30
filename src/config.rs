@@ -6,6 +6,12 @@ pub struct Config {
     pub port: u16,
     #[serde(default)]
     pub groups: Vec<String>,
+    #[serde(default)]
+    pub tls_port: Option<u16>,
+    #[serde(default)]
+    pub tls_cert: Option<String>,
+    #[serde(default)]
+    pub tls_key: Option<String>,
 }
 
 impl Config {
