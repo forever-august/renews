@@ -25,7 +25,7 @@ pub fn parse_command(input: &str) -> IResult<&str, Command> {
     Ok((
         input,
         Command {
-            name: name.to_string(),
+            name: name.to_ascii_uppercase(),
             args: args_vec,
         },
     ))
@@ -729,7 +729,7 @@ where
     loop {
         line.clear();
         reader.read_line(&mut line).await?;
-        if line.trim_end() == "." {
+        if line == ".\r\n" || line == ".\n" {
             break;
         }
         if line.starts_with("..") {
