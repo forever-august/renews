@@ -59,13 +59,25 @@ pub struct Message {
     pub body: String,
 }
 
-fn parse_header_line(input: &str) -> IResult<&str, (String, String)> {
-    let (input, name) = take_while1(|c: char| c != ':' && c != '\r' && c != '\n')(input)?;
-    let (input, _) = char(':')(input)?;
-    let (input, _) = space0(input)?;
-    let (input, value) = take_till(|c| c == '\r' || c == '\n')(input)?;
-    let (input, _) = crlf(input)?;
-    Ok((input, (name.to_string(), value.to_string())))
+fn parse_header_line(mut input: &str) -> IResult<&str, (String, String)> {
+    let (i, name) = take_while1(|c: char| c != ':' && c != '\r' && c != '\n')(input)?;
+    let (i, _) = char(':')(i)?;
+    let (i, _) = space0(i)?;
+    let (i, value) = take_till(|c| c == '\r' || c == '\n')(i)?;
+    let (mut i, _) = crlf(i)?;
+    let mut val = value.to_string();
+
+    while i.starts_with(' ') || i.starts_with('\t') {
+        let (next, _) = take_while1(|c| c == ' ' || c == '\t')(i)?;
+        let (next, cont) = take_till(|c| c == '\r' || c == '\n')(next)?;
+        let (next, _) = crlf(next)?;
+        val.push(' ');
+        val.push_str(cont);
+        i = next;
+    }
+
+    input = i;
+    Ok((input, (name.to_string(), val)))
 }
 
 fn parse_headers(mut input: &str) -> IResult<&str, Vec<(String, String)>> {
@@ -88,13 +100,15 @@ pub fn parse_message(input: &str) -> IResult<&str, Message> {
     Ok(("", Message { headers, body }))
 }
 
+pub mod config;
 pub mod storage;
 pub mod wildmat;
-pub mod config;
 
 use crate::storage::DynStorage;
 use std::error::Error;
-use tokio::io::{self, AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, AsyncRead, BufReader};
+use tokio::io::{
+    self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
+};
 
 fn extract_message_id(msg: &Message) -> Option<&str> {
     msg.headers.iter().find_map(|(k, v)| {
@@ -927,5 +941,26 @@ mod tests {
         let (_, msg) = parse_message(rest).unwrap();
         assert_eq!(msg.headers, vec![("Subject".into(), "Example".into())]);
         assert_eq!(msg.body, "Body text");
+    }
+
+    #[test]
+    fn test_folded_headers() {
+        let input = concat!(
+            "Subject: A first",
+            "\r\n",
+            "\tcontinued",
+            "\r\n",
+            "From: user@example.com\r\n",
+            "\r\n",
+            "Body"
+        );
+        let (_, msg) = parse_message(input).unwrap();
+        assert_eq!(msg.headers.len(), 2);
+        assert_eq!(
+            msg.headers[0],
+            ("Subject".into(), "A first continued".into())
+        );
+        assert_eq!(msg.headers[1], ("From".into(), "user@example.com".into()));
+        assert_eq!(msg.body, "Body");
     }
 }
