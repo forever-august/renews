@@ -191,6 +191,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
     storage: &DynStorage,
     args: &[String],
     current_group: Option<&str>,
+    current_article: &mut Option<u64>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.starts_with('<') && arg.ends_with('>') {
@@ -209,6 +210,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
         } else if let Ok(num) = arg.parse::<u64>() {
             if let Some(group) = current_group {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
+                    *current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(format!("220 {} {} article follows\r\n", num, id).as_bytes())
@@ -228,8 +230,29 @@ async fn handle_article<W: AsyncWrite + Unpin>(
         } else {
             writer.write_all(b"501 invalid id\r\n").await?;
         }
+    } else if let Some(num) = *current_article {
+        if let Some(group) = current_group {
+            if let Some(article) = storage.get_article_by_number(group, num).await? {
+                let id = extract_message_id(&article).unwrap_or("");
+                writer
+                    .write_all(format!("220 {} {} article follows\r\n", num, id).as_bytes())
+                    .await?;
+                send_headers(writer, &article).await?;
+                writer.write_all(b"\r\n").await?;
+                send_body(writer, &article.body).await?;
+                writer.write_all(b".\r\n").await?;
+            } else {
+                writer
+                    .write_all(b"420 no current article selected\r\n")
+                    .await?;
+            }
+        } else {
+            writer.write_all(b"412 no newsgroup selected\r\n").await?;
+        }
     } else {
-        writer.write_all(b"501 missing id\r\n").await?;
+        writer
+            .write_all(b"420 no current article selected\r\n")
+            .await?;
     }
     Ok(())
 }
@@ -824,6 +847,7 @@ where
                     &storage,
                     &cmd.args,
                     current_group.as_deref(),
+                    &mut current_article,
                 )
                 .await?;
             }
