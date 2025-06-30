@@ -424,8 +424,11 @@ async fn handle_list<W: AsyncWrite + Unpin>(
         .write_all(b"215 list of newsgroups follows\r\n")
         .await?;
     for g in groups {
+        let nums = storage.list_article_numbers(&g).await?;
+        let high = nums.last().copied().unwrap_or(0);
+        let low = nums.first().copied().unwrap_or(0);
         writer
-            .write_all(format!("{} 0 0 y\r\n", g).as_bytes())
+            .write_all(format!("{} {} {} y\r\n", g, high, low).as_bytes())
             .await?;
     }
     writer.write_all(b".\r\n").await?;

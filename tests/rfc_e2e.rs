@@ -555,7 +555,8 @@ async fn list_newsgroups_returns_groups() {
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
         if trimmed == "." { break; }
-        groups.push(trimmed.to_string());
+        let name = trimmed.split_whitespace().next().unwrap_or("");
+        groups.push(name.to_string());
     }
     assert!(groups.contains(&"misc.test".to_string()));
     assert!(groups.contains(&"alt.test".to_string()));
