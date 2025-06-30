@@ -29,11 +29,15 @@ jobs:
         with:
           toolchain: stable
           override: true
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: false
       - run: cargo test --verbose
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info    
+      - run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info --branch
       - name: Setup LCOV
         uses: hrishikesh-kadam/setup-lcov@v1
       - name: Report code coverage
