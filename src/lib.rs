@@ -158,16 +158,30 @@ async fn handle_quit<W: AsyncWrite + Unpin>(
 
 async fn handle_group<W: AsyncWrite + Unpin>(
     writer: &mut W,
+    storage: &DynStorage,
     args: &[String],
     current_group: &mut Option<String>,
+    current_article: &mut Option<u64>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(name) = args.get(0) {
+        let groups = storage.list_groups().await?;
+        if !groups.iter().any(|g| g == name) {
+            writer.write_all(b"411 no such group\r\n").await?;
+            return Ok(());
+        }
+        let nums = storage.list_article_numbers(name).await?;
+        let count = nums.len();
+        let high = nums.last().copied().unwrap_or(0);
+        let low = nums.first().copied().unwrap_or(0);
         *current_group = Some(name.clone());
+        *current_article = None;
         writer
-            .write_all(format!("211 0 1 1 {}\r\n", name).as_bytes())
+            .write_all(
+                format!("211 {} {} {} {}\r\n", count, low, high, name).as_bytes(),
+            )
             .await?;
     } else {
-        writer.write_all(b"411 missing group\r\n").await?;
+        writer.write_all(b"501 missing group\r\n").await?;
     }
     Ok(())
 }
@@ -485,9 +499,14 @@ async fn handle_next<W: AsyncWrite + Unpin>(
     if let Some(curr) = *current_article {
         if let Some(group) = current_group {
             let next = curr + 1;
-            if storage.get_article_by_number(group, next).await?.is_some() {
+            if let Some(article) = storage.get_article_by_number(group, next).await? {
                 *current_article = Some(next);
-                writer.write_all(b"223 0 article exists\r\n").await?;
+                let id = extract_message_id(&article).unwrap_or("");
+                writer
+                    .write_all(
+                        format!("223 {} {} article exists\r\n", next, id).as_bytes(),
+                    )
+                    .await?;
             } else {
                 writer.write_all(b"421 no next article\r\n").await?;
             }
@@ -512,9 +531,14 @@ async fn handle_last<W: AsyncWrite + Unpin>(
         if let Some(group) = current_group {
             if curr > 1 {
                 let prev = curr - 1;
-                if storage.get_article_by_number(group, prev).await?.is_some() {
+                if let Some(article) = storage.get_article_by_number(group, prev).await? {
                     *current_article = Some(prev);
-                    writer.write_all(b"223 0 article exists\r\n").await?;
+                    let id = extract_message_id(&article).unwrap_or("");
+                    writer
+                        .write_all(
+                            format!("223 {} {} article exists\r\n", prev, id).as_bytes(),
+                        )
+                        .await?;
                 } else {
                     writer.write_all(b"422 no previous article\r\n").await?;
                 }
@@ -785,7 +809,14 @@ where
                 }
             }
             "GROUP" => {
-                handle_group(&mut write_half, &cmd.args, &mut current_group).await?;
+                handle_group(
+                    &mut write_half,
+                    &storage,
+                    &cmd.args,
+                    &mut current_group,
+                    &mut current_article,
+                )
+                .await?;
             }
             "ARTICLE" => {
                 handle_article(
