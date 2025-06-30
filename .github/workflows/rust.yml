@@ -38,8 +38,41 @@ jobs:
         with:
           tool: cargo-llvm-cov
       - run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info --branch
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
       - name: Setup LCOV
         uses: hrishikesh-kadam/setup-lcov@v1
+      - name: Get base workflow run
+        id: base_run
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'rust.yml',
+              branch: context.payload.pull_request.base.ref,
+              event: 'push'
+            });
+            if (runs.data.workflow_runs.length > 0) {
+              core.setOutput('id', runs.data.workflow_runs[0].id);
+            }
+      - name: Download base coverage
+        if: github.event_name == 'pull_request' && steps.base_run.outputs.id
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-lcov
+          path: baseline
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.base_run.outputs.id }}
+          repository: ${{ github.repository }}
+      - name: Compare coverage
+        if: github.event_name == 'pull_request'
+        run: ./scripts/compare_coverage.sh
       - name: Report code coverage
         uses: zgosalvez/github-actions-report-lcov@v4
         with:
