@@ -94,8 +94,7 @@ pub mod config;
 
 use crate::storage::DynStorage;
 use std::error::Error;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::net::TcpStream;
+use tokio::io::{self, AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt, AsyncRead, BufReader};
 
 fn extract_message_id(msg: &Message) -> Option<&str> {
     msg.headers.iter().find_map(|(k, v)| {
@@ -735,11 +734,14 @@ where
     Ok(())
 }
 
-pub async fn handle_client(
-    mut socket: TcpStream,
+pub async fn handle_client<S>(
+    socket: S,
     storage: DynStorage,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let (read_half, mut write_half) = socket.split();
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let (read_half, mut write_half) = io::split(socket);
     let mut reader = BufReader::new(read_half);
     write_half.write_all(b"200 NNTP Service Ready\r\n").await?;
     let mut line = String::new();

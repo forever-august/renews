@@ -1,2 +1,5 @@
 port = 1199
 groups = ["misc.news"]
+tls_port = 563
+tls_cert = "cert.pem"
+tls_key = "key.pem"
