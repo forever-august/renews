@@ -150,6 +150,22 @@ async fn mode_reader_success() {
     assert!(line.starts_with("200"));
 }
 
+#[tokio::test]
+async fn commands_are_case_insensitive() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"mode reader\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("200"));
+    line.clear();
+    writer.write_all(b"quit\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("205"));
+}
 
 #[tokio::test]
 async fn group_select_returns_211() {
@@ -517,7 +533,9 @@ async fn listgroup_returns_numbers() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         nums.push(trimmed.to_string());
     }
     assert_eq!(nums, vec!["1"]);
@@ -554,7 +572,9 @@ async fn list_newsgroups_returns_groups() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         let name = trimmed.split_whitespace().next().unwrap_or("");
         groups.push(name.to_string());
     }
@@ -584,7 +604,9 @@ async fn newnews_lists_recent_articles() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         ids.push(trimmed.to_string());
     }
     assert_eq!(ids, vec!["<1@test>".to_string()]);
@@ -616,9 +638,10 @@ async fn newnews_no_matches_returns_empty() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         none = false;
     }
     assert!(none);
 }
-
