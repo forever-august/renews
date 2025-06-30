@@ -485,3 +485,129 @@ async fn post_and_dot_stuffing() {
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("205"));
 }
+
+#[tokio::test]
+async fn body_returns_proper_crlf() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nline1\r\nline2\r\n").unwrap();
+    storage.store_article("misc", &msg).await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut buf = Vec::new();
+
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    buf.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    buf.clear();
+
+    write_half.write_all(b"GROUP misc\r\n").await.unwrap();
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    buf.clear();
+
+    write_half.write_all(b"BODY 1\r\n").await.unwrap();
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    assert_eq!(b"222 1 <1@test> article body follows\r\n", &buf[..]);
+    buf.clear();
+
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    assert_eq!(b"line1\r\n", &buf[..]);
+    buf.clear();
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    assert_eq!(b"line2\r\n", &buf[..]);
+    buf.clear();
+    reader.read_until(b'\n', &mut buf).await.unwrap();
+    assert_eq!(b".\r\n", &buf[..]);
+}
+
+#[tokio::test]
+async fn newgroups_accepts_gmt_argument() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"NEWGROUPS 19700101 000000 GMT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("231"));
+    let mut found = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        if trimmed == "misc" { found = true; }
+    }
+    assert!(found);
+}
+
+#[tokio::test]
+async fn newnews_accepts_gmt_argument() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
+    storage.store_article("misc", &msg).await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"NEWNEWS misc 19700101 000000 GMT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("230"));
+    let mut ids = Vec::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        ids.push(trimmed.to_string());
+    }
+    assert_eq!(ids, vec!["<1@test>".to_string()]);
+}

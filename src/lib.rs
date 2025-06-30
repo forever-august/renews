@@ -105,6 +105,7 @@ pub mod storage;
 pub mod wildmat;
 
 use crate::storage::DynStorage;
+use chrono::TimeZone;
 use std::error::Error;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
@@ -124,12 +125,18 @@ async fn send_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     body: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    for line in body.split_inclusive(['\n']) {
+    for line in body.split_inclusive('\n') {
         if line.starts_with('.') {
             writer.write_all(b".").await?;
         }
-        let line = line.replace('\n', "\r\n");
-        writer.write_all(line.as_bytes()).await?;
+        if let Some(stripped) = line.strip_suffix('\n') {
+            let stripped = stripped.strip_suffix('\r').unwrap_or(stripped);
+            writer.write_all(stripped.as_bytes()).await?;
+            writer.write_all(b"\r\n").await?;
+        } else {
+            let stripped = line.strip_suffix('\r').unwrap_or(line);
+            writer.write_all(stripped.as_bytes()).await?;
+        }
     }
     if !body.ends_with('\n') {
         writer.write_all(b"\r\n").await?;
@@ -599,12 +606,16 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
         writer.write_all(b"501 invalid time\r\n").await?;
         return Ok(());
     }
-    if let Some(arg) = args.get(2) {
-        if !arg.eq_ignore_ascii_case("GMT") {
-            writer.write_all(b"501 invalid argument\r\n").await?;
-            return Ok(());
+    let gmt = match args.get(2) {
+        Some(arg) => {
+            if !arg.eq_ignore_ascii_case("GMT") {
+                writer.write_all(b"501 invalid argument\r\n").await?;
+                return Ok(());
+            }
+            true
         }
-    }
+        None => false,
+    };
 
     let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
     let naive_date = match chrono::NaiveDate::parse_from_str(date, fmt) {
@@ -621,10 +632,16 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
             return Ok(());
         }
     };
-    let since = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-        naive_date.and_time(naive_time),
-        chrono::Utc,
-    );
+    let naive = naive_date.and_time(naive_time);
+    let since = if gmt {
+        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
+    } else {
+        chrono::Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or("invalid local time")?
+            .with_timezone(&chrono::Utc)
+    };
 
     let groups = storage.list_groups_since(since).await?;
     writer
@@ -659,12 +676,16 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
         writer.write_all(b"501 invalid time\r\n").await?;
         return Ok(());
     }
-    if let Some(arg) = args.get(3) {
-        if !arg.eq_ignore_ascii_case("GMT") {
-            writer.write_all(b"501 invalid argument\r\n").await?;
-            return Ok(());
+    let gmt = match args.get(3) {
+        Some(arg) => {
+            if !arg.eq_ignore_ascii_case("GMT") {
+                writer.write_all(b"501 invalid argument\r\n").await?;
+                return Ok(());
+            }
+            true
         }
-    }
+        None => false,
+    };
 
     let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
     let naive_date = match chrono::NaiveDate::parse_from_str(date, fmt) {
@@ -681,10 +702,16 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
             return Ok(());
         }
     };
-    let since = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-        naive_date.and_time(naive_time),
-        chrono::Utc,
-    );
+    let naive = naive_date.and_time(naive_time);
+    let since = if gmt {
+        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
+    } else {
+        chrono::Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or("invalid local time")?
+            .with_timezone(&chrono::Utc)
+    };
 
     let groups = storage.list_groups().await?;
     let mut ids = Vec::new();
