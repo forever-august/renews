@@ -580,6 +580,210 @@ async fn handle_last<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+fn get_header_value(msg: &Message, name: &str) -> Option<String> {
+    for (k, v) in &msg.headers {
+        if k.eq_ignore_ascii_case(name) {
+            let mut val = v.replace('\t', " ");
+            val.retain(|c| c != '\r' && c != '\n');
+            return Some(val);
+        }
+    }
+    None
+}
+
+fn metadata_value(msg: &Message, name: &str) -> Option<String> {
+    match name.to_ascii_lowercase().as_str() {
+        ":lines" => Some(msg.body.lines().count().to_string()),
+        ":bytes" => Some(msg.body.as_bytes().len().to_string()),
+        _ => None,
+    }
+}
+
+async fn handle_hdr<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+    current_group: Option<&str>,
+    current_article: &Option<u64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if args.is_empty() {
+        writer.write_all(b"501 not enough arguments\r\n").await?;
+        return Ok(());
+    }
+    let field = &args[0];
+    let mut values = Vec::new();
+    if let Some(arg) = args.get(1) {
+        if arg.starts_with('<') && arg.ends_with('>') {
+            if let Some(article) = storage.get_article_by_id(arg).await? {
+                let val = if field.starts_with(':') {
+                    metadata_value(&article, field)
+                } else {
+                    get_header_value(&article, field)
+                };
+                values.push((0, val));
+            } else {
+                writer.write_all(b"430 no such article\r\n").await?;
+                return Ok(());
+            }
+        } else if let Some(group) = current_group {
+            let nums = parse_range(storage, group, arg).await?;
+            if nums.is_empty() {
+                writer
+                    .write_all(b"423 no articles in that range\r\n")
+                    .await?;
+                return Ok(());
+            }
+            for n in nums {
+                if let Some(article) = storage.get_article_by_number(group, n).await? {
+                    let val = if field.starts_with(':') {
+                        metadata_value(&article, field)
+                    } else {
+                        get_header_value(&article, field)
+                    };
+                    values.push((n, val));
+                }
+            }
+        } else {
+            writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            return Ok(());
+        }
+    } else if let (Some(group), Some(num)) = (current_group, current_article) {
+        if let Some(article) = storage.get_article_by_number(group, *num).await? {
+            let val = if field.starts_with(':') {
+                metadata_value(&article, field)
+            } else {
+                get_header_value(&article, field)
+            };
+            values.push((*num, val));
+        } else {
+            writer
+                .write_all(b"420 no current article selected\r\n")
+                .await?;
+            return Ok(());
+        }
+    } else if current_group.is_none() {
+        writer.write_all(b"412 no newsgroup selected\r\n").await?;
+        return Ok(());
+    } else {
+        writer
+            .write_all(b"420 no current article selected\r\n")
+            .await?;
+        return Ok(());
+    }
+
+    writer.write_all(b"225 Headers follow\r\n").await?;
+    for (n, val) in values {
+        if let Some(v) = val {
+            writer
+                .write_all(format!("{} {}\r\n", n, v).as_bytes())
+                .await?;
+        } else {
+            writer.write_all(format!("{}\r\n", n).as_bytes()).await?;
+        }
+    }
+    writer.write_all(b".\r\n").await?;
+    Ok(())
+}
+
+async fn handle_over<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+    current_group: Option<&str>,
+    current_article: &Option<u64>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut articles: Vec<(u64, Message)> = Vec::new();
+    if let Some(arg) = args.get(0) {
+        if arg.starts_with('<') && arg.ends_with('>') {
+            if let Some(article) = storage.get_article_by_id(arg).await? {
+                articles.push((0, article));
+            } else {
+                writer.write_all(b"430 no such article\r\n").await?;
+                return Ok(());
+            }
+        } else if let Some(group) = current_group {
+            let nums = parse_range(storage, group, arg).await?;
+            if nums.is_empty() {
+                writer
+                    .write_all(b"423 no articles in that range\r\n")
+                    .await?;
+                return Ok(());
+            }
+            for n in nums {
+                if let Some(article) = storage.get_article_by_number(group, n).await? {
+                    articles.push((n, article));
+                }
+            }
+        } else {
+            writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            return Ok(());
+        }
+    } else if let (Some(group), Some(num)) = (current_group, current_article) {
+        if let Some(article) = storage.get_article_by_number(group, *num).await? {
+            articles.push((*num, article));
+        } else {
+            writer
+                .write_all(b"420 no current article selected\r\n")
+                .await?;
+            return Ok(());
+        }
+    } else if current_group.is_none() {
+        writer.write_all(b"412 no newsgroup selected\r\n").await?;
+        return Ok(());
+    } else {
+        writer
+            .write_all(b"420 no current article selected\r\n")
+            .await?;
+        return Ok(());
+    }
+
+    writer
+        .write_all(b"224 Overview information follows\r\n")
+        .await?;
+    for (num, article) in articles {
+        let subject = get_header_value(&article, "Subject").unwrap_or_default();
+        let from = get_header_value(&article, "From").unwrap_or_default();
+        let date = get_header_value(&article, "Date").unwrap_or_default();
+        let msgid = get_header_value(&article, "Message-ID").unwrap_or_default();
+        let refs = get_header_value(&article, "References").unwrap_or_default();
+        let bytes = article.body.as_bytes().len();
+        let lines = article.body.lines().count();
+        writer
+            .write_all(
+                format!(
+                    "{}|{}|{}|{}|{}|{}|{}|{}\r\n",
+                    num, subject, from, date, msgid, refs, bytes, lines
+                )
+                .as_bytes(),
+            )
+            .await?;
+    }
+    writer.write_all(b".\r\n").await?;
+    Ok(())
+}
+
+async fn parse_range(
+    storage: &DynStorage,
+    group: &str,
+    spec: &str,
+) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>> {
+    if let Some((start_s, end_s)) = spec.split_once('-') {
+        let start: u64 = start_s.parse().map_err(|_| "invalid range")?;
+        if end_s.is_empty() {
+            let nums = storage.list_article_numbers(group).await?;
+            Ok(nums.into_iter().filter(|n| *n >= start).collect())
+        } else {
+            let end: u64 = end_s.parse().map_err(|_| "invalid range")?;
+            if end < start {
+                return Ok(Vec::new());
+            }
+            Ok((start..=end).collect())
+        }
+    } else {
+        Ok(vec![spec.parse()?])
+    }
+}
+
 async fn handle_newgroups<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -733,6 +937,8 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer.write_all(b"READER\r\n").await?;
     writer.write_all(b"POST\r\n").await?;
     writer.write_all(b"NEWNEWS\r\n").await?;
+    writer.write_all(b"OVER MSGID\r\n").await?;
+    writer.write_all(b"HDR\r\n").await?;
     writer.write_all(b".\r\n").await?;
     Ok(())
 }
@@ -754,7 +960,7 @@ async fn handle_help<W: AsyncWrite + Unpin>(
     writer.write_all(b"100 help text follows\r\n").await?;
     writer
         .write_all(
-            b"CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n",
+            b"CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n",
         )
         .await?;
     writer.write_all(b".\r\n").await?;
@@ -908,6 +1114,26 @@ where
                     &cmd.args,
                     current_group.as_deref(),
                     &mut current_article,
+                )
+                .await?;
+            }
+            "HDR" => {
+                handle_hdr(
+                    &mut write_half,
+                    &storage,
+                    &cmd.args,
+                    current_group.as_deref(),
+                    &current_article,
+                )
+                .await?;
+            }
+            "OVER" => {
+                handle_over(
+                    &mut write_half,
+                    &storage,
+                    &cmd.args,
+                    current_group.as_deref(),
+                    &current_article,
                 )
                 .await?;
             }
