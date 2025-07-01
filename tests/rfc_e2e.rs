@@ -13,7 +13,7 @@ async fn setup_server(
     let store_clone = storage.clone();
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
     (addr, handle)
 }
@@ -147,7 +147,7 @@ async fn mode_reader_success() {
     line.clear();
     writer.write_all(b"MODE READER\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
+    assert!(line.starts_with("201"));
 }
 
 #[tokio::test]
@@ -160,7 +160,7 @@ async fn commands_are_case_insensitive() {
     line.clear();
     writer.write_all(b"mode reader\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
+    assert!(line.starts_with("201"));
     line.clear();
     writer.write_all(b"quit\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();

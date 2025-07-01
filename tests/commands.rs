@@ -17,7 +17,7 @@ async fn head_and_list_commands() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -26,12 +26,12 @@ async fn head_and_list_commands() {
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
+    assert!(line.starts_with("201"));
     line.clear();
 
     write_half.write_all(b"MODE READER\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
+    assert!(line.starts_with("201"));
     line.clear();
 
     write_half.write_all(b"GROUP misc\r\n").await.unwrap();
@@ -88,7 +88,7 @@ async fn listgroup_and_navigation_commands() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -231,7 +231,7 @@ async fn capabilities_and_misc_commands() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -319,7 +319,7 @@ async fn no_group_returns_412() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -356,7 +356,7 @@ async fn responses_include_number_and_id() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -431,7 +431,7 @@ async fn post_and_dot_stuffing() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -452,35 +452,15 @@ async fn post_and_dot_stuffing() {
 
     write_half.write_all(b"POST\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
+    assert!(line.starts_with("483"));
     line.clear();
-    let article =
-        b"Message-ID: <3@test>\r\nNewsgroups: misc\r\nSubject: P\r\n\r\n..keep\r\nregular\r\n.\r\n";
-    write_half.write_all(article).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
-    line.clear();
-
-    let stored = storage
-        .get_article_by_id("<3@test>")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.body, ".keep\r\nregular\r\n");
-
-    write_half.write_all(b"BODY 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), "222 1 <3@test> article body follows");
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), "..keep");
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), "regular");
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), ".");
-    line.clear();
+    assert!(
+        storage
+            .get_article_by_id("<3@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     write_half.write_all(b"QUIT\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
@@ -499,7 +479,7 @@ async fn body_returns_proper_crlf() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -543,7 +523,7 @@ async fn newgroups_accepts_gmt_argument() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -591,7 +571,7 @@ async fn newnews_accepts_gmt_argument() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -635,7 +615,7 @@ async fn post_without_selecting_group() {
     let store_clone = storage.clone();
     tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone).await.unwrap();
+        handle_client(sock, store_clone, false).await.unwrap();
     });
 
     let stream = TcpStream::connect(addr).await.unwrap();
@@ -652,18 +632,13 @@ async fn post_without_selecting_group() {
 
     write_half.write_all(b"POST\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
+    assert!(line.starts_with("483"));
 
-    let article = b"Message-ID: <post@test>\r\nNewsgroups: misc\r\n\r\nBody\r\n.\r\n";
-    write_half.write_all(article).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
-
-    let stored = storage
-        .get_article_by_id("<post@test>")
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.body, "Body\r\n");
+    assert!(
+        storage
+            .get_article_by_id("<post@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
