@@ -30,7 +30,8 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> Result<rustls::ServerConf
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cfg = Config::from_file("config.toml")?;
-    let storage = Arc::new(SqliteStorage::new("sqlite:news.db").await?);
+    let db_conn = format!("sqlite:{}", cfg.db_path);
+    let storage = Arc::new(SqliteStorage::new(&db_conn).await?);
     for g in &cfg.groups {
         storage.add_group(g).await?;
     }
