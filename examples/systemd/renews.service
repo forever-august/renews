@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/renews
+ExecStart=/usr/local/bin/renews --config /opt/renews/config.toml
 WorkingDirectory=/opt/renews
 Restart=on-failure
 User=renews
