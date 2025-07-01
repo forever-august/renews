@@ -183,9 +183,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
         *current_group = Some(name.clone());
         *current_article = None;
         writer
-            .write_all(
-                format!("211 {} {} {} {}\r\n", count, low, high, name).as_bytes(),
-            )
+            .write_all(format!("211 {} {} {} {}\r\n", count, low, high, name).as_bytes())
             .await?;
     } else {
         writer.write_all(b"501 missing group\r\n").await?;
@@ -533,9 +531,7 @@ async fn handle_next<W: AsyncWrite + Unpin>(
                 *current_article = Some(next);
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
-                    .write_all(
-                        format!("223 {} {} article exists\r\n", next, id).as_bytes(),
-                    )
+                    .write_all(format!("223 {} {} article exists\r\n", next, id).as_bytes())
                     .await?;
             } else {
                 writer.write_all(b"421 no next article\r\n").await?;
@@ -565,9 +561,7 @@ async fn handle_last<W: AsyncWrite + Unpin>(
                     *current_article = Some(prev);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
-                        .write_all(
-                            format!("223 {} {} article exists\r\n", prev, id).as_bytes(),
-                        )
+                        .write_all(format!("223 {} {} article exists\r\n", prev, id).as_bytes())
                         .await?;
                 } else {
                     writer.write_all(b"422 no previous article\r\n").await?;
@@ -773,9 +767,7 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.eq_ignore_ascii_case("READER") {
-            writer
-                .write_all(b"200 Reader mode acknowledged\r\n")
-                .await?;
+            writer.write_all(b"200 Posting allowed\r\n").await?;
         } else {
             writer.write_all(b"501 unknown mode\r\n").await?;
         }
@@ -789,7 +781,6 @@ async fn handle_post<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
-    current_group: Option<&str>,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     R: AsyncBufRead + Unpin,
@@ -812,15 +803,37 @@ where
             msg.push_str(&line);
         }
     }
-    let (_, message) = parse_message(&msg).map_err(|_| "invalid message")?;
-    let group = match current_group {
-        Some(g) => g,
-        None => {
-            writer.write_all(b"412 no newsgroup selected\r\n").await?;
+    let (_, message) = match parse_message(&msg) {
+        Ok(m) => m,
+        Err(_) => {
+            writer.write_all(b"441 posting failed\r\n").await?;
             return Ok(());
         }
     };
-    let _ = storage.store_article(group, &message).await?;
+    let newsgroups = match message
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+    {
+        Some((_, v)) => v
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
+    if newsgroups.is_empty() {
+        writer.write_all(b"441 posting failed\r\n").await?;
+        return Ok(());
+    }
+    let existing = storage.list_groups().await?;
+    if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
+        writer.write_all(b"441 posting failed\r\n").await?;
+        return Ok(());
+    }
+    for g in newsgroups {
+        let _ = storage.store_article(g, &message).await?;
+    }
     writer.write_all(b"240 article received\r\n").await?;
     Ok(())
 }
@@ -957,13 +970,7 @@ where
                 handle_mode(&mut write_half, &cmd.args).await?;
             }
             "POST" => {
-                handle_post(
-                    &mut reader,
-                    &mut write_half,
-                    &storage,
-                    current_group.as_deref(),
-                )
-                .await?;
+                handle_post(&mut reader, &mut write_half, &storage).await?;
             }
             _ => {
                 write_half

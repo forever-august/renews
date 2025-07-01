@@ -454,7 +454,8 @@ async fn post_and_dot_stuffing() {
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("340"));
     line.clear();
-    let article = b"Message-ID: <3@test>\r\nSubject: P\r\n\r\n..keep\r\nregular\r\n.\r\n";
+    let article =
+        b"Message-ID: <3@test>\r\nNewsgroups: misc\r\nSubject: P\r\n\r\n..keep\r\nregular\r\n.\r\n";
     write_half.write_all(article).await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("240"));
@@ -557,7 +558,10 @@ async fn newgroups_accepts_gmt_argument() {
     reader.read_line(&mut line).await.unwrap();
     line.clear();
 
-    write_half.write_all(b"NEWGROUPS 19700101 000000 GMT\r\n").await.unwrap();
+    write_half
+        .write_all(b"NEWGROUPS 19700101 000000 GMT\r\n")
+        .await
+        .unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("231"));
     let mut found = false;
@@ -565,8 +569,12 @@ async fn newgroups_accepts_gmt_argument() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
-        if trimmed == "misc" { found = true; }
+        if trimmed == "." {
+            break;
+        }
+        if trimmed == "misc" {
+            found = true;
+        }
     }
     assert!(found);
 }
@@ -598,7 +606,10 @@ async fn newnews_accepts_gmt_argument() {
     reader.read_line(&mut line).await.unwrap();
     line.clear();
 
-    write_half.write_all(b"NEWNEWS misc 19700101 000000 GMT\r\n").await.unwrap();
+    write_half
+        .write_all(b"NEWNEWS misc 19700101 000000 GMT\r\n")
+        .await
+        .unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("230"));
     let mut ids = Vec::new();
@@ -606,8 +617,53 @@ async fn newnews_accepts_gmt_argument() {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
         let trimmed = line.trim_end();
-        if trimmed == "." { break; }
+        if trimmed == "." {
+            break;
+        }
         ids.push(trimmed.to_string());
     }
     assert_eq!(ids, vec!["<1@test>".to_string()]);
+}
+
+#[tokio::test]
+async fn post_without_selecting_group() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc").await.unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let store_clone = storage.clone();
+    tokio::spawn(async move {
+        let (sock, _) = listener.accept().await.unwrap();
+        handle_client(sock, store_clone).await.unwrap();
+    });
+
+    let stream = TcpStream::connect(addr).await.unwrap();
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    write_half.write_all(b"POST\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("340"));
+    line.clear();
+
+    let article = b"Message-ID: <post@test>\r\nNewsgroups: misc\r\n\r\nBody\r\n.\r\n";
+    write_half.write_all(article).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("240"));
+
+    let stored = storage
+        .get_article_by_id("<post@test>")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.body, "Body\r\n");
 }
