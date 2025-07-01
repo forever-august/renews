@@ -760,3 +760,98 @@ async fn over_range() {
     }
     assert_eq!(count, 2);
 }
+
+#[tokio::test]
+async fn ihave_example() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+
+    let (addr, _h) = setup_server(storage.clone()).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    writer
+        .write_all(b"IHAVE <i.am.an.article.you.will.want@example.com>\r\n")
+        .await
+        .unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("335"));
+    line.clear();
+    let article = concat!(
+        "Path: pathost!demo!somewhere!not-for-mail\r\n",
+        "From: \"Demo User\" <nobody@example.com>\r\n",
+        "Newsgroups: misc.test\r\n",
+        "Subject: I am just a test article\r\n",
+        "Date: 6 Oct 1998 04:38:40 -0500\r\n",
+        "Organization: An Example Com, San Jose, CA\r\n",
+        "Message-ID: <i.am.an.article.you.will.want@example.com>\r\n",
+        "\r\n",
+        "This is just a test article.\r\n",
+        ".\r\n"
+    );
+    writer.write_all(article.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("235"));
+    line.clear();
+
+    writer
+        .write_all(b"IHAVE <i.am.an.article.you.will.want@example.com>\r\n")
+        .await
+        .unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("435"));
+}
+
+#[tokio::test]
+async fn takethis_example() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, exist) = parse_message(
+        "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article("misc.test", &exist).await.unwrap();
+
+    let (addr, _h) = setup_server(storage.clone()).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    let take_article = concat!(
+        "TAKETHIS <i.am.an.article.new@example.com>\r\n",
+        "Path: pathost!demo!somewhere!not-for-mail\r\n",
+        "From: \"Demo User\" <nobody@example.com>\r\n",
+        "Newsgroups: misc.test\r\n",
+        "Subject: I am just a test article\r\n",
+        "Date: 6 Oct 1998 04:38:40 -0500\r\n",
+        "Organization: An Example Com, San Jose, CA\r\n",
+        "Message-ID: <i.am.an.article.new@example.com>\r\n",
+        "\r\n",
+        "This is just a test article.\r\n",
+        ".\r\n"
+    );
+    writer.write_all(take_article.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("239"));
+    line.clear();
+
+    let take_reject = concat!(
+        "TAKETHIS <i.am.an.article.you.have@example.com>\r\n",
+        "Path: pathost!demo!somewhere!not-for-mail\r\n",
+        "From: \"Demo User\" <nobody@example.com>\r\n",
+        "Newsgroups: misc.test\r\n",
+        "Subject: I am just a test article\r\n",
+        "Date: 6 Oct 1998 04:38:40 -0500\r\n",
+        "Organization: An Example Com, San Jose, CA\r\n",
+        "Message-ID: <i.am.an.article.you.have@example.com>\r\n",
+        "\r\n",
+        "This is just a test article.\r\n",
+        ".\r\n"
+    );
+    writer.write_all(take_reject.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("439"));
+}

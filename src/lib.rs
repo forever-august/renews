@@ -937,6 +937,8 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer.write_all(b"READER\r\n").await?;
     writer.write_all(b"POST\r\n").await?;
     writer.write_all(b"NEWNEWS\r\n").await?;
+    writer.write_all(b"IHAVE\r\n").await?;
+    writer.write_all(b"STREAMING\r\n").await?;
     writer.write_all(b"OVER MSGID\r\n").await?;
     writer.write_all(b"HDR\r\n").await?;
     writer.write_all(b".\r\n").await?;
@@ -960,7 +962,7 @@ async fn handle_help<W: AsyncWrite + Unpin>(
     writer.write_all(b"100 help text follows\r\n").await?;
     writer
         .write_all(
-            b"CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n",
+            b"CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nIHAVE\r\nTAKETHIS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n",
         )
         .await?;
     writer.write_all(b".\r\n").await?;
@@ -1041,6 +1043,145 @@ where
         let _ = storage.store_article(g, &message).await?;
     }
     writer.write_all(b"240 article received\r\n").await?;
+    Ok(())
+}
+
+async fn read_message<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let mut msg = String::new();
+    let mut line = String::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await?;
+        if line == ".\r\n" || line == ".\n" {
+            break;
+        }
+        if line.starts_with("..") {
+            msg.push_str(&line[1..]);
+        } else {
+            msg.push_str(&line);
+        }
+    }
+    Ok(msg)
+}
+
+async fn handle_ihave<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    if let Some(id) = args.get(0) {
+        if storage.get_article_by_id(id).await?.is_some() {
+            writer.write_all(b"435 article not wanted\r\n").await?;
+            return Ok(());
+        }
+        writer
+            .write_all(b"335 Send it; end with <CR-LF>.<CR-LF>\r\n")
+            .await?;
+        let msg = read_message(reader).await?;
+        let (_, article) = match parse_message(&msg) {
+            Ok(m) => m,
+            Err(_) => {
+                writer.write_all(b"437 article rejected\r\n").await?;
+                return Ok(());
+            }
+        };
+        let newsgroups = article
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+            .map(|(_, v)| {
+                v.split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if newsgroups.is_empty() {
+            writer.write_all(b"437 article rejected\r\n").await?;
+            return Ok(());
+        }
+        let existing = storage.list_groups().await?;
+        if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
+            writer.write_all(b"437 article rejected\r\n").await?;
+            return Ok(());
+        }
+        for g in newsgroups {
+            let _ = storage.store_article(g, &article).await?;
+        }
+        writer.write_all(b"235 Article transferred OK\r\n").await?;
+    } else {
+        writer.write_all(b"501 message-id required\r\n").await?;
+    }
+    Ok(())
+}
+
+async fn handle_takethis<R, W>(
+    reader: &mut R,
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    if let Some(id) = args.get(0) {
+        if storage.get_article_by_id(id).await?.is_some() {
+            writer
+                .write_all(format!("439 {}\r\n", id).as_bytes())
+                .await?;
+            return Ok(());
+        }
+        let msg = read_message(reader).await?;
+        let (_, article) = match parse_message(&msg) {
+            Ok(m) => m,
+            Err(_) => {
+                writer
+                    .write_all(format!("439 {}\r\n", id).as_bytes())
+                    .await?;
+                return Ok(());
+            }
+        };
+        let newsgroups = article
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+            .map(|(_, v)| {
+                v.split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if newsgroups.is_empty() {
+            writer
+                .write_all(format!("439 {}\r\n", id).as_bytes())
+                .await?;
+            return Ok(());
+        }
+        let existing = storage.list_groups().await?;
+        if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
+            writer
+                .write_all(format!("439 {}\r\n", id).as_bytes())
+                .await?;
+            return Ok(());
+        }
+        for g in newsgroups {
+            let _ = storage.store_article(g, &article).await?;
+        }
+        writer
+            .write_all(format!("239 {}\r\n", id).as_bytes())
+            .await?;
+    } else {
+        writer.write_all(b"501 message-id required\r\n").await?;
+    }
     Ok(())
 }
 
@@ -1182,6 +1323,12 @@ where
                     current_group.as_deref().unwrap_or(""),
                 )
                 .await?;
+            }
+            "IHAVE" => {
+                handle_ihave(&mut reader, &mut write_half, &storage, &cmd.args).await?;
+            }
+            "TAKETHIS" => {
+                handle_takethis(&mut reader, &mut write_half, &storage, &cmd.args).await?;
             }
             "CAPABILITIES" => {
                 handle_capabilities(&mut write_half).await?;
