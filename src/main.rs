@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             let (socket, _) = listener.accept().await.unwrap();
             let st = storage_clone.clone();
             tokio::spawn(async move {
-                if let Err(e) = renews::handle_client(socket, st).await {
+                if let Err(e) = renews::handle_client(socket, st, false).await {
                     eprintln!("client error: {e}");
                 }
             });
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 tokio::spawn(async move {
                     match acceptor.accept(socket).await {
                         Ok(stream) => {
-                            if let Err(e) = renews::handle_client(stream, st).await {
+                            if let Err(e) = renews::handle_client(stream, st, true).await {
                                 eprintln!("client error: {e}");
                             }
                         }

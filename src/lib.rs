@@ -931,11 +931,14 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
 
 async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer: &mut W,
+    allow_post: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(b"101 Capability list follows\r\n").await?;
     writer.write_all(b"VERSION 2\r\n").await?;
     writer.write_all(b"READER\r\n").await?;
-    writer.write_all(b"POST\r\n").await?;
+    if allow_post {
+        writer.write_all(b"POST\r\n").await?;
+    }
     writer.write_all(b"NEWNEWS\r\n").await?;
     writer.write_all(b"IHAVE\r\n").await?;
     writer.write_all(b"STREAMING\r\n").await?;
@@ -972,10 +975,15 @@ async fn handle_help<W: AsyncWrite + Unpin>(
 async fn handle_mode<W: AsyncWrite + Unpin>(
     writer: &mut W,
     args: &[String],
+    allow_post: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.eq_ignore_ascii_case("READER") {
-            writer.write_all(b"200 Posting allowed\r\n").await?;
+            if allow_post {
+                writer.write_all(b"200 Posting allowed\r\n").await?;
+            } else {
+                writer.write_all(b"201 Posting prohibited\r\n").await?;
+            }
         } else {
             writer.write_all(b"501 unknown mode\r\n").await?;
         }
@@ -1188,13 +1196,20 @@ where
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
+    is_tls: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let (read_half, mut write_half) = io::split(socket);
     let mut reader = BufReader::new(read_half);
-    write_half.write_all(b"200 NNTP Service Ready\r\n").await?;
+    if is_tls {
+        write_half.write_all(b"200 NNTP Service Ready\r\n").await?;
+    } else {
+        write_half
+            .write_all(b"201 NNTP Service Ready - no posting allowed\r\n")
+            .await?;
+    }
     let mut line = String::new();
     let mut current_group: Option<String> = None;
     let mut current_article: Option<u64> = None;
@@ -1331,7 +1346,7 @@ where
                 handle_takethis(&mut reader, &mut write_half, &storage, &cmd.args).await?;
             }
             "CAPABILITIES" => {
-                handle_capabilities(&mut write_half).await?;
+                handle_capabilities(&mut write_half, is_tls).await?;
             }
             "DATE" => {
                 handle_date(&mut write_half).await?;
@@ -1340,10 +1355,16 @@ where
                 handle_help(&mut write_half).await?;
             }
             "MODE" => {
-                handle_mode(&mut write_half, &cmd.args).await?;
+                handle_mode(&mut write_half, &cmd.args, is_tls).await?;
             }
             "POST" => {
-                handle_post(&mut reader, &mut write_half, &storage).await?;
+                if is_tls {
+                    handle_post(&mut reader, &mut write_half, &storage).await?;
+                } else {
+                    write_half
+                        .write_all(b"483 Secure connection required\r\n")
+                        .await?;
+                }
             }
             _ => {
                 write_half
