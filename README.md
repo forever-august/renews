@@ -13,7 +13,8 @@ This produces the `renews` binary in `target/release/`.
 
 ## Configuration
 
-Configuration is loaded from `config.toml` in the working directory.  The
+Configuration is loaded from the file specified with `--config` (defaults to
+`/etc/renews.toml`). The
 following keys are recognised:
 
 - `port` - TCP port for plain NNTP connections.
@@ -39,8 +40,8 @@ enabled.
 
 ## Deployment with systemd
 
-The service expects `config.toml` in its working directory.  A simple systemd
-unit may look like this:
+By default the service reads `/etc/renews.toml`. A different path can be
+provided with `--config`. A simple systemd unit may look like this:
 
 ```ini
 [Unit]
@@ -49,7 +50,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/renews
+ExecStart=/usr/local/bin/renews --config /opt/renews/config.toml
 WorkingDirectory=/opt/renews
 Restart=on-failure
 User=renews
