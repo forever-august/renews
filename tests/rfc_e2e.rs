@@ -63,7 +63,7 @@ async fn capabilities_and_unknown_command() {
     line.clear();
     writer.write_all(b"OVER\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("500"));
+    assert!(line.starts_with("412"));
 }
 
 #[tokio::test]
@@ -644,4 +644,119 @@ async fn newnews_no_matches_returns_empty() {
         none = false;
     }
     assert!(none);
+}
+
+#[tokio::test]
+async fn hdr_subject_by_message_id() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &msg).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"HDR Subject <1@test>\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("225"));
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "0 Hello");
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), ".");
+}
+
+#[tokio::test]
+async fn hdr_subject_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: A\r\n\r\nBody").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"HDR Subject 1-2\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("225"));
+    let mut vals = Vec::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." {
+            break;
+        }
+        vals.push(trimmed.to_string());
+    }
+    assert_eq!(vals, vec!["1 A", "2 B"]);
+}
+
+#[tokio::test]
+async fn over_message_id() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &msg).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"OVER <1@test>\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("224"));
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("0|"));
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        if line.trim_end() == "." {
+            break;
+        }
+    }
+}
+
+#[tokio::test]
+async fn over_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) =
+        parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
+    let (_, m2) =
+        parse_message("Message-ID: <2@test>\r\nSubject: B\r\nFrom: b@test\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"OVER 1-2\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("224"));
+    let mut count = 0;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." {
+            break;
+        }
+        count += 1;
+    }
+    assert_eq!(count, 2);
 }
