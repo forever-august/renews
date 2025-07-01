@@ -1,11 +1,17 @@
 use serde::Deserialize;
 use std::error::Error;
 
+fn default_db_path() -> String {
+    "/var/spool/renews.db".into()
+}
+
 #[derive(Deserialize)]
 pub struct Config {
     pub port: u16,
     #[serde(default)]
     pub groups: Vec<String>,
+    #[serde(default = "default_db_path")]
+    pub db_path: String,
     #[serde(default)]
     pub tls_port: Option<u16>,
     #[serde(default)]
