@@ -651,10 +651,23 @@ fn get_header_value(msg: &Message, name: &str) -> Option<String> {
     None
 }
 
-fn metadata_value(msg: &Message, name: &str) -> Option<String> {
+async fn metadata_value(
+    storage: &DynStorage,
+    msg: &Message,
+    name: &str,
+) -> Option<String> {
     match name.to_ascii_lowercase().as_str() {
         ":lines" => Some(msg.body.lines().count().to_string()),
-        ":bytes" => Some(msg.body.as_bytes().len().to_string()),
+        ":bytes" => {
+            if let Some(id) = extract_message_id(msg) {
+                match storage.get_message_size(id).await.ok()? {
+                    Some(sz) => Some(sz.to_string()),
+                    None => Some(msg.body.as_bytes().len().to_string()),
+                }
+            } else {
+                Some(msg.body.as_bytes().len().to_string())
+            }
+        }
         _ => None,
     }
 }
@@ -675,7 +688,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
         if arg.starts_with('<') && arg.ends_with('>') {
             if let Some(article) = storage.get_article_by_id(arg).await? {
                 let val = if field.starts_with(':') {
-                    metadata_value(&article, field)
+                    metadata_value(storage, &article, field).await
                 } else {
                     get_header_value(&article, field)
                 };
@@ -695,7 +708,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
             for n in nums {
                 if let Some(article) = storage.get_article_by_number(group, n).await? {
                     let val = if field.starts_with(':') {
-                        metadata_value(&article, field)
+                        metadata_value(storage, &article, field).await
                     } else {
                         get_header_value(&article, field)
                     };
@@ -710,7 +723,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
     {
         if let Some(article) = storage.get_article_by_number(group, num).await? {
             let val = if field.starts_with(':') {
-                metadata_value(&article, field)
+                metadata_value(storage, &article, field).await
             } else {
                 get_header_value(&article, field)
             };
@@ -806,7 +819,11 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         let date = get_header_value(&article, "Date").unwrap_or_default();
         let msgid = get_header_value(&article, "Message-ID").unwrap_or_default();
         let refs = get_header_value(&article, "References").unwrap_or_default();
-        let bytes = article.body.as_bytes().len();
+        let bytes = if let Some(id) = extract_message_id(&article) {
+            storage.get_message_size(id).await?.unwrap_or(article.body.as_bytes().len() as u64)
+        } else {
+            article.body.as_bytes().len() as u64
+        };
         let lines = article.body.lines().count();
         writer
             .write_all(

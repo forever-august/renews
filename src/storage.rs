@@ -70,6 +70,12 @@ pub trait Storage: Send + Sync {
 
     /// Delete any messages no longer referenced by any group
     async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve the stored size in bytes of a message by its Message-ID
+    async fn get_message_size(
+        &self,
+        message_id: &str,
+    ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -98,7 +104,8 @@ pub mod sqlite {
                 "CREATE TABLE IF NOT EXISTS messages (
                     message_id TEXT PRIMARY KEY,
                     headers TEXT,
-                    body TEXT
+                    body TEXT,
+                    size INTEGER NOT NULL
                 )",
             )
             .execute(&pool)
@@ -149,11 +156,12 @@ pub mod sqlite {
             let msg_id = Self::message_id(article).ok_or("missing Message-ID")?;
             let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
             sqlx::query(
-                "INSERT OR IGNORE INTO messages (message_id, headers, body) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO messages (message_id, headers, body, size) VALUES (?, ?, ?, ?)",
             )
             .bind(&msg_id)
             .bind(&headers)
             .bind(&article.body)
+            .bind(article.body.as_bytes().len() as i64)
             .execute(&self.pool)
             .await?;
             let next: i64 = sqlx::query_scalar(
@@ -337,6 +345,23 @@ pub mod sqlite {
             .execute(&self.pool)
             .await?;
             Ok(())
+        }
+
+        async fn get_message_size(
+            &self,
+            message_id: &str,
+        ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+            if let Some(row) =
+                sqlx::query("SELECT size FROM messages WHERE message_id = ?")
+                    .bind(message_id)
+                    .fetch_optional(&self.pool)
+                    .await?
+            {
+                let size: i64 = row.try_get("size")?;
+                Ok(Some(size as u64))
+            } else {
+                Ok(None)
+            }
         }
     }
 }
