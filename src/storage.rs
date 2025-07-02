@@ -37,6 +37,11 @@ pub trait Storage: Send + Sync {
         since: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
 
+    /// Retrieve all newsgroups with their creation timestamps
+    async fn list_groups_with_times(
+        &self,
+    ) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>>;
+
     /// List all article numbers for a group
     async fn list_article_numbers(
         &self,
@@ -245,6 +250,20 @@ pub mod sqlite {
             Ok(rows
                 .into_iter()
                 .map(|r| r.try_get::<String, _>("name").unwrap())
+                .collect())
+        }
+
+        async fn list_groups_with_times(&self) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
+                .fetch_all(&self.pool)
+                .await?;
+            Ok(rows
+                .into_iter()
+                .map(|r| {
+                    let name = r.try_get::<String, _>("name").unwrap();
+                    let ts = r.try_get::<i64, _>("created_at").unwrap();
+                    (name, ts)
+                })
                 .collect())
         }
 
