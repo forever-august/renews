@@ -2,15 +2,16 @@ use std::error::Error;
 use std::sync::Arc;
 
 use clap::Parser;
-use tokio::net::TcpListener;
-use tokio_rustls::{rustls, TlsAcceptor};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::fs::File;
 use std::io::BufReader;
+use tokio::net::TcpListener;
+use tokio_rustls::{TlsAcceptor, rustls};
 
-use renews::storage::sqlite::SqliteStorage;
-use renews::storage::Storage;
 use renews::config::Config;
+use renews::retention::cleanup_expired_articles;
+use renews::storage::Storage;
+use renews::storage::sqlite::SqliteStorage;
 
 #[derive(Parser)]
 struct Args {
@@ -19,10 +20,16 @@ struct Args {
     config: String,
 }
 
-fn load_tls_config(cert_path: &str, key_path: &str) -> Result<rustls::ServerConfig, Box<dyn Error + Send + Sync>> {
+fn load_tls_config(
+    cert_path: &str,
+    key_path: &str,
+) -> Result<rustls::ServerConfig, Box<dyn Error + Send + Sync>> {
     let cert_file = &mut BufReader::new(File::open(cert_path)?);
     let key_file = &mut BufReader::new(File::open(key_path)?);
-    let certs = certs(cert_file)?.into_iter().map(rustls::Certificate).collect();
+    let certs = certs(cert_file)?
+        .into_iter()
+        .map(rustls::Certificate)
+        .collect();
     let mut keys = pkcs8_private_keys(key_file)?;
     if keys.is_empty() {
         return Err("no private key found".into());
@@ -40,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let args = Args::parse();
     let cfg = Config::from_file(&args.config)?;
     let db_conn = format!("sqlite:{}", cfg.db_path);
-    let storage = Arc::new(SqliteStorage::new(&db_conn).await?);
+    let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&db_conn).await?);
     for g in &cfg.groups {
         storage.add_group(g).await?;
     }
@@ -85,8 +92,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         });
     }
 
+    let storage_clone = storage.clone();
+    let cfg_clone = cfg.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(e) = cleanup_expired_articles(&*storage_clone, &cfg_clone).await {
+                eprintln!("retention cleanup error: {e}");
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+        }
+    });
+
     tokio::signal::ctrl_c().await?;
     Ok(())
 }
-
-
