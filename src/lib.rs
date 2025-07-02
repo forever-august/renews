@@ -73,7 +73,6 @@ async fn handle_quit<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_group<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -101,7 +100,6 @@ async fn handle_group<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_article<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -121,9 +119,24 @@ async fn handle_article<W: AsyncWrite + Unpin>(
             } else {
                 writer.write_all(b"430 no such article\r\n").await?;
             }
-        } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = state.current_group.as_deref() {
+        } else if let Some(group) = state.current_group.as_deref() {
+            let nums = match parse_range(storage, group, arg).await {
+                Ok(n) => n,
+                Err(_) => {
+                    writer.write_all(b"501 invalid id\r\n").await?;
+                    return Ok(());
+                }
+            };
+            if nums.is_empty() {
+                writer
+                    .write_all(b"423 no articles in that range\r\n")
+                    .await?;
+                return Ok(());
+            }
+            let mut found = false;
+            for num in nums {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
+                    found = true;
                     state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
@@ -133,16 +146,24 @@ async fn handle_article<W: AsyncWrite + Unpin>(
                     writer.write_all(b"\r\n").await?;
                     send_body(writer, &article.body).await?;
                     writer.write_all(b".\r\n").await?;
-                } else {
-                    writer
-                        .write_all(b"423 no such article number in this group\r\n")
-                        .await?;
                 }
-            } else {
-                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            }
+            if !found {
+                writer
+                    .write_all(b"423 no such article number in this group\r\n")
+                    .await?;
             }
         } else {
-            writer.write_all(b"501 invalid id\r\n").await?;
+            let valid = if let Some((s, e)) = arg.split_once('-') {
+                s.parse::<u64>().is_ok() && (e.is_empty() || e.parse::<u64>().is_ok())
+            } else {
+                arg.parse::<u64>().is_ok()
+            };
+            if valid {
+                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            } else {
+                writer.write_all(b"501 invalid id\r\n").await?;
+            }
         }
     } else if let Some(num) = state.current_article {
         if let Some(group) = state.current_group.as_deref() {
@@ -172,7 +193,6 @@ async fn handle_article<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_head<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -190,9 +210,24 @@ async fn handle_head<W: AsyncWrite + Unpin>(
             } else {
                 writer.write_all(b"430 no such article\r\n").await?;
             }
-        } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = state.current_group.as_deref() {
+        } else if let Some(group) = state.current_group.as_deref() {
+            let nums = match parse_range(storage, group, arg).await {
+                Ok(n) => n,
+                Err(_) => {
+                    writer.write_all(b"501 invalid id\r\n").await?;
+                    return Ok(());
+                }
+            };
+            if nums.is_empty() {
+                writer
+                    .write_all(b"423 no articles in that range\r\n")
+                    .await?;
+                return Ok(());
+            }
+            let mut found = false;
+            for num in nums {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
+                    found = true;
                     state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
@@ -202,16 +237,24 @@ async fn handle_head<W: AsyncWrite + Unpin>(
                         .await?;
                     send_headers(writer, &article).await?;
                     writer.write_all(b".\r\n").await?;
-                } else {
-                    writer
-                        .write_all(b"423 no such article number in this group\r\n")
-                        .await?;
                 }
-            } else {
-                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            }
+            if !found {
+                writer
+                    .write_all(b"423 no such article number in this group\r\n")
+                    .await?;
             }
         } else {
-            writer.write_all(b"501 invalid id\r\n").await?;
+            let valid = if let Some((s, e)) = arg.split_once('-') {
+                s.parse::<u64>().is_ok() && (e.is_empty() || e.parse::<u64>().is_ok())
+            } else {
+                arg.parse::<u64>().is_ok()
+            };
+            if valid {
+                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            } else {
+                writer.write_all(b"501 invalid id\r\n").await?;
+            }
         }
     } else if let Some(num) = state.current_article {
         if let Some(group) = state.current_group.as_deref() {
@@ -239,7 +282,6 @@ async fn handle_head<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_body<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -257,9 +299,24 @@ async fn handle_body<W: AsyncWrite + Unpin>(
             } else {
                 writer.write_all(b"430 no such article\r\n").await?;
             }
-        } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = state.current_group.as_deref() {
+        } else if let Some(group) = state.current_group.as_deref() {
+            let nums = match parse_range(storage, group, arg).await {
+                Ok(n) => n,
+                Err(_) => {
+                    writer.write_all(b"501 invalid id\r\n").await?;
+                    return Ok(());
+                }
+            };
+            if nums.is_empty() {
+                writer
+                    .write_all(b"423 no articles in that range\r\n")
+                    .await?;
+                return Ok(());
+            }
+            let mut found = false;
+            for num in nums {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
+                    found = true;
                     state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
@@ -269,16 +326,24 @@ async fn handle_body<W: AsyncWrite + Unpin>(
                         .await?;
                     send_body(writer, &article.body).await?;
                     writer.write_all(b".\r\n").await?;
-                } else {
-                    writer
-                        .write_all(b"423 no such article number in this group\r\n")
-                        .await?;
                 }
-            } else {
-                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            }
+            if !found {
+                writer
+                    .write_all(b"423 no such article number in this group\r\n")
+                    .await?;
             }
         } else {
-            writer.write_all(b"501 invalid id\r\n").await?;
+            let valid = if let Some((s, e)) = arg.split_once('-') {
+                s.parse::<u64>().is_ok() && (e.is_empty() || e.parse::<u64>().is_ok())
+            } else {
+                arg.parse::<u64>().is_ok()
+            };
+            if valid {
+                writer.write_all(b"412 no newsgroup selected\r\n").await?;
+            } else {
+                writer.write_all(b"501 invalid id\r\n").await?;
+            }
         }
     } else if let Some(num) = state.current_article {
         if let Some(group) = state.current_group.as_deref() {
@@ -306,7 +371,6 @@ async fn handle_body<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_stat<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -401,7 +465,6 @@ async fn handle_list<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_listgroup<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -429,7 +492,6 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_next<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     state: &mut ConnectionState,
@@ -458,7 +520,6 @@ async fn handle_next<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_last<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     state: &mut ConnectionState,
@@ -510,7 +571,6 @@ fn metadata_value(msg: &Message, name: &str) -> Option<String> {
 }
 
 async fn handle_hdr<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -557,7 +617,8 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
             writer.write_all(b"412 no newsgroup selected\r\n").await?;
             return Ok(());
         }
-    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article)
+    {
         if let Some(article) = storage.get_article_by_number(group, num).await? {
             let val = if field.starts_with(':') {
                 metadata_value(&article, field)
@@ -596,7 +657,6 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_over<W: AsyncWrite + Unpin>(
-
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
@@ -628,7 +688,8 @@ async fn handle_over<W: AsyncWrite + Unpin>(
             writer.write_all(b"412 no newsgroup selected\r\n").await?;
             return Ok(());
         }
-    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article)
+    {
         if let Some(article) = storage.get_article_by_number(group, num).await? {
             articles.push((num, article));
         } else {
@@ -1144,67 +1205,25 @@ where
                 }
             }
             "GROUP" => {
-                handle_group(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &mut state,
-                )
-                .await?;
+                handle_group(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "ARTICLE" => {
-                handle_article(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &mut state,
-                )
-                .await?;
+                handle_article(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "HEAD" => {
-                handle_head(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &mut state,
-                )
-                .await?;
+                handle_head(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "BODY" => {
-                handle_body(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &mut state,
-                )
-                .await?;
+                handle_body(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "HDR" => {
-                handle_hdr(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &state,
-                )
-                .await?;
+                handle_hdr(&mut write_half, &storage, &cmd.args, &state).await?;
             }
             "OVER" => {
-                handle_over(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &state,
-                )
-                .await?;
+                handle_over(&mut write_half, &storage, &cmd.args, &state).await?;
             }
             "STAT" => {
-                handle_stat(
-                    &mut write_half,
-                    &storage,
-                    &cmd.args,
-                    &mut state,
-                )
-                .await?;
+                handle_stat(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "LIST" => {
                 handle_list(&mut write_half, &storage, &cmd.args).await?;
@@ -1213,20 +1232,10 @@ where
                 handle_listgroup(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "NEXT" => {
-                handle_next(
-                    &mut write_half,
-                    &storage,
-                    &mut state,
-                )
-                .await?;
+                handle_next(&mut write_half, &storage, &mut state).await?;
             }
             "LAST" => {
-                handle_last(
-                    &mut write_half,
-                    &storage,
-                    &mut state,
-                )
-                .await?;
+                handle_last(&mut write_half, &storage, &mut state).await?;
             }
             "NEWGROUPS" => {
                 handle_newgroups(&mut write_half, &storage, &cmd.args).await?;
@@ -1276,4 +1285,3 @@ where
     }
     Ok(())
 }
-
