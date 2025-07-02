@@ -1,5 +1,5 @@
-use async_trait::async_trait;
 use crate::Message;
+use async_trait::async_trait;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -55,6 +55,16 @@ pub trait Storage: Send + Sync {
         group: &str,
         since: chrono::DateTime<chrono::Utc>,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+
+    /// Remove articles in `group` that were inserted before `before`
+    async fn purge_group_before(
+        &self,
+        group: &str,
+        before: chrono::DateTime<chrono::Utc>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Delete any messages no longer referenced by any group
+    async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -62,7 +72,7 @@ pub type DynStorage = Arc<dyn Storage>;
 pub mod sqlite {
     use super::*;
     use serde::{Deserialize, Serialize};
-    use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+    use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 
     #[derive(Clone)]
     pub struct SqliteStorage {
@@ -114,10 +124,13 @@ pub mod sqlite {
         }
 
         fn message_id(article: &Message) -> Option<String> {
-            article
-                .headers
-                .iter()
-                .find_map(|(k, v)| if k.eq_ignore_ascii_case("Message-ID") { Some(v.clone()) } else { None })
+            article.headers.iter().find_map(|(k, v)| {
+                if k.eq_ignore_ascii_case("Message-ID") {
+                    Some(v.clone())
+                } else {
+                    None
+                }
+            })
         }
     }
 
@@ -185,12 +198,11 @@ pub mod sqlite {
             &self,
             message_id: &str,
         ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
-            if let Some(row) = sqlx::query(
-                "SELECT headers, body FROM messages WHERE message_id = ?",
-            )
-            .bind(message_id)
-            .fetch_optional(&self.pool)
-            .await?
+            if let Some(row) =
+                sqlx::query("SELECT headers, body FROM messages WHERE message_id = ?")
+                    .bind(message_id)
+                    .fetch_optional(&self.pool)
+                    .await?
             {
                 let headers_str: String = row.try_get("headers")?;
                 let body: String = row.try_get("body")?;
@@ -215,7 +227,10 @@ pub mod sqlite {
             let rows = sqlx::query("SELECT name FROM groups ORDER BY name")
                 .fetch_all(&self.pool)
                 .await?;
-            let groups = rows.into_iter().map(|row| row.try_get::<String, _>("name").unwrap()).collect();
+            let groups = rows
+                .into_iter()
+                .map(|row| row.try_get::<String, _>("name").unwrap())
+                .collect();
             Ok(groups)
         }
 
@@ -223,12 +238,10 @@ pub mod sqlite {
             &self,
             since: chrono::DateTime<chrono::Utc>,
         ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-            let rows = sqlx::query(
-                "SELECT name FROM groups WHERE created_at > ? ORDER BY name"
-            )
-            .bind(since.timestamp())
-            .fetch_all(&self.pool)
-            .await?;
+            let rows = sqlx::query("SELECT name FROM groups WHERE created_at > ? ORDER BY name")
+                .bind(since.timestamp())
+                .fetch_all(&self.pool)
+                .await?;
             Ok(rows
                 .into_iter()
                 .map(|r| r.try_get::<String, _>("name").unwrap())
@@ -284,6 +297,27 @@ pub mod sqlite {
                 .map(|r| r.try_get::<String, _>("message_id").unwrap())
                 .collect())
         }
+
+        async fn purge_group_before(
+            &self,
+            group: &str,
+            before: chrono::DateTime<chrono::Utc>,
+        ) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM group_articles WHERE group_name = ? AND inserted_at < ?")
+                .bind(group)
+                .bind(before.timestamp())
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query(
+                "DELETE FROM messages WHERE message_id NOT IN (SELECT DISTINCT message_id FROM group_articles)"
+            )
+            .execute(&self.pool)
+            .await?;
+            Ok(())
+        }
     }
 }
-

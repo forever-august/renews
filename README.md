@@ -23,6 +23,9 @@ following keys are recognised:
 - `tls_port` - optional port for NNTP over TLS.
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
+- `default_retention_days` - default number of days to keep articles.
+- `retention` - list of retention rules which can match a `group` exactly or a
+  `pattern` using wildmat syntax to override the default.
 
 An example configuration is provided in the repository:
 
@@ -33,6 +36,15 @@ db_path = "/var/spool/renews.db"
 tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"
+default_retention_days = 30
+
+[[retention]]
+pattern = "short.*"
+days = 7
+
+[[retention]]
+group = "misc.news"
+days = 60
 ```
 
 `tls_port`, `tls_cert` and `tls_key` must all be set for TLS support to be

@@ -101,6 +101,7 @@ pub fn parse_message(input: &str) -> IResult<&str, Message> {
 }
 
 pub mod config;
+pub mod retention;
 pub mod storage;
 pub mod wildmat;
 

@@ -4,3 +4,12 @@ db_path = "/var/spool/renews.db"
 tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"
+default_retention_days = 30
+
+[[retention]]
+pattern = "short.*"
+days = 7
+
+[[retention]]
+group = "misc.news"
+days = 60
