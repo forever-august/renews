@@ -1,9 +1,10 @@
 use chrono::{Duration, Utc};
 use renews::storage::{Storage, sqlite::SqliteStorage};
-use renews::{handle_client, parse_message};
+use renews::parse_message;
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+mod common;
 
 #[tokio::test]
 async fn head_and_list_commands() {
@@ -12,17 +13,8 @@ async fn head_and_list_commands() {
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: T\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -83,17 +75,8 @@ async fn listgroup_and_navigation_commands() {
     storage.store_article("misc", &m1).await.unwrap();
     storage.store_article("misc", &m2).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -226,17 +209,8 @@ async fn capabilities_and_misc_commands() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc").await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -314,17 +288,8 @@ async fn no_group_returns_412() {
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -351,17 +316,8 @@ async fn responses_include_number_and_id() {
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -426,17 +382,8 @@ async fn post_and_dot_stuffing() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc").await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -474,17 +421,8 @@ async fn body_returns_proper_crlf() {
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nline1\r\nline2\r\n").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut buf = Vec::new();
 
     reader.read_until(b'\n', &mut buf).await.unwrap();
@@ -518,17 +456,8 @@ async fn newgroups_accepts_gmt_argument() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc").await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -566,17 +495,8 @@ async fn newnews_accepts_gmt_argument() {
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
@@ -610,17 +530,8 @@ async fn post_without_selecting_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc").await.unwrap();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (read_half, mut write_half) = stream.into_split();
-    let mut reader = BufReader::new(read_half);
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut write_half) = common::connect(addr).await;
     let mut line = String::new();
 
     reader.read_line(&mut line).await.unwrap();
