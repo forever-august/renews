@@ -65,6 +65,32 @@ async fn send_headers<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+fn parse_datetime(
+    date: &str,
+    time: &str,
+    gmt: bool,
+) -> Result<chrono::DateTime<chrono::Utc>, &'static str> {
+    if !(date.len() == 6 || date.len() == 8) || !date.chars().all(|c| c.is_ascii_digit()) {
+        return Err("invalid date");
+    }
+    if time.len() != 6 || !time.chars().all(|c| c.is_ascii_digit()) {
+        return Err("invalid time");
+    }
+    let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
+    let naive_date = chrono::NaiveDate::parse_from_str(date, fmt).map_err(|_| "invalid date")?;
+    let naive_time = chrono::NaiveTime::parse_from_str(time, "%H%M%S").map_err(|_| "invalid time")?;
+    let naive = naive_date.and_time(naive_time);
+    Ok(if gmt {
+        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
+    } else {
+        chrono::Local
+            .from_local_datetime(&naive)
+            .single()
+            .ok_or("invalid local time")?
+            .with_timezone(&chrono::Utc)
+    })
+}
+
 async fn handle_quit<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -767,14 +793,6 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
 
     let date = &args[0];
     let time = &args[1];
-    if !(date.len() == 6 || date.len() == 8) || !date.chars().all(|c| c.is_ascii_digit()) {
-        writer.write_all(b"501 invalid date\r\n").await?;
-        return Ok(());
-    }
-    if time.len() != 6 || !time.chars().all(|c| c.is_ascii_digit()) {
-        writer.write_all(b"501 invalid time\r\n").await?;
-        return Ok(());
-    }
     let gmt = match args.get(2) {
         Some(arg) => {
             if !arg.eq_ignore_ascii_case("GMT") {
@@ -785,31 +803,12 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
         }
         None => false,
     };
-
-    let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
-    let naive_date = match chrono::NaiveDate::parse_from_str(date, fmt) {
-        Ok(d) => d,
+    let since = match parse_datetime(date, time, gmt) {
+        Ok(s) => s,
         Err(_) => {
             writer.write_all(b"501 invalid date\r\n").await?;
             return Ok(());
         }
-    };
-    let naive_time = match chrono::NaiveTime::parse_from_str(time, "%H%M%S") {
-        Ok(t) => t,
-        Err(_) => {
-            writer.write_all(b"501 invalid time\r\n").await?;
-            return Ok(());
-        }
-    };
-    let naive = naive_date.and_time(naive_time);
-    let since = if gmt {
-        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
-    } else {
-        chrono::Local
-            .from_local_datetime(&naive)
-            .single()
-            .ok_or("invalid local time")?
-            .with_timezone(&chrono::Utc)
     };
 
     let groups = storage.list_groups_since(since).await?;
@@ -837,14 +836,6 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
     let wildmat = &args[0];
     let date = &args[1];
     let time = &args[2];
-    if !(date.len() == 6 || date.len() == 8) || !date.chars().all(|c| c.is_ascii_digit()) {
-        writer.write_all(b"501 invalid date\r\n").await?;
-        return Ok(());
-    }
-    if time.len() != 6 || !time.chars().all(|c| c.is_ascii_digit()) {
-        writer.write_all(b"501 invalid time\r\n").await?;
-        return Ok(());
-    }
     let gmt = match args.get(3) {
         Some(arg) => {
             if !arg.eq_ignore_ascii_case("GMT") {
@@ -855,31 +846,12 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
         }
         None => false,
     };
-
-    let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
-    let naive_date = match chrono::NaiveDate::parse_from_str(date, fmt) {
-        Ok(d) => d,
+    let since = match parse_datetime(date, time, gmt) {
+        Ok(s) => s,
         Err(_) => {
             writer.write_all(b"501 invalid date\r\n").await?;
             return Ok(());
         }
-    };
-    let naive_time = match chrono::NaiveTime::parse_from_str(time, "%H%M%S") {
-        Ok(t) => t,
-        Err(_) => {
-            writer.write_all(b"501 invalid time\r\n").await?;
-            return Ok(());
-        }
-    };
-    let naive = naive_date.and_time(naive_time);
-    let since = if gmt {
-        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
-    } else {
-        chrono::Local
-            .from_local_datetime(&naive)
-            .single()
-            .ok_or("invalid local time")?
-            .with_timezone(&chrono::Utc)
     };
 
     let groups = storage.list_groups().await?;

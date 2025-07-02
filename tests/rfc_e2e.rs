@@ -1,39 +1,15 @@
-use renews::handle_client;
 use renews::parse_message;
 use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-async fn setup_server(
-    storage: Arc<dyn Storage>,
-) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let store_clone = storage.clone();
-    let handle = tokio::spawn(async move {
-        let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, false).await.unwrap();
-    });
-    (addr, handle)
-}
-
-async fn connect(
-    addr: std::net::SocketAddr,
-) -> (
-    BufReader<tokio::net::tcp::OwnedReadHalf>,
-    tokio::net::tcp::OwnedWriteHalf,
-) {
-    let stream = TcpStream::connect(addr).await.unwrap();
-    let (r, w) = stream.into_split();
-    (BufReader::new(r), w)
-}
+mod common;
 
 #[tokio::test]
 async fn unknown_command_mail() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -45,8 +21,8 @@ async fn unknown_command_mail() {
 #[tokio::test]
 async fn capabilities_and_unknown_command() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -69,8 +45,8 @@ async fn capabilities_and_unknown_command() {
 #[tokio::test]
 async fn unsupported_mode_variant() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -82,8 +58,8 @@ async fn unsupported_mode_variant() {
 #[tokio::test]
 async fn article_syntax_error() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -98,8 +74,8 @@ async fn article_syntax_error() {
 #[tokio::test]
 async fn head_without_group_returns_412() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -111,8 +87,8 @@ async fn head_without_group_returns_412() {
 #[tokio::test]
 async fn list_unknown_keyword() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -124,8 +100,8 @@ async fn list_unknown_keyword() {
 #[tokio::test]
 async fn unknown_command_xencrypt() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -140,8 +116,8 @@ async fn unknown_command_xencrypt() {
 #[tokio::test]
 async fn mode_reader_success() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -153,8 +129,8 @@ async fn mode_reader_success() {
 #[tokio::test]
 async fn commands_are_case_insensitive() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -171,8 +147,8 @@ async fn commands_are_case_insensitive() {
 async fn group_select_returns_211() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -187,8 +163,8 @@ async fn article_success_by_number() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -210,8 +186,8 @@ async fn article_success_by_id() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -228,8 +204,8 @@ async fn article_success_by_id() {
 async fn article_id_not_found() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -241,8 +217,8 @@ async fn article_id_not_found() {
 #[tokio::test]
 async fn article_number_no_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -257,8 +233,8 @@ async fn head_success_by_number() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -280,8 +256,8 @@ async fn head_success_by_id() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -300,8 +276,8 @@ async fn head_number_not_found() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -317,8 +293,8 @@ async fn head_number_not_found() {
 async fn head_id_not_found() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -331,8 +307,8 @@ async fn head_id_not_found() {
 async fn head_no_current_article_selected() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -350,8 +326,8 @@ async fn body_success_by_number() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -373,8 +349,8 @@ async fn body_success_by_id() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -393,8 +369,8 @@ async fn body_number_not_found() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -410,8 +386,8 @@ async fn body_number_not_found() {
 async fn body_id_not_found() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -423,8 +399,8 @@ async fn body_id_not_found() {
 #[tokio::test]
 async fn body_number_no_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -439,8 +415,8 @@ async fn stat_success_by_number() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -458,8 +434,8 @@ async fn stat_success_by_id() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -474,8 +450,8 @@ async fn stat_number_not_found() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -491,8 +467,8 @@ async fn stat_number_not_found() {
 async fn stat_id_not_found() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -504,8 +480,8 @@ async fn stat_id_not_found() {
 #[tokio::test]
 async fn stat_number_no_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -520,8 +496,8 @@ async fn listgroup_returns_numbers() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -544,8 +520,8 @@ async fn listgroup_returns_numbers() {
 #[tokio::test]
 async fn listgroup_without_group_selected() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -559,8 +535,8 @@ async fn list_newsgroups_returns_groups() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
     storage.add_group("alt.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -588,8 +564,8 @@ async fn newnews_lists_recent_articles() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -618,8 +594,8 @@ async fn newnews_no_matches_returns_empty() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -652,8 +628,8 @@ async fn hdr_subject_by_message_id() {
     storage.add_group("misc.test").await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -676,8 +652,8 @@ async fn hdr_subject_range() {
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -707,8 +683,8 @@ async fn over_message_id() {
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -737,8 +713,8 @@ async fn over_range() {
         parse_message("Message-ID: <2@test>\r\nSubject: B\r\nFrom: b@test\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -769,8 +745,8 @@ async fn head_range() {
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -800,8 +776,8 @@ async fn body_range() {
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -831,8 +807,8 @@ async fn article_range() {
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -859,8 +835,8 @@ async fn ihave_example() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
 
-    let (addr, _h) = setup_server(storage.clone()).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
@@ -907,8 +883,8 @@ async fn takethis_example() {
     .unwrap();
     storage.store_article("misc.test", &exist).await.unwrap();
 
-    let (addr, _h) = setup_server(storage.clone()).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage.clone()).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
