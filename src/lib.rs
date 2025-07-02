@@ -460,24 +460,84 @@ async fn handle_list<W: AsyncWrite + Unpin>(
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(keyword) = args.get(0) {
-        if keyword.eq_ignore_ascii_case("NEWSGROUPS") {
-            let groups = storage.list_groups().await?;
-            writer.write_all(b"215 descriptions follow\r\n").await?;
-            for g in groups {
-                writer.write_all(format!("{} \r\n", g).as_bytes()).await?;
+        match keyword.to_ascii_uppercase().as_str() {
+            "ACTIVE" => {
+                let pattern = args.get(1).map(|s| s.as_str());
+                let groups = storage.list_groups().await?;
+                writer.write_all(b"215 list of newsgroups follows\r\n").await?;
+                for g in groups {
+                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
+                        let nums = storage.list_article_numbers(&g).await?;
+                        let high = nums.last().copied().unwrap_or(0);
+                        let low = nums.first().copied().unwrap_or(0);
+                        writer
+                            .write_all(format!("{} {} {} y\r\n", g, high, low).as_bytes())
+                            .await?;
+                    }
+                }
+                writer.write_all(b".\r\n").await?;
+                return Ok(());
             }
-            writer.write_all(b".\r\n").await?;
-            return Ok(());
-        } else {
-            writer.write_all(b"501 unknown keyword\r\n").await?;
-            return Ok(());
+            "ACTIVE.TIMES" => {
+                let pattern = args.get(1).map(|s| s.as_str());
+                let groups = storage.list_groups_with_times().await?;
+                writer.write_all(b"215 information follows\r\n").await?;
+                for (g, ts) in groups {
+                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
+                        writer
+                            .write_all(format!("{} {} -\r\n", g, ts).as_bytes())
+                            .await?;
+                    }
+                }
+                writer.write_all(b".\r\n").await?;
+                return Ok(());
+            }
+            "DISTRIB.PATS" => {
+                writer.write_all(b"503 Data item not stored\r\n").await?;
+                return Ok(());
+            }
+            "NEWSGROUPS" => {
+                let pattern = args.get(1).map(|s| s.as_str());
+                let groups = storage.list_groups().await?;
+                writer.write_all(b"215 descriptions follow\r\n").await?;
+                for g in groups {
+                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
+                        writer.write_all(format!("{} \r\n", g).as_bytes()).await?;
+                    }
+                }
+                writer.write_all(b".\r\n").await?;
+                return Ok(());
+            }
+            "OVERVIEW.FMT" => {
+                writer.write_all(b"215 Order of fields in overview database.\r\n").await?;
+                writer.write_all(b"Subject:\r\n").await?;
+                writer.write_all(b"From:\r\n").await?;
+                writer.write_all(b"Date:\r\n").await?;
+                writer.write_all(b"Message-ID:\r\n").await?;
+                writer.write_all(b"References:\r\n").await?;
+                writer.write_all(b":bytes\r\n").await?;
+                writer.write_all(b":lines\r\n").await?;
+                writer.write_all(b".\r\n").await?;
+                return Ok(());
+            }
+            "HEADERS" => {
+                writer.write_all(b"215 metadata items supported:\r\n").await?;
+                writer.write_all(b":\r\n").await?;
+                writer.write_all(b":lines\r\n").await?;
+                writer.write_all(b":bytes\r\n").await?;
+                writer.write_all(b".\r\n").await?;
+                return Ok(());
+            }
+            _ => {
+                writer.write_all(b"501 unknown keyword\r\n").await?;
+                return Ok(());
+            }
         }
     }
 
+    // default LIST without keyword behaves like LIST ACTIVE
     let groups = storage.list_groups().await?;
-    writer
-        .write_all(b"215 list of newsgroups follows\r\n")
-        .await?;
+    writer.write_all(b"215 list of newsgroups follows\r\n").await?;
     for g in groups {
         let nums = storage.list_article_numbers(&g).await?;
         let high = nums.last().copied().unwrap_or(0);
@@ -887,6 +947,7 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer.write_all(b"STREAMING\r\n").await?;
     writer.write_all(b"OVER MSGID\r\n").await?;
     writer.write_all(b"HDR\r\n").await?;
+    writer.write_all(b"LIST ACTIVE NEWSGROUPS ACTIVE.TIMES DISTRIB.PATS OVERVIEW.FMT HEADERS\r\n").await?;
     writer.write_all(b".\r\n").await?;
     Ok(())
 }

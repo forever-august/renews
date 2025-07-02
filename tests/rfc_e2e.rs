@@ -29,13 +29,23 @@ async fn capabilities_and_unknown_command() {
     writer.write_all(b"CAPABILITIES\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("101"));
+    let mut has_list = false;
     loop {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
-        if line.trim_end() == "." {
+        let trimmed = line.trim_end();
+        if trimmed == "." {
             break;
         }
+        if trimmed.starts_with("LIST ") {
+            has_list = true;
+            assert!(trimmed.contains("ACTIVE"));
+            assert!(trimmed.contains("NEWSGROUPS"));
+            assert!(trimmed.contains("OVERVIEW.FMT"));
+            assert!(trimmed.contains("HEADERS"));
+        }
     }
+    assert!(has_list);
     line.clear();
     writer.write_all(b"OVER\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
@@ -94,7 +104,7 @@ async fn list_unknown_keyword() {
     line.clear();
     writer.write_all(b"LIST ACTIVE u[ks].*\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("501"));
+    assert!(line.starts_with("215"));
 }
 
 #[tokio::test]
@@ -556,6 +566,77 @@ async fn list_newsgroups_returns_groups() {
     }
     assert!(groups.contains(&"misc.test".to_string()));
     assert!(groups.contains(&"alt.test".to_string()));
+}
+
+#[tokio::test]
+async fn list_all_keywords() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    writer.write_all(b"LIST ACTIVE\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("215"));
+    let mut found = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        if trimmed.starts_with("misc.test") { found = true; }
+    }
+    assert!(found);
+    line.clear();
+
+    writer.write_all(b"LIST ACTIVE.TIMES\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("215"));
+    let mut found = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        if trimmed.starts_with("misc.test") { found = true; }
+    }
+    assert!(found);
+    line.clear();
+
+    writer.write_all(b"LIST DISTRIB.PATS\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("503"));
+    line.clear();
+
+    writer.write_all(b"LIST OVERVIEW.FMT\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("215"));
+    let mut has_subject = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        if trimmed == "Subject:" { has_subject = true; }
+    }
+    assert!(has_subject);
+    line.clear();
+
+    writer.write_all(b"LIST HEADERS\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("215"));
+    let mut has_colon = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." { break; }
+        if trimmed == ":" { has_colon = true; }
+    }
+    assert!(has_colon);
 }
 
 #[tokio::test]
