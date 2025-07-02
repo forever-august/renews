@@ -572,8 +572,8 @@ async fn list_newsgroups_returns_groups() {
 async fn list_all_keywords() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
-    let (addr, _h) = setup_server(storage).await;
-    let (mut reader, mut writer) = connect(addr).await;
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     line.clear();
