@@ -762,6 +762,99 @@ async fn over_range() {
 }
 
 #[tokio::test]
+async fn head_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"HEAD 1-2\r\n").await.unwrap();
+    for _ in 0..2 {
+        reader.read_line(&mut line).await.unwrap();
+        assert!(line.starts_with("221"));
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line.trim_end() == "." {
+                break;
+            }
+        }
+        line.clear();
+    }
+}
+
+#[tokio::test]
+async fn body_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"BODY 1-2\r\n").await.unwrap();
+    for _ in 0..2 {
+        reader.read_line(&mut line).await.unwrap();
+        assert!(line.starts_with("222"));
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line.trim_end() == "." {
+                break;
+            }
+        }
+        line.clear();
+    }
+}
+
+#[tokio::test]
+async fn article_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = setup_server(storage).await;
+    let (mut reader, mut writer) = connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"ARTICLE 1-2\r\n").await.unwrap();
+    for _ in 0..2 {
+        reader.read_line(&mut line).await.unwrap();
+        assert!(line.starts_with("220"));
+        loop {
+            line.clear();
+            reader.read_line(&mut line).await.unwrap();
+            if line.trim_end() == "." {
+                break;
+            }
+        }
+        line.clear();
+    }
+}
+
+#[tokio::test]
 async fn ihave_example() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
