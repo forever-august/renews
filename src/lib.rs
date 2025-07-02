@@ -105,6 +105,13 @@ pub mod retention;
 pub mod storage;
 pub mod wildmat;
 
+#[derive(Default)]
+pub struct ConnectionState {
+    pub current_group: Option<String>,
+    pub current_article: Option<u64>,
+    pub is_tls: bool,
+}
+
 use crate::storage::DynStorage;
 use chrono::TimeZone;
 use std::error::Error;
@@ -165,11 +172,11 @@ async fn handle_quit<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_group<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: &mut Option<String>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(name) = args.get(0) {
         let groups = storage.list_groups().await?;
@@ -181,8 +188,8 @@ async fn handle_group<W: AsyncWrite + Unpin>(
         let count = nums.len();
         let high = nums.last().copied().unwrap_or(0);
         let low = nums.first().copied().unwrap_or(0);
-        *current_group = Some(name.clone());
-        *current_article = None;
+        state.current_group = Some(name.clone());
+        state.current_article = None;
         writer
             .write_all(format!("211 {} {} {} {}\r\n", count, low, high, name).as_bytes())
             .await?;
@@ -193,11 +200,11 @@ async fn handle_group<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_article<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.starts_with('<') && arg.ends_with('>') {
@@ -214,9 +221,9 @@ async fn handle_article<W: AsyncWrite + Unpin>(
                 writer.write_all(b"430 no such article\r\n").await?;
             }
         } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = current_group {
+            if let Some(group) = state.current_group.as_deref() {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
-                    *current_article = Some(num);
+                    state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(format!("220 {} {} article follows\r\n", num, id).as_bytes())
@@ -236,8 +243,8 @@ async fn handle_article<W: AsyncWrite + Unpin>(
         } else {
             writer.write_all(b"501 invalid id\r\n").await?;
         }
-    } else if let Some(num) = *current_article {
-        if let Some(group) = current_group {
+    } else if let Some(num) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
@@ -264,11 +271,11 @@ async fn handle_article<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_head<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.starts_with('<') && arg.ends_with('>') {
@@ -283,9 +290,9 @@ async fn handle_head<W: AsyncWrite + Unpin>(
                 writer.write_all(b"430 no such article\r\n").await?;
             }
         } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = current_group {
+            if let Some(group) = state.current_group.as_deref() {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
-                    *current_article = Some(num);
+                    state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(
@@ -305,8 +312,8 @@ async fn handle_head<W: AsyncWrite + Unpin>(
         } else {
             writer.write_all(b"501 invalid id\r\n").await?;
         }
-    } else if let Some(num) = *current_article {
-        if let Some(group) = current_group {
+    } else if let Some(num) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
@@ -331,11 +338,11 @@ async fn handle_head<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_body<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.starts_with('<') && arg.ends_with('>') {
@@ -350,9 +357,9 @@ async fn handle_body<W: AsyncWrite + Unpin>(
                 writer.write_all(b"430 no such article\r\n").await?;
             }
         } else if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = current_group {
+            if let Some(group) = state.current_group.as_deref() {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
-                    *current_article = Some(num);
+                    state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(
@@ -372,8 +379,8 @@ async fn handle_body<W: AsyncWrite + Unpin>(
         } else {
             writer.write_all(b"501 invalid id\r\n").await?;
         }
-    } else if let Some(num) = *current_article {
-        if let Some(group) = current_group {
+    } else if let Some(num) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
@@ -398,17 +405,17 @@ async fn handle_body<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_stat<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if let Ok(num) = arg.parse::<u64>() {
-            if let Some(group) = current_group {
+            if let Some(group) = state.current_group.as_deref() {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
-                    *current_article = Some(num);
+                    state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(format!("223 {} {} article exists\r\n", num, id).as_bytes())
@@ -433,8 +440,8 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
         } else {
             writer.write_all(b"501 invalid id\r\n").await?;
         }
-    } else if let Some(num) = *current_article {
-        if let Some(group) = current_group {
+    } else if let Some(num) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
@@ -493,16 +500,17 @@ async fn handle_list<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_listgroup<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: &mut Option<String>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let group = if let Some(name) = args.get(0) {
-        *current_group = Some(name.clone());
+        state.current_group = Some(name.clone());
         name.as_str()
     } else {
-        match current_group.as_deref() {
+        match state.current_group.as_deref() {
             Some(g) => g,
             None => {
                 writer.write_all(b"412 no newsgroup selected\r\n").await?;
@@ -520,16 +528,16 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_next<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(curr) = *current_article {
-        if let Some(group) = current_group {
+    if let Some(curr) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             let next = curr + 1;
             if let Some(article) = storage.get_article_by_number(group, next).await? {
-                *current_article = Some(next);
+                state.current_article = Some(next);
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
                     .write_all(format!("223 {} {} article exists\r\n", next, id).as_bytes())
@@ -549,17 +557,17 @@ async fn handle_next<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_last<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
-    current_group: Option<&str>,
-    current_article: &mut Option<u64>,
+    state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(curr) = *current_article {
-        if let Some(group) = current_group {
+    if let Some(curr) = state.current_article {
+        if let Some(group) = state.current_group.as_deref() {
             if curr > 1 {
                 let prev = curr - 1;
                 if let Some(article) = storage.get_article_by_number(group, prev).await? {
-                    *current_article = Some(prev);
+                    state.current_article = Some(prev);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
                         .write_all(format!("223 {} {} article exists\r\n", prev, id).as_bytes())
@@ -601,11 +609,11 @@ fn metadata_value(msg: &Message, name: &str) -> Option<String> {
 }
 
 async fn handle_hdr<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &Option<u64>,
+    state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if args.is_empty() {
         writer.write_all(b"501 not enough arguments\r\n").await?;
@@ -626,7 +634,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
                 writer.write_all(b"430 no such article\r\n").await?;
                 return Ok(());
             }
-        } else if let Some(group) = current_group {
+        } else if let Some(group) = state.current_group.as_deref() {
             let nums = parse_range(storage, group, arg).await?;
             if nums.is_empty() {
                 writer
@@ -648,21 +656,21 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
             writer.write_all(b"412 no newsgroup selected\r\n").await?;
             return Ok(());
         }
-    } else if let (Some(group), Some(num)) = (current_group, current_article) {
-        if let Some(article) = storage.get_article_by_number(group, *num).await? {
+    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+        if let Some(article) = storage.get_article_by_number(group, num).await? {
             let val = if field.starts_with(':') {
                 metadata_value(&article, field)
             } else {
                 get_header_value(&article, field)
             };
-            values.push((*num, val));
+            values.push((num, val));
         } else {
             writer
                 .write_all(b"420 no current article selected\r\n")
                 .await?;
             return Ok(());
         }
-    } else if current_group.is_none() {
+    } else if state.current_group.is_none() {
         writer.write_all(b"412 no newsgroup selected\r\n").await?;
         return Ok(());
     } else {
@@ -687,11 +695,11 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
 }
 
 async fn handle_over<W: AsyncWrite + Unpin>(
+
     writer: &mut W,
     storage: &DynStorage,
     args: &[String],
-    current_group: Option<&str>,
-    current_article: &Option<u64>,
+    state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut articles: Vec<(u64, Message)> = Vec::new();
     if let Some(arg) = args.get(0) {
@@ -702,7 +710,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
                 writer.write_all(b"430 no such article\r\n").await?;
                 return Ok(());
             }
-        } else if let Some(group) = current_group {
+        } else if let Some(group) = state.current_group.as_deref() {
             let nums = parse_range(storage, group, arg).await?;
             if nums.is_empty() {
                 writer
@@ -719,16 +727,16 @@ async fn handle_over<W: AsyncWrite + Unpin>(
             writer.write_all(b"412 no newsgroup selected\r\n").await?;
             return Ok(());
         }
-    } else if let (Some(group), Some(num)) = (current_group, current_article) {
-        if let Some(article) = storage.get_article_by_number(group, *num).await? {
-            articles.push((*num, article));
+    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+        if let Some(article) = storage.get_article_by_number(group, num).await? {
+            articles.push((num, article));
         } else {
             writer
                 .write_all(b"420 no current article selected\r\n")
                 .await?;
             return Ok(());
         }
-    } else if current_group.is_none() {
+    } else if state.current_group.is_none() {
         writer.write_all(b"412 no newsgroup selected\r\n").await?;
         return Ok(());
     } else {
@@ -932,12 +940,12 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
 
 async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer: &mut W,
-    allow_post: bool,
+    state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(b"101 Capability list follows\r\n").await?;
     writer.write_all(b"VERSION 2\r\n").await?;
     writer.write_all(b"READER\r\n").await?;
-    if allow_post {
+    if state.is_tls {
         writer.write_all(b"POST\r\n").await?;
     }
     writer.write_all(b"NEWNEWS\r\n").await?;
@@ -976,11 +984,11 @@ async fn handle_help<W: AsyncWrite + Unpin>(
 async fn handle_mode<W: AsyncWrite + Unpin>(
     writer: &mut W,
     args: &[String],
-    allow_post: bool,
+    state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(arg) = args.get(0) {
         if arg.eq_ignore_ascii_case("READER") {
-            if allow_post {
+            if state.is_tls {
                 writer.write_all(b"200 Posting allowed\r\n").await?;
             } else {
                 writer.write_all(b"201 Posting prohibited\r\n").await?;
@@ -1212,8 +1220,8 @@ where
             .await?;
     }
     let mut line = String::new();
-    let mut current_group: Option<String> = None;
-    let mut current_article: Option<u64> = None;
+    let mut state = ConnectionState::default();
+    state.is_tls = is_tls;
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
@@ -1239,8 +1247,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    &mut current_group,
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1249,8 +1256,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1259,8 +1265,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1269,8 +1274,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1279,8 +1283,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &current_article,
+                    &state,
                 )
                 .await?;
             }
@@ -1289,8 +1292,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &current_article,
+                    &state,
                 )
                 .await?;
             }
@@ -1299,8 +1301,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1308,14 +1309,13 @@ where
                 handle_list(&mut write_half, &storage, &cmd.args).await?;
             }
             "LISTGROUP" => {
-                handle_listgroup(&mut write_half, &storage, &cmd.args, &mut current_group).await?;
+                handle_listgroup(&mut write_half, &storage, &cmd.args, &mut state).await?;
             }
             "NEXT" => {
                 handle_next(
                     &mut write_half,
                     &storage,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1323,8 +1323,7 @@ where
                 handle_last(
                     &mut write_half,
                     &storage,
-                    current_group.as_deref(),
-                    &mut current_article,
+                    &mut state,
                 )
                 .await?;
             }
@@ -1336,7 +1335,7 @@ where
                     &mut write_half,
                     &storage,
                     &cmd.args,
-                    current_group.as_deref().unwrap_or(""),
+                    state.current_group.as_deref().unwrap_or(""),
                 )
                 .await?;
             }
@@ -1347,7 +1346,7 @@ where
                 handle_takethis(&mut reader, &mut write_half, &storage, &cmd.args).await?;
             }
             "CAPABILITIES" => {
-                handle_capabilities(&mut write_half, is_tls).await?;
+                handle_capabilities(&mut write_half, &state).await?;
             }
             "DATE" => {
                 handle_date(&mut write_half).await?;
@@ -1356,10 +1355,10 @@ where
                 handle_help(&mut write_half).await?;
             }
             "MODE" => {
-                handle_mode(&mut write_half, &cmd.args, is_tls).await?;
+                handle_mode(&mut write_half, &cmd.args, &state).await?;
             }
             "POST" => {
-                if is_tls {
+                if state.is_tls {
                     handle_post(&mut reader, &mut write_half, &storage).await?;
                 } else {
                     write_half
