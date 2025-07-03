@@ -8,9 +8,10 @@ mod common;
 #[tokio::test]
 async fn ihave_rejects_large_article() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=10\n").unwrap();
-    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), cfg).await;
+    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -28,9 +29,10 @@ async fn ihave_rejects_large_article() {
 #[tokio::test]
 async fn ihave_rejects_large_article_with_suffix() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=\"1K\"\n").unwrap();
-    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), cfg).await;
+    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
