@@ -7,12 +7,13 @@ use std::fs::File;
 use std::io::BufReader;
 use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
+use tracing::{error, info};
 
+use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 use renews::config::Config;
 use renews::retention::cleanup_expired_articles;
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
-use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 
 #[derive(Parser)]
 struct Args {
@@ -45,6 +46,7 @@ fn load_tls_config(
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     let cfg = Config::from_file(&args.config)?;
     let db_conn = format!("sqlite:{}", cfg.db_path);
@@ -56,6 +58,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         storage.add_group(g).await?;
     }
     let addr = format!("127.0.0.1:{}", cfg.port);
+    info!("listening on {addr}");
     let listener = TcpListener::bind(&addr).await?;
     let storage_clone = storage.clone();
     let auth_clone = auth.clone();
@@ -63,12 +66,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(async move {
         loop {
             let (socket, _) = listener.accept().await.unwrap();
+            info!("accepted connection");
             let st = storage_clone.clone();
             let au = auth_clone.clone();
             let cfg = cfg_clone.clone();
             tokio::spawn(async move {
                 if let Err(e) = renews::handle_client(socket, st, au, cfg, false).await {
-                    eprintln!("client error: {e}");
+                    error!("client error: {e}");
                 }
             });
         }
@@ -78,6 +82,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         (cfg.tls_port, cfg.tls_cert.as_ref(), cfg.tls_key.as_ref())
     {
         let tls_addr = format!("127.0.0.1:{}", tls_port);
+        info!("listening TLS on {tls_addr}");
         let tls_listener = TcpListener::bind(&tls_addr).await?;
         let tls_config = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
         let storage_clone = storage.clone();
@@ -86,6 +91,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         tokio::spawn(async move {
             loop {
                 let (socket, _) = tls_listener.accept().await.unwrap();
+                info!("accepted TLS connection");
                 let acceptor = tls_config.clone();
                 let st = storage_clone.clone();
                 let au = auth_clone.clone();
@@ -94,10 +100,10 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                     match acceptor.accept(socket).await {
                         Ok(stream) => {
                             if let Err(e) = renews::handle_client(stream, st, au, cfg, true).await {
-                                eprintln!("client error: {e}");
+                                error!("client error: {e}");
                             }
                         }
-                        Err(e) => eprintln!("tls error: {e}"),
+                        Err(e) => error!("tls error: {e}"),
                     }
                 });
             }
@@ -109,12 +115,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tokio::spawn(async move {
         loop {
             if let Err(e) = cleanup_expired_articles(&*storage_clone, &cfg_clone).await {
-                eprintln!("retention cleanup error: {e}");
+                error!("retention cleanup error: {e}");
             }
             tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
         }
     });
 
     tokio::signal::ctrl_c().await?;
+    info!("shutdown signal received");
     Ok(())
 }
