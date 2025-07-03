@@ -13,8 +13,9 @@ This produces the `renews` binary in `target/release/`.
 
 ## Configuration
 
-Configuration is loaded from the file specified with `--config` (defaults to
-`/etc/renews.toml`). The
+Configuration is loaded from the file specified with `--config`. When the
+`RENEWS_CONFIG` environment variable is set it is used as the default,
+otherwise `/etc/renews.toml` is assumed. The
 following keys are recognised:
 
 - `port` - TCP port for plain NNTP connections.
