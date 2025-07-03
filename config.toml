@@ -1,6 +1,7 @@
 port = 1199
 groups = ["misc.news"]
 db_path = "/var/spool/renews.db"
+auth_db_path = "/var/spool/renews_auth.db"
 tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"

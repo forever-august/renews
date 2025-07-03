@@ -20,6 +20,7 @@ following keys are recognised:
 - `port` - TCP port for plain NNTP connections.
 - `groups` - list of newsgroups that will be created on start-up.
 - `db_path` - path to the SQLite database file. Defaults to `/var/spool/renews.db`.
+- `auth_db_path` - optional path to the authentication database. Defaults to `db_path` when unset.
 - `tls_port` - optional port for NNTP over TLS.
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
@@ -35,6 +36,7 @@ An example configuration is provided in the repository:
 port = 1199
 groups = ["misc.news"]
 db_path = "/var/spool/renews.db"
+auth_db_path = "/var/spool/renews_auth.db"
 tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"

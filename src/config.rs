@@ -85,6 +85,8 @@ pub struct Config {
     #[serde(default = "default_db_path")]
     pub db_path: String,
     #[serde(default)]
+    pub auth_db_path: Option<String>,
+    #[serde(default)]
     pub tls_port: Option<u16>,
     #[serde(default)]
     pub tls_cert: Option<String>,

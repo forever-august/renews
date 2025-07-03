@@ -7,6 +7,7 @@ pub use parse::{
 pub mod config;
 pub mod retention;
 pub mod storage;
+pub mod auth;
 pub mod wildmat;
 
 #[derive(Default)]
@@ -14,9 +15,12 @@ pub struct ConnectionState {
     pub current_group: Option<String>,
     pub current_article: Option<u64>,
     pub is_tls: bool,
+    pub authenticated: bool,
+    pub pending_user: Option<String>,
 }
 
 use crate::storage::DynStorage;
+use crate::auth::DynAuth;
 use crate::config::Config;
 use std::error::Error;
 use tokio::io::{
@@ -65,6 +69,11 @@ const RESP_215_OVERVIEW_FMT: &str = "215 Order of fields in overview database.\r
 const RESP_215_METADATA: &str = "215 metadata items supported:\r\n";
 const RESP_101_CAPABILITIES: &str = "101 Capability list follows\r\n";
 const RESP_483_SECURE_REQ: &str = "483 Secure connection required\r\n";
+const RESP_381_PASSWORD_REQ: &str = "381 password required\r\n";
+const RESP_281_AUTH_ACCEPTED: &str = "281 authentication accepted\r\n";
+const RESP_481_AUTH_REJECTED: &str = "481 authentication rejected\r\n";
+const RESP_482_BAD_SEQUENCE: &str = "482 authentication commands out of sequence\r\n";
+const RESP_480_AUTH_REQUIRED: &str = "480 authentication required\r\n";
 const RESP_240_ARTICLE_RECEIVED: &str = "240 article received\r\n";
 const RESP_HELP_TEXT: &str = "CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nIHAVE\r\nTAKETHIS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n";
 const RESP_CAP_VERSION: &str = "VERSION 2\r\n";
@@ -1051,6 +1060,60 @@ async fn handle_help<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the AUTHINFO command as defined in RFC 4643 (USER/PASS only).
+async fn handle_authinfo<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    args: &[String],
+    state: &mut ConnectionState,
+    auth: &DynAuth,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if !state.is_tls {
+        writer.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
+        return Ok(());
+    }
+    let sub = match args.get(0) {
+        Some(s) => s.to_ascii_uppercase(),
+        None => {
+            writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
+            return Ok(());
+        }
+    };
+    match sub.as_str() {
+        "USER" => {
+            if args.len() < 2 {
+                writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
+                return Ok(());
+            }
+            state.pending_user = Some(args[1].clone());
+            writer.write_all(RESP_381_PASSWORD_REQ.as_bytes()).await?;
+        }
+        "PASS" => {
+            let username = match state.pending_user.take() {
+                Some(u) => u,
+                None => {
+                    writer.write_all(RESP_482_BAD_SEQUENCE.as_bytes()).await?;
+                    return Ok(());
+                }
+            };
+            if args.len() < 2 {
+                writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
+                return Ok(());
+            }
+            let password = &args[1];
+            if auth.verify_user(&username, password).await? {
+                state.authenticated = true;
+                writer.write_all(RESP_281_AUTH_ACCEPTED.as_bytes()).await?;
+            } else {
+                writer.write_all(RESP_481_AUTH_REJECTED.as_bytes()).await?;
+            }
+        }
+        _ => {
+            writer.write_all(RESP_501_INVALID_ARG.as_bytes()).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Handle the MODE command as defined in RFC 3977 Section 5.3.
 async fn handle_mode<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -1083,11 +1146,16 @@ async fn handle_post<R, W>(
     writer: &mut W,
     storage: &DynStorage,
     cfg: &Config,
+    state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
+    if !state.authenticated {
+        writer.write_all(RESP_480_AUTH_REQUIRED.as_bytes()).await?;
+        return Ok(());
+    }
     writer.write_all(RESP_340_SEND_ARTICLE.as_bytes()).await?;
     let mut msg = String::new();
     let mut line = String::new();
@@ -1313,6 +1381,7 @@ where
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
+    auth: DynAuth,
     cfg: Config,
     is_tls: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -1414,12 +1483,15 @@ where
             "HELP" => {
                 handle_help(&mut write_half).await?;
             }
+            "AUTHINFO" => {
+                handle_authinfo(&mut write_half, &cmd.args, &mut state, &auth).await?;
+            }
             "MODE" => {
                 handle_mode(&mut write_half, &cmd.args, &state).await?;
             }
             "POST" => {
                 if state.is_tls {
-                    handle_post(&mut reader, &mut write_half, &storage, &cfg).await?;
+                    handle_post(&mut reader, &mut write_half, &storage, &cfg, &state).await?;
                 } else {
                     write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }
