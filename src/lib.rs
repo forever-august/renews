@@ -672,6 +672,59 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
         return Ok(());
     }
     let field = &args[0];
+    if field == ":" {
+        let mut articles = Vec::new();
+        if let Some(arg) = args.get(1) {
+            if arg.starts_with('<') && arg.ends_with('>') {
+                if let Some(article) = storage.get_article_by_id(arg).await? {
+                    articles.push((0, article));
+                } else {
+                    writer.write_all(RESP_430_NO_ARTICLE.as_bytes()).await?;
+                    return Ok(());
+                }
+            } else if let Some(group) = state.current_group.as_deref() {
+                let nums = parse_range(storage, group, arg).await?;
+                if nums.is_empty() {
+                    writer.write_all(RESP_423_RANGE_EMPTY.as_bytes()).await?;
+                    return Ok(());
+                }
+                for n in nums {
+                    if let Some(article) = storage.get_article_by_number(group, n).await? {
+                        articles.push((n, article));
+                    }
+                }
+            } else {
+                writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
+                return Ok(());
+            }
+        } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+            if let Some(article) = storage.get_article_by_number(group, num).await? {
+                articles.push((num, article));
+            } else {
+                writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
+                return Ok(());
+            }
+        } else if state.current_group.is_none() {
+            writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
+            return Ok(());
+        } else {
+            writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
+            return Ok(());
+        }
+
+        writer.write_all(RESP_225_HEADERS.as_bytes()).await?;
+        for (n, article) in articles {
+            for (name, val) in article.headers.iter() {
+                let mut v = val.replace('\t', " ");
+                v.retain(|c| c != '\r' && c != '\n');
+                writer
+                    .write_all(format!("{} {}: {}\r\n", n, name, v).as_bytes())
+                    .await?;
+            }
+        }
+        writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+        return Ok(());
+    }
     let mut values = Vec::new();
     if let Some(arg) = args.get(1) {
         if arg.starts_with('<') && arg.ends_with('>') {
