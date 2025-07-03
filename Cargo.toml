@@ -17,3 +17,6 @@ rustls-pemfile = "1"
 clap = { version = "4", features = ["derive"] }
 argon2 = { version = "0.5", features = ["std"] }
 rand_core = { version = "0.6", features = ["std", "getrandom"] }
+
+[dev-dependencies]
+rcgen = "0.14"
