@@ -57,6 +57,7 @@ const RESP_501_MSGID_REQUIRED: &str = "501 message-id required\r\n";
 const RESP_500_UNKNOWN_CMD: &str = "500 command not recognized\r\n";
 const RESP_500_SYNTAX: &str = "500 syntax error\r\n";
 const RESP_503_DATA_NOT_STORED: &str = "503 Data item not stored\r\n";
+const RESP_503_NOT_SUPPORTED: &str = "503 feature not supported\r\n";
 const RESP_224_OVERVIEW: &str = "224 Overview information follows\r\n";
 const RESP_225_HEADERS: &str = "225 Headers follow\r\n";
 const RESP_221_HEADER_FOLLOWS: &str = "221 Header follows\r\n";
@@ -533,7 +534,11 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
                 return Ok(());
             }
-            // DISTRIB.PATS is intentionally unimplemented and falls through here.
+            "DISTRIB.PATS" => {
+                writer.write_all(RESP_503_NOT_SUPPORTED.as_bytes()).await?;
+                return Ok(());
+            }
+            // Other keywords are not recognised
             _ => {
                 writer
                     .write_all(RESP_501_UNKNOWN_KEYWORD.as_bytes())
