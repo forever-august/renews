@@ -78,6 +78,11 @@ const RESP_480_AUTH_REQUIRED: &str = "480 authentication required\r\n";
 const RESP_240_ARTICLE_RECEIVED: &str = "240 article received\r\n";
 const RESP_HELP_TEXT: &str = "CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nIHAVE\r\nTAKETHIS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n";
 const RESP_CAP_VERSION: &str = "VERSION 2\r\n";
+const RESP_CAP_IMPLEMENTATION: &str = concat!(
+    "IMPLEMENTATION Renews ",
+    env!("CARGO_PKG_VERSION"),
+    "\r\n"
+);
 const RESP_CAP_READER: &str = "READER\r\n";
 const RESP_CAP_POST: &str = "POST\r\n";
 const RESP_CAP_NEWNEWS: &str = "NEWNEWS\r\n";
@@ -1042,6 +1047,7 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(RESP_101_CAPABILITIES.as_bytes()).await?;
     writer.write_all(RESP_CAP_VERSION.as_bytes()).await?;
+    writer.write_all(RESP_CAP_IMPLEMENTATION.as_bytes()).await?;
     writer.write_all(RESP_CAP_READER.as_bytes()).await?;
     if state.is_tls {
         writer.write_all(RESP_CAP_POST.as_bytes()).await?;
