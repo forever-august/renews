@@ -758,6 +758,38 @@ async fn hdr_subject_range() {
 }
 
 #[tokio::test]
+async fn hdr_all_headers_message_id() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, msg) = parse_message(
+        "Message-ID: <1@test>\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article("misc.test", &msg).await.unwrap();
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"HDR : <1@test>\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("225"));
+    let mut found = false;
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." {
+            break;
+        }
+        if trimmed.contains("Subject: Hello") {
+            found = true;
+        }
+    }
+    assert!(found);
+}
+
+#[tokio::test]
 async fn xpat_subject_message_id() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();
