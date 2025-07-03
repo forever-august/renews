@@ -758,6 +758,60 @@ async fn hdr_subject_range() {
 }
 
 #[tokio::test]
+async fn xpat_subject_message_id() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &msg).await.unwrap();
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"XPAT Subject <1@test> *ell*\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("221"));
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), "0 Hello");
+    line.clear();
+    reader.read_line(&mut line).await.unwrap();
+    assert_eq!(line.trim_end(), ".");
+}
+
+#[tokio::test]
+async fn xpat_subject_range() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test").await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: apple\r\n\r\nBody").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: banana\r\n\r\nBody").unwrap();
+    storage.store_article("misc.test", &m1).await.unwrap();
+    storage.store_article("misc.test", &m2).await.unwrap();
+    let (addr, _h) = common::setup_server(storage).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"XPAT Subject 1-2 *a*\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("221"));
+    let mut vals = Vec::new();
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await.unwrap();
+        let trimmed = line.trim_end();
+        if trimmed == "." {
+            break;
+        }
+        vals.push(trimmed.to_string());
+    }
+    assert_eq!(vals, vec!["1 apple", "2 banana"]);
+}
+
+#[tokio::test]
 async fn over_message_id() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc.test").await.unwrap();

@@ -54,6 +54,7 @@ const RESP_500_SYNTAX: &str = "500 syntax error\r\n";
 const RESP_503_DATA_NOT_STORED: &str = "503 Data item not stored\r\n";
 const RESP_224_OVERVIEW: &str = "224 Overview information follows\r\n";
 const RESP_225_HEADERS: &str = "225 Headers follow\r\n";
+const RESP_221_HEADER_FOLLOWS: &str = "221 Header follows\r\n";
 const RESP_230_NEW_ARTICLES: &str = "230 list of new articles follows\r\n";
 const RESP_231_NEW_GROUPS: &str = "231 list of new newsgroups follows\r\n";
 const RESP_211_NUMBERS_FOLLOW: &str = "211 article numbers follow\r\n";
@@ -740,6 +741,58 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the XPAT command as defined in RFC 2980 Section 2.9.
+async fn handle_xpat<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+    state: &ConnectionState,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if args.len() < 3 {
+        writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
+        return Ok(());
+    }
+    let header = &args[0];
+    let spec = &args[1];
+    let pattern = args[2..].join(" ");
+    let mut values = Vec::new();
+    if spec.starts_with('<') && spec.ends_with('>') {
+        if let Some(article) = storage.get_article_by_id(spec).await? {
+            if let Some(val) = get_header_value(&article, header) {
+                if wildmat::wildmat(&pattern, &val) {
+                    values.push((0, val));
+                }
+            }
+        } else {
+            writer.write_all(RESP_430_NO_ARTICLE.as_bytes()).await?;
+            return Ok(());
+        }
+    } else if let Some(group) = state.current_group.as_deref() {
+        let nums = parse_range(storage, group, spec).await?;
+        for n in nums {
+            if let Some(article) = storage.get_article_by_number(group, n).await? {
+                if let Some(val) = get_header_value(&article, header) {
+                    if wildmat::wildmat(&pattern, &val) {
+                        values.push((n, val));
+                    }
+                }
+            }
+        }
+    } else {
+        writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
+        return Ok(());
+    }
+
+    writer.write_all(RESP_221_HEADER_FOLLOWS.as_bytes()).await?;
+    for (n, val) in values {
+        writer
+            .write_all(format!("{} {}\r\n", n, val).as_bytes())
+            .await?;
+    }
+    writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+    Ok(())
+}
+
 /// Handle the OVER command as defined in RFC 3977 Section 8.3.
 async fn handle_over<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -1263,6 +1316,9 @@ where
             }
             "HDR" => {
                 handle_hdr(&mut write_half, &storage, &cmd.args, &state).await?;
+            }
+            "XPAT" => {
+                handle_xpat(&mut write_half, &storage, &cmd.args, &state).await?;
             }
             "OVER" => {
                 handle_over(&mut write_half, &storage, &cmd.args, &state).await?;
