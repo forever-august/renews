@@ -18,7 +18,7 @@ use renews::storage::sqlite::SqliteStorage;
 #[derive(Parser)]
 struct Args {
     /// Path to the configuration file
-    #[arg(long, default_value = "/etc/renews.toml")]
+    #[arg(long, env = "RENEWS_CONFIG", default_value = "/etc/renews.toml")]
     config: String,
 }
 
