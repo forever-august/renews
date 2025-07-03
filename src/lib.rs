@@ -932,7 +932,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         writer
             .write_all(
                 format!(
-                    "{}|{}|{}|{}|{}|{}|{}|{}\r\n",
+                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\r\n",
                     num, subject, from, date, msgid, refs, bytes, lines
                 )
                 .as_bytes(),

@@ -897,7 +897,7 @@ async fn over_message_id() {
     assert!(line.starts_with("224"));
     line.clear();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("0|"));
+    assert!(line.starts_with("0\t"));
     loop {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
