@@ -54,12 +54,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let addr = format!("127.0.0.1:{}", cfg.port);
     let listener = TcpListener::bind(&addr).await?;
     let storage_clone = storage.clone();
+    let cfg_clone = cfg.clone();
     tokio::spawn(async move {
         loop {
             let (socket, _) = listener.accept().await.unwrap();
             let st = storage_clone.clone();
+            let cfg = cfg_clone.clone();
             tokio::spawn(async move {
-                if let Err(e) = renews::handle_client(socket, st, false).await {
+                if let Err(e) = renews::handle_client(socket, st, cfg, false).await {
                     eprintln!("client error: {e}");
                 }
             });
@@ -73,15 +75,17 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let tls_listener = TcpListener::bind(&tls_addr).await?;
         let tls_config = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
         let storage_clone = storage.clone();
+        let cfg_clone = cfg.clone();
         tokio::spawn(async move {
             loop {
                 let (socket, _) = tls_listener.accept().await.unwrap();
                 let acceptor = tls_config.clone();
                 let st = storage_clone.clone();
+                let cfg = cfg_clone.clone();
                 tokio::spawn(async move {
                     match acceptor.accept(socket).await {
                         Ok(stream) => {
-                            if let Err(e) = renews::handle_client(stream, st, true).await {
+                            if let Err(e) = renews::handle_client(stream, st, cfg, true).await {
                                 eprintln!("client error: {e}");
                             }
                         }

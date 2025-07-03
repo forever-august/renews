@@ -17,6 +17,7 @@ pub struct ConnectionState {
 }
 
 use crate::storage::DynStorage;
+use crate::config::Config;
 use std::error::Error;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
@@ -979,6 +980,7 @@ async fn handle_post<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    cfg: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     R: AsyncBufRead + Unpin,
@@ -1027,6 +1029,15 @@ where
         writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
         return Ok(());
     }
+    let size = msg.as_bytes().len() as u64;
+    for g in &newsgroups {
+        if let Some(max) = cfg.max_size_for_group(g) {
+            if size > max {
+                writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
+                return Ok(());
+            }
+        }
+    }
     for g in newsgroups {
         let _ = storage.store_article(g, &message).await?;
     }
@@ -1061,6 +1072,7 @@ async fn handle_ihave<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    cfg: &Config,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
@@ -1101,6 +1113,15 @@ where
             writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
             return Ok(());
         }
+        let size = msg.as_bytes().len() as u64;
+        for g in &newsgroups {
+            if let Some(max) = cfg.max_size_for_group(g) {
+                if size > max {
+                    writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
+                    return Ok(());
+                }
+            }
+        }
         for g in newsgroups {
             let _ = storage.store_article(g, &article).await?;
         }
@@ -1116,6 +1137,7 @@ async fn handle_takethis<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    cfg: &Config,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
@@ -1163,6 +1185,17 @@ where
                 .await?;
             return Ok(());
         }
+        let size = msg.as_bytes().len() as u64;
+        for g in &newsgroups {
+            if let Some(max) = cfg.max_size_for_group(g) {
+                if size > max {
+                    writer
+                        .write_all(format!("439 {}\r\n", id).as_bytes())
+                        .await?;
+                    return Ok(());
+                }
+            }
+        }
         for g in newsgroups {
             let _ = storage.store_article(g, &article).await?;
         }
@@ -1178,6 +1211,7 @@ where
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
+    cfg: Config,
     is_tls: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
@@ -1261,10 +1295,10 @@ where
                 .await?;
             }
             "IHAVE" => {
-                handle_ihave(&mut reader, &mut write_half, &storage, &cmd.args).await?;
+                handle_ihave(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
             }
             "TAKETHIS" => {
-                handle_takethis(&mut reader, &mut write_half, &storage, &cmd.args).await?;
+                handle_takethis(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
             }
             "CAPABILITIES" => {
                 handle_capabilities(&mut write_half, &state).await?;
@@ -1280,7 +1314,7 @@ where
             }
             "POST" => {
                 if state.is_tls {
-                    handle_post(&mut reader, &mut write_half, &storage).await?;
+                    handle_post(&mut reader, &mut write_half, &storage, &cfg).await?;
                 } else {
                     write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }

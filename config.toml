@@ -5,11 +5,14 @@ tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"
 default_retention_days = 30
+default_max_article_bytes = "1M"
 
-[[retention]]
+
+[[group_settings]]
 pattern = "short.*"
-days = 7
+retention_days = 7
 
-[[retention]]
+[[group_settings]]
 group = "misc.news"
-days = 60
+retention_days = 60
+max_article_bytes = "2M"
