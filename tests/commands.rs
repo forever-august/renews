@@ -223,6 +223,7 @@ async fn capabilities_and_misc_commands() {
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("101"));
     let mut has_version = false;
+    let mut has_implementation = false;
     loop {
         line.clear();
         reader.read_line(&mut line).await.unwrap();
@@ -233,8 +234,12 @@ async fn capabilities_and_misc_commands() {
         if trimmed.starts_with("VERSION") {
             has_version = true;
         }
+        if trimmed.starts_with("IMPLEMENTATION") {
+            has_implementation = true;
+        }
     }
     assert!(has_version);
+    assert!(has_implementation);
     line.clear();
 
     write_half.write_all(b"DATE\r\n").await.unwrap();
