@@ -1,5 +1,8 @@
 pub mod parse;
-pub use parse::{Command, Message, Response, parse_command, parse_message, parse_response};
+pub use parse::{
+    Command, Message, Response, parse_command, parse_datetime, parse_message, parse_range,
+    parse_response,
+};
 
 pub mod config;
 pub mod retention;
@@ -14,7 +17,6 @@ pub struct ConnectionState {
 }
 
 use crate::storage::DynStorage;
-use chrono::TimeZone;
 use std::error::Error;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
@@ -71,7 +73,8 @@ const RESP_CAP_IHAVE: &str = "IHAVE\r\n";
 const RESP_CAP_STREAMING: &str = "STREAMING\r\n";
 const RESP_CAP_OVER_MSGID: &str = "OVER MSGID\r\n";
 const RESP_CAP_HDR: &str = "HDR\r\n";
-const RESP_CAP_LIST: &str = "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES DISTRIB.PATS OVERVIEW.FMT HEADERS\r\n";
+const RESP_CAP_LIST: &str =
+    "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES DISTRIB.PATS OVERVIEW.FMT HEADERS\r\n";
 const RESP_SUBJECT: &str = "Subject:\r\n";
 const RESP_FROM: &str = "From:\r\n";
 const RESP_DATE: &str = "Date:\r\n";
@@ -156,7 +159,11 @@ async fn resolve_articles(
 ) -> Result<Vec<(u64, Message)>, ArticleQueryError> {
     if let Some(arg) = arg {
         if arg.starts_with('<') && arg.ends_with('>') {
-            if let Some(article) = storage.get_article_by_id(arg).await.map_err(|_| ArticleQueryError::MessageIdNotFound)? {
+            if let Some(article) = storage
+                .get_article_by_id(arg)
+                .await
+                .map_err(|_| ArticleQueryError::MessageIdNotFound)?
+            {
                 return Ok(vec![(0, article)]);
             } else {
                 return Err(ArticleQueryError::MessageIdNotFound);
@@ -187,7 +194,11 @@ async fn resolve_articles(
         let mut articles = Vec::new();
         let mut found = false;
         for n in nums {
-            if let Some(article) = storage.get_article_by_number(group, n).await.map_err(|_| ArticleQueryError::NotFoundByNumber)? {
+            if let Some(article) = storage
+                .get_article_by_number(group, n)
+                .await
+                .map_err(|_| ArticleQueryError::NotFoundByNumber)?
+            {
                 found = true;
                 state.current_article = Some(n);
                 articles.push((n, article));
@@ -214,32 +225,7 @@ async fn resolve_articles(
     }
 }
 
-fn parse_datetime(
-    date: &str,
-    time: &str,
-    gmt: bool,
-) -> Result<chrono::DateTime<chrono::Utc>, &'static str> {
-    if !(date.len() == 6 || date.len() == 8) || !date.chars().all(|c| c.is_ascii_digit()) {
-        return Err("invalid date");
-    }
-    if time.len() != 6 || !time.chars().all(|c| c.is_ascii_digit()) {
-        return Err("invalid time");
-    }
-    let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
-    let naive_date = chrono::NaiveDate::parse_from_str(date, fmt).map_err(|_| "invalid date")?;
-    let naive_time = chrono::NaiveTime::parse_from_str(time, "%H%M%S").map_err(|_| "invalid time")?;
-    let naive = naive_date.and_time(naive_time);
-    Ok(if gmt {
-        chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
-    } else {
-        chrono::Local
-            .from_local_datetime(&naive)
-            .single()
-            .ok_or("invalid local time")?
-            .with_timezone(&chrono::Utc)
-    })
-}
-
+/// Handle the QUIT command as defined in RFC 3977 Section 5.4.
 async fn handle_quit<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -247,6 +233,7 @@ async fn handle_quit<W: AsyncWrite + Unpin>(
     Ok(true)
 }
 
+/// Handle the GROUP command as defined in RFC 3977 Section 6.1.1.
 async fn handle_group<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -274,6 +261,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the ARTICLE command as defined in RFC 3977 Section 6.2.1.
 async fn handle_article<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -284,11 +272,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
         Ok(arts) => {
             for (num, article) in arts {
                 let id = extract_message_id(&article).unwrap_or("");
-                write_simple(
-                    writer,
-                    &format!("220 {} {} article follows\r\n", num, id),
-                )
-                .await?;
+                write_simple(writer, &format!("220 {} {} article follows\r\n", num, id)).await?;
                 send_headers(writer, &article).await?;
                 writer.write_all(RESP_CRLF.as_bytes()).await?;
                 send_body(writer, &article.body).await?;
@@ -317,6 +301,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the HEAD command as defined in RFC 3977 Section 6.2.2.
 async fn handle_head<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -358,6 +343,7 @@ async fn handle_head<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the BODY command as defined in RFC 3977 Section 6.2.3.
 async fn handle_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -399,6 +385,7 @@ async fn handle_body<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the STAT command as defined in RFC 3977 Section 6.2.4.
 async fn handle_stat<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -442,21 +429,19 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
                     .write_all(format!("223 {} {} article exists\r\n", num, id).as_bytes())
                     .await?;
             } else {
-                writer
-                    .write_all(RESP_420_NO_CURRENT.as_bytes())
-                    .await?;
+                writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
             }
         } else {
             writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
         }
     } else {
-        writer
-            .write_all(RESP_420_NO_CURRENT.as_bytes())
-            .await?;
+        writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
     }
     Ok(())
 }
 
+/// Handle the LIST command and its variants as described in
+/// RFC 3977 Section 7.6.
 async fn handle_list<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -496,13 +481,17 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 return Ok(());
             }
             "DISTRIB.PATS" => {
-                writer.write_all(RESP_503_DATA_NOT_STORED.as_bytes()).await?;
+                writer
+                    .write_all(RESP_503_DATA_NOT_STORED.as_bytes())
+                    .await?;
                 return Ok(());
             }
             "NEWSGROUPS" => {
                 let pattern = args.get(1).map(|s| s.as_str());
                 let groups = storage.list_groups().await?;
-                writer.write_all(RESP_215_DESCRIPTIONS_FOLLOW.as_bytes()).await?;
+                writer
+                    .write_all(RESP_215_DESCRIPTIONS_FOLLOW.as_bytes())
+                    .await?;
                 for g in groups {
                     if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
                         writer.write_all(format!("{} \r\n", g).as_bytes()).await?;
@@ -532,7 +521,9 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 return Ok(());
             }
             _ => {
-                writer.write_all(RESP_501_UNKNOWN_KEYWORD.as_bytes()).await?;
+                writer
+                    .write_all(RESP_501_UNKNOWN_KEYWORD.as_bytes())
+                    .await?;
                 return Ok(());
             }
         }
@@ -553,6 +544,7 @@ async fn handle_list<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the LISTGROUP command as defined in RFC 3977 Section 6.1.2.
 async fn handle_listgroup<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -580,6 +572,7 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the NEXT command as defined in RFC 3977 Section 6.1.4.
 async fn handle_next<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -601,13 +594,12 @@ async fn handle_next<W: AsyncWrite + Unpin>(
             writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
         }
     } else {
-        writer
-            .write_all(RESP_420_NO_CURRENT.as_bytes())
-            .await?;
+        writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
     }
     Ok(())
 }
 
+/// Handle the LAST command as defined in RFC 3977 Section 6.1.3.
 async fn handle_last<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -633,9 +625,7 @@ async fn handle_last<W: AsyncWrite + Unpin>(
             writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
         }
     } else {
-        writer
-            .write_all(RESP_420_NO_CURRENT.as_bytes())
-            .await?;
+        writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
     }
     Ok(())
 }
@@ -651,11 +641,7 @@ fn get_header_value(msg: &Message, name: &str) -> Option<String> {
     None
 }
 
-async fn metadata_value(
-    storage: &DynStorage,
-    msg: &Message,
-    name: &str,
-) -> Option<String> {
+async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Option<String> {
     match name.to_ascii_lowercase().as_str() {
         ":lines" => Some(msg.body.lines().count().to_string()),
         ":bytes" => {
@@ -672,6 +658,7 @@ async fn metadata_value(
     }
 }
 
+/// Handle the HDR command as defined in RFC 3977 Section 8.5.
 async fn handle_hdr<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -700,9 +687,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
         } else if let Some(group) = state.current_group.as_deref() {
             let nums = parse_range(storage, group, arg).await?;
             if nums.is_empty() {
-                writer
-                    .write_all(RESP_423_RANGE_EMPTY.as_bytes())
-                    .await?;
+                writer.write_all(RESP_423_RANGE_EMPTY.as_bytes()).await?;
                 return Ok(());
             }
             for n in nums {
@@ -729,18 +714,14 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
             };
             values.push((num, val));
         } else {
-            writer
-                .write_all(RESP_420_NO_CURRENT.as_bytes())
-                .await?;
+            writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
             return Ok(());
         }
     } else if state.current_group.is_none() {
         writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
         return Ok(());
     } else {
-        writer
-            .write_all(RESP_420_NO_CURRENT.as_bytes())
-            .await?;
+        writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
         return Ok(());
     }
 
@@ -758,6 +739,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the OVER command as defined in RFC 3977 Section 8.3.
 async fn handle_over<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -776,9 +758,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         } else if let Some(group) = state.current_group.as_deref() {
             let nums = parse_range(storage, group, arg).await?;
             if nums.is_empty() {
-                writer
-                    .write_all(RESP_423_RANGE_EMPTY.as_bytes())
-                    .await?;
+                writer.write_all(RESP_423_RANGE_EMPTY.as_bytes()).await?;
                 return Ok(());
             }
             for n in nums {
@@ -795,24 +775,18 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         if let Some(article) = storage.get_article_by_number(group, num).await? {
             articles.push((num, article));
         } else {
-            writer
-                .write_all(RESP_420_NO_CURRENT.as_bytes())
-                .await?;
+            writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
             return Ok(());
         }
     } else if state.current_group.is_none() {
         writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
         return Ok(());
     } else {
-        writer
-            .write_all(RESP_420_NO_CURRENT.as_bytes())
-            .await?;
+        writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
         return Ok(());
     }
 
-    writer
-        .write_all(RESP_224_OVERVIEW.as_bytes())
-        .await?;
+    writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
     for (num, article) in articles {
         let subject = get_header_value(&article, "Subject").unwrap_or_default();
         let from = get_header_value(&article, "From").unwrap_or_default();
@@ -820,7 +794,10 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         let msgid = get_header_value(&article, "Message-ID").unwrap_or_default();
         let refs = get_header_value(&article, "References").unwrap_or_default();
         let bytes = if let Some(id) = extract_message_id(&article) {
-            storage.get_message_size(id).await?.unwrap_or(article.body.as_bytes().len() as u64)
+            storage
+                .get_message_size(id)
+                .await?
+                .unwrap_or(article.body.as_bytes().len() as u64)
         } else {
             article.body.as_bytes().len() as u64
         };
@@ -839,28 +816,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn parse_range(
-    storage: &DynStorage,
-    group: &str,
-    spec: &str,
-) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>> {
-    if let Some((start_s, end_s)) = spec.split_once('-') {
-        let start: u64 = start_s.parse().map_err(|_| "invalid range")?;
-        if end_s.is_empty() {
-            let nums = storage.list_article_numbers(group).await?;
-            Ok(nums.into_iter().filter(|n| *n >= start).collect())
-        } else {
-            let end: u64 = end_s.parse().map_err(|_| "invalid range")?;
-            if end < start {
-                return Ok(Vec::new());
-            }
-            Ok((start..=end).collect())
-        }
-    } else {
-        Ok(vec![spec.parse()?])
-    }
-}
-
+/// Handle the NEWGROUPS command as defined in RFC 3977 Section 7.3.
 async fn handle_newgroups<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -892,9 +848,7 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
     };
 
     let groups = storage.list_groups_since(since).await?;
-    writer
-        .write_all(RESP_231_NEW_GROUPS.as_bytes())
-        .await?;
+    writer.write_all(RESP_231_NEW_GROUPS.as_bytes()).await?;
     for g in groups {
         writer.write_all(format!("{}\r\n", g).as_bytes()).await?;
     }
@@ -902,6 +856,7 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the NEWNEWS command as defined in RFC 3977 Section 7.4.
 async fn handle_newnews<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -942,9 +897,7 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
         }
     }
 
-    writer
-        .write_all(RESP_230_NEW_ARTICLES.as_bytes())
-        .await?;
+    writer.write_all(RESP_230_NEW_ARTICLES.as_bytes()).await?;
     for id in ids {
         writer.write_all(format!("{}\r\n", id).as_bytes()).await?;
     }
@@ -952,6 +905,7 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the CAPABILITIES command as defined in RFC 3977 Section 5.2.
 async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer: &mut W,
     state: &ConnectionState,
@@ -972,6 +926,7 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the DATE command as defined in RFC 3977 Section 7.1.
 async fn handle_date<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -983,19 +938,17 @@ async fn handle_date<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the HELP command as defined in RFC 3977 Section 7.2.
 async fn handle_help<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(RESP_100_HELP_FOLLOWS.as_bytes()).await?;
-    writer
-        .write_all(
-            RESP_HELP_TEXT.as_bytes(),
-        )
-        .await?;
+    writer.write_all(RESP_HELP_TEXT.as_bytes()).await?;
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
     Ok(())
 }
 
+/// Handle the MODE command as defined in RFC 3977 Section 5.3.
 async fn handle_mode<W: AsyncWrite + Unpin>(
     writer: &mut W,
     args: &[String],
@@ -1004,9 +957,13 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
     if let Some(arg) = args.get(0) {
         if arg.eq_ignore_ascii_case("READER") {
             if state.is_tls {
-                writer.write_all(RESP_200_POSTING_ALLOWED.as_bytes()).await?;
+                writer
+                    .write_all(RESP_200_POSTING_ALLOWED.as_bytes())
+                    .await?;
             } else {
-                writer.write_all(RESP_201_POSTING_PROHIBITED.as_bytes()).await?;
+                writer
+                    .write_all(RESP_201_POSTING_PROHIBITED.as_bytes())
+                    .await?;
             }
         } else {
             writer.write_all(RESP_501_UNKNOWN_MODE.as_bytes()).await?;
@@ -1017,6 +974,7 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Handle the POST command as defined in RFC 3977 Section 6.3.1.
 async fn handle_post<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1026,9 +984,7 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    writer
-        .write_all(RESP_340_SEND_ARTICLE.as_bytes())
-        .await?;
+    writer.write_all(RESP_340_SEND_ARTICLE.as_bytes()).await?;
     let mut msg = String::new();
     let mut line = String::new();
     loop {
@@ -1074,7 +1030,9 @@ where
     for g in newsgroups {
         let _ = storage.store_article(g, &message).await?;
     }
-    writer.write_all(RESP_240_ARTICLE_RECEIVED.as_bytes()).await?;
+    writer
+        .write_all(RESP_240_ARTICLE_RECEIVED.as_bytes())
+        .await?;
     Ok(())
 }
 
@@ -1098,6 +1056,7 @@ async fn read_message<R: AsyncBufRead + Unpin>(
     Ok(msg)
 }
 
+/// Handle the IHAVE command as defined in RFC 3977 Section 6.3.2.
 async fn handle_ihave<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1113,9 +1072,7 @@ where
             writer.write_all(RESP_435_NOT_WANTED.as_bytes()).await?;
             return Ok(());
         }
-        writer
-            .write_all(RESP_335_SEND_IT.as_bytes())
-            .await?;
+        writer.write_all(RESP_335_SEND_IT.as_bytes()).await?;
         let msg = read_message(reader).await?;
         let (_, article) = match parse_message(&msg) {
             Ok(m) => m,
@@ -1154,6 +1111,7 @@ where
     Ok(())
 }
 
+/// Handle the TAKETHIS command (streaming extension, not in RFC 3977).
 async fn handle_takethis<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1324,9 +1282,7 @@ where
                 if state.is_tls {
                     handle_post(&mut reader, &mut write_half, &storage).await?;
                 } else {
-                    write_half
-                        .write_all(RESP_483_SECURE_REQ.as_bytes())
-                        .await?;
+                    write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }
             }
             _ => {
