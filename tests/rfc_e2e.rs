@@ -114,6 +114,20 @@ async fn list_unknown_keyword() {
 }
 
 #[tokio::test]
+async fn list_distrib_pats_not_supported() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"LIST DISTRIB.PATS\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("503"));
+}
+
+#[tokio::test]
 async fn unknown_command_xencrypt() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
