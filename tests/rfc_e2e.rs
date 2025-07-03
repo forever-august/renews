@@ -606,10 +606,6 @@ async fn list_all_keywords() {
     assert!(found);
     line.clear();
 
-    writer.write_all(b"LIST DISTRIB.PATS\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("503"));
-    line.clear();
 
     writer.write_all(b"LIST OVERVIEW.FMT\r\n").await.unwrap();
     reader.read_line(&mut line).await.unwrap();

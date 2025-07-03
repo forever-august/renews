@@ -75,8 +75,9 @@ const RESP_CAP_IHAVE: &str = "IHAVE\r\n";
 const RESP_CAP_STREAMING: &str = "STREAMING\r\n";
 const RESP_CAP_OVER_MSGID: &str = "OVER MSGID\r\n";
 const RESP_CAP_HDR: &str = "HDR\r\n";
+// LIST DISTRIB.PATS is intentionally unsupported.
 const RESP_CAP_LIST: &str =
-    "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES DISTRIB.PATS OVERVIEW.FMT HEADERS\r\n";
+    "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS\r\n";
 const RESP_SUBJECT: &str = "Subject:\r\n";
 const RESP_FROM: &str = "From:\r\n";
 const RESP_DATE: &str = "Date:\r\n";
@@ -482,12 +483,6 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
                 return Ok(());
             }
-            "DISTRIB.PATS" => {
-                writer
-                    .write_all(RESP_503_DATA_NOT_STORED.as_bytes())
-                    .await?;
-                return Ok(());
-            }
             "NEWSGROUPS" => {
                 let pattern = args.get(1).map(|s| s.as_str());
                 let groups = storage.list_groups().await?;
@@ -522,6 +517,7 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
                 return Ok(());
             }
+            // DISTRIB.PATS is intentionally unimplemented and falls through here.
             _ => {
                 writer
                     .write_all(RESP_501_UNKNOWN_KEYWORD.as_bytes())
