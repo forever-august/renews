@@ -1,6 +1,13 @@
 pub mod parse;
 pub use parse::{
-    Command, Message, Response, parse_command, parse_datetime, parse_message, parse_range,
+    Command,
+    Message,
+    Response,
+    ensure_message_id,
+    parse_command,
+    parse_datetime,
+    parse_message,
+    parse_range,
     parse_response,
 };
 
@@ -1205,13 +1212,14 @@ where
             msg.push_str(&line);
         }
     }
-    let (_, message) = match parse_message(&msg) {
+    let (_, mut message) = match parse_message(&msg) {
         Ok(m) => m,
         Err(_) => {
             writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
             return Ok(());
         }
     };
+    ensure_message_id(&mut message);
     let newsgroups = match message
         .headers
         .iter()
@@ -1291,13 +1299,14 @@ where
         }
         writer.write_all(RESP_335_SEND_IT.as_bytes()).await?;
         let msg = read_message(reader).await?;
-        let (_, article) = match parse_message(&msg) {
+        let (_, mut article) = match parse_message(&msg) {
             Ok(m) => m,
             Err(_) => {
                 writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
                 return Ok(());
             }
         };
+        ensure_message_id(&mut article);
         let newsgroups = article
             .headers
             .iter()
@@ -1358,7 +1367,7 @@ where
             return Ok(());
         }
         let msg = read_message(reader).await?;
-        let (_, article) = match parse_message(&msg) {
+        let (_, mut article) = match parse_message(&msg) {
             Ok(m) => m,
             Err(_) => {
                 writer
@@ -1367,6 +1376,7 @@ where
                 return Ok(());
             }
         };
+        ensure_message_id(&mut article);
         let newsgroups = article
             .headers
             .iter()
