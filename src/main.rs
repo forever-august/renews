@@ -12,6 +12,7 @@ use renews::config::Config;
 use renews::retention::cleanup_expired_articles;
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
+use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 
 #[derive(Parser)]
 struct Args {
@@ -48,20 +49,23 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cfg = Config::from_file(&args.config)?;
     let db_conn = format!("sqlite:{}", cfg.db_path);
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&db_conn).await?);
+    let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&db_conn).await?);
     for g in &cfg.groups {
         storage.add_group(g).await?;
     }
     let addr = format!("127.0.0.1:{}", cfg.port);
     let listener = TcpListener::bind(&addr).await?;
     let storage_clone = storage.clone();
+    let auth_clone = auth.clone();
     let cfg_clone = cfg.clone();
     tokio::spawn(async move {
         loop {
             let (socket, _) = listener.accept().await.unwrap();
             let st = storage_clone.clone();
+            let au = auth_clone.clone();
             let cfg = cfg_clone.clone();
             tokio::spawn(async move {
-                if let Err(e) = renews::handle_client(socket, st, cfg, false).await {
+                if let Err(e) = renews::handle_client(socket, st, au, cfg, false).await {
                     eprintln!("client error: {e}");
                 }
             });
@@ -75,17 +79,19 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let tls_listener = TcpListener::bind(&tls_addr).await?;
         let tls_config = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
         let storage_clone = storage.clone();
+        let auth_clone = auth.clone();
         let cfg_clone = cfg.clone();
         tokio::spawn(async move {
             loop {
                 let (socket, _) = tls_listener.accept().await.unwrap();
                 let acceptor = tls_config.clone();
                 let st = storage_clone.clone();
+                let au = auth_clone.clone();
                 let cfg = cfg_clone.clone();
                 tokio::spawn(async move {
                     match acceptor.accept(socket).await {
                         Ok(stream) => {
-                            if let Err(e) = renews::handle_client(stream, st, cfg, true).await {
+                            if let Err(e) = renews::handle_client(stream, st, au, cfg, true).await {
                                 eprintln!("client error: {e}");
                             }
                         }
