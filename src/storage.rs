@@ -94,6 +94,7 @@ pub mod sqlite {
     struct Headers(Vec<(String, String)>);
 
     impl SqliteStorage {
+        #[tracing::instrument(skip_all)]
         pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
             let pool = SqlitePoolOptions::new()
                 .max_connections(5)
@@ -148,6 +149,7 @@ pub mod sqlite {
 
     #[async_trait]
     impl Storage for SqliteStorage {
+        #[tracing::instrument(skip_all)]
         async fn store_article(
             &self,
             group: &str,
@@ -183,6 +185,7 @@ pub mod sqlite {
             Ok(next as u64)
         }
 
+        #[tracing::instrument(skip_all)]
         async fn get_article_by_number(
             &self,
             group: &str,
@@ -207,6 +210,7 @@ pub mod sqlite {
             }
         }
 
+        #[tracing::instrument(skip_all)]
         async fn get_article_by_id(
             &self,
             message_id: &str,
@@ -226,6 +230,7 @@ pub mod sqlite {
             }
         }
 
+        #[tracing::instrument(skip_all)]
         async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
             let now = chrono::Utc::now().timestamp();
             sqlx::query("INSERT OR IGNORE INTO groups (name, created_at) VALUES (?, ?)")
@@ -236,6 +241,7 @@ pub mod sqlite {
             Ok(())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
             let rows = sqlx::query("SELECT name FROM groups ORDER BY name")
                 .fetch_all(&self.pool)
@@ -247,6 +253,7 @@ pub mod sqlite {
             Ok(groups)
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_groups_since(
             &self,
             since: chrono::DateTime<chrono::Utc>,
@@ -261,6 +268,7 @@ pub mod sqlite {
                 .collect())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_groups_with_times(&self) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>> {
             let rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
                 .fetch_all(&self.pool)
@@ -275,6 +283,7 @@ pub mod sqlite {
                 .collect())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_article_numbers(
             &self,
             group: &str,
@@ -291,6 +300,7 @@ pub mod sqlite {
                 .collect())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_article_ids(
             &self,
             group: &str,
@@ -307,6 +317,7 @@ pub mod sqlite {
                 .collect())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn list_article_ids_since(
             &self,
             group: &str,
@@ -325,6 +336,7 @@ pub mod sqlite {
                 .collect())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn purge_group_before(
             &self,
             group: &str,
@@ -338,6 +350,7 @@ pub mod sqlite {
             Ok(())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
             sqlx::query(
                 "DELETE FROM messages WHERE message_id NOT IN (SELECT DISTINCT message_id FROM group_articles)"
@@ -347,6 +360,7 @@ pub mod sqlite {
             Ok(())
         }
 
+        #[tracing::instrument(skip_all)]
         async fn get_message_size(
             &self,
             message_id: &str,

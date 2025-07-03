@@ -4,10 +4,10 @@ pub use parse::{
     parse_response,
 };
 
+pub mod auth;
 pub mod config;
 pub mod retention;
 pub mod storage;
-pub mod auth;
 pub mod wildmat;
 
 #[derive(Default)]
@@ -19,13 +19,14 @@ pub struct ConnectionState {
     pub pending_user: Option<String>,
 }
 
-use crate::storage::DynStorage;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::storage::DynStorage;
 use std::error::Error;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
 };
+use tracing::debug;
 
 const RESP_CRLF: &str = "\r\n";
 const RESP_DOT_CRLF: &str = ".\r\n";
@@ -85,8 +86,7 @@ const RESP_CAP_STREAMING: &str = "STREAMING\r\n";
 const RESP_CAP_OVER_MSGID: &str = "OVER MSGID\r\n";
 const RESP_CAP_HDR: &str = "HDR\r\n";
 // LIST DISTRIB.PATS is intentionally unsupported.
-const RESP_CAP_LIST: &str =
-    "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS\r\n";
+const RESP_CAP_LIST: &str = "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS\r\n";
 const RESP_SUBJECT: &str = "Subject:\r\n";
 const RESP_FROM: &str = "From:\r\n";
 const RESP_DATE: &str = "Date:\r\n";
@@ -238,6 +238,7 @@ async fn resolve_articles(
 }
 
 /// Handle the QUIT command as defined in RFC 3977 Section 5.4.
+#[tracing::instrument(skip_all)]
 async fn handle_quit<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -246,6 +247,7 @@ async fn handle_quit<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the GROUP command as defined in RFC 3977 Section 6.1.1.
+#[tracing::instrument(skip_all)]
 async fn handle_group<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -274,6 +276,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the ARTICLE command as defined in RFC 3977 Section 6.2.1.
+#[tracing::instrument(skip_all)]
 async fn handle_article<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -314,6 +317,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the HEAD command as defined in RFC 3977 Section 6.2.2.
+#[tracing::instrument(skip_all)]
 async fn handle_head<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -356,6 +360,7 @@ async fn handle_head<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the BODY command as defined in RFC 3977 Section 6.2.3.
+#[tracing::instrument(skip_all)]
 async fn handle_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -398,6 +403,7 @@ async fn handle_body<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the STAT command as defined in RFC 3977 Section 6.2.4.
+#[tracing::instrument(skip_all)]
 async fn handle_stat<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -454,6 +460,7 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
 
 /// Handle the LIST command and its variants as described in
 /// RFC 3977 Section 7.6.
+#[tracing::instrument(skip_all)]
 async fn handle_list<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -552,6 +559,7 @@ async fn handle_list<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the LISTGROUP command as defined in RFC 3977 Section 6.1.2.
+#[tracing::instrument(skip_all)]
 async fn handle_listgroup<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -580,6 +588,7 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the NEXT command as defined in RFC 3977 Section 6.1.4.
+#[tracing::instrument(skip_all)]
 async fn handle_next<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -607,6 +616,7 @@ async fn handle_next<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the LAST command as defined in RFC 3977 Section 6.1.3.
+#[tracing::instrument(skip_all)]
 async fn handle_last<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -666,6 +676,7 @@ async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Opti
 }
 
 /// Handle the HDR command as defined in RFC 3977 Section 8.5.
+#[tracing::instrument(skip_all)]
 async fn handle_hdr<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -702,7 +713,9 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
                 writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
                 return Ok(());
             }
-        } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article) {
+        } else if let (Some(group), Some(num)) =
+            (state.current_group.as_deref(), state.current_article)
+        {
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 articles.push((num, article));
             } else {
@@ -800,6 +813,7 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the XPAT command as defined in RFC 2980 Section 2.9.
+#[tracing::instrument(skip_all)]
 async fn handle_xpat<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -852,6 +866,7 @@ async fn handle_xpat<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the OVER command as defined in RFC 3977 Section 8.3.
+#[tracing::instrument(skip_all)]
 async fn handle_over<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -929,6 +944,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the NEWGROUPS command as defined in RFC 3977 Section 7.3.
+#[tracing::instrument(skip_all)]
 async fn handle_newgroups<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -969,6 +985,7 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the NEWNEWS command as defined in RFC 3977 Section 7.4.
+#[tracing::instrument(skip_all)]
 async fn handle_newnews<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
@@ -1018,6 +1035,7 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the CAPABILITIES command as defined in RFC 3977 Section 5.2.
+#[tracing::instrument(skip_all)]
 async fn handle_capabilities<W: AsyncWrite + Unpin>(
     writer: &mut W,
     state: &ConnectionState,
@@ -1039,6 +1057,7 @@ async fn handle_capabilities<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the DATE command as defined in RFC 3977 Section 7.1.
+#[tracing::instrument(skip_all)]
 async fn handle_date<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -1051,6 +1070,7 @@ async fn handle_date<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the HELP command as defined in RFC 3977 Section 7.2.
+#[tracing::instrument(skip_all)]
 async fn handle_help<W: AsyncWrite + Unpin>(
     writer: &mut W,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -1061,6 +1081,7 @@ async fn handle_help<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the AUTHINFO command as defined in RFC 4643 (USER/PASS only).
+#[tracing::instrument(skip_all)]
 async fn handle_authinfo<W: AsyncWrite + Unpin>(
     writer: &mut W,
     args: &[String],
@@ -1115,6 +1136,7 @@ async fn handle_authinfo<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the MODE command as defined in RFC 3977 Section 5.3.
+#[tracing::instrument(skip_all)]
 async fn handle_mode<W: AsyncWrite + Unpin>(
     writer: &mut W,
     args: &[String],
@@ -1141,6 +1163,7 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
 }
 
 /// Handle the POST command as defined in RFC 3977 Section 6.3.1.
+#[tracing::instrument(skip_all)]
 async fn handle_post<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1238,6 +1261,7 @@ async fn read_message<R: AsyncBufRead + Unpin>(
 }
 
 /// Handle the IHAVE command as defined in RFC 3977 Section 6.3.2.
+#[tracing::instrument(skip_all)]
 async fn handle_ihave<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1303,6 +1327,7 @@ where
 }
 
 /// Handle the TAKETHIS command (streaming extension, not in RFC 3977).
+#[tracing::instrument(skip_all)]
 async fn handle_takethis<R, W>(
     reader: &mut R,
     writer: &mut W,
@@ -1378,6 +1403,7 @@ where
     Ok(())
 }
 
+#[tracing::instrument(skip(socket, storage, auth, cfg))]
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
@@ -1414,6 +1440,7 @@ where
                 continue;
             }
         };
+        debug!("command" = %cmd.name);
         match cmd.name.as_str() {
             "QUIT" => {
                 if handle_quit(&mut write_half).await? {
