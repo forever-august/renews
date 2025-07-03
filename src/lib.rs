@@ -77,13 +77,10 @@ const RESP_481_AUTH_REJECTED: &str = "481 authentication rejected\r\n";
 const RESP_482_BAD_SEQUENCE: &str = "482 authentication commands out of sequence\r\n";
 const RESP_480_AUTH_REQUIRED: &str = "480 authentication required\r\n";
 const RESP_240_ARTICLE_RECEIVED: &str = "240 article received\r\n";
-const RESP_HELP_TEXT: &str = "CAPABILITIES\r\nMODE READER\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nIHAVE\r\nTAKETHIS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n";
+const RESP_HELP_TEXT: &str = "CAPABILITIES\r\nMODE READER\r\nMODE STREAM\r\nGROUP\r\nLIST\r\nLISTGROUP\r\nARTICLE\r\nHEAD\r\nBODY\r\nSTAT\r\nHDR\r\nOVER\r\nNEXT\r\nLAST\r\nNEWGROUPS\r\nNEWNEWS\r\nIHAVE\r\nCHECK\r\nTAKETHIS\r\nPOST\r\nDATE\r\nHELP\r\nQUIT\r\n";
 const RESP_CAP_VERSION: &str = "VERSION 2\r\n";
-const RESP_CAP_IMPLEMENTATION: &str = concat!(
-    "IMPLEMENTATION Renews ",
-    env!("CARGO_PKG_VERSION"),
-    "\r\n"
-);
+const RESP_CAP_IMPLEMENTATION: &str =
+    concat!("IMPLEMENTATION Renews ", env!("CARGO_PKG_VERSION"), "\r\n");
 const RESP_CAP_READER: &str = "READER\r\n";
 const RESP_CAP_POST: &str = "POST\r\n";
 const RESP_CAP_NEWNEWS: &str = "NEWNEWS\r\n";
@@ -106,6 +103,7 @@ const RESP_501_UNKNOWN_MODE: &str = "501 unknown mode\r\n";
 const RESP_501_MISSING_MODE: &str = "501 missing mode\r\n";
 const RESP_501_NOT_ENOUGH: &str = "501 not enough arguments\r\n";
 const RESP_100_HELP_FOLLOWS: &str = "100 help text follows\r\n";
+const RESP_203_STREAMING_PERMITTED: &str = "203 Streaming permitted\r\n";
 const DOT: &str = ".";
 
 fn extract_message_id(msg: &Message) -> Option<&str> {
@@ -1164,6 +1162,10 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
                     .write_all(RESP_201_POSTING_PROHIBITED.as_bytes())
                     .await?;
             }
+        } else if arg.eq_ignore_ascii_case("STREAM") {
+            writer
+                .write_all(RESP_203_STREAMING_PERMITTED.as_bytes())
+                .await?;
         } else {
             writer.write_all(RESP_501_UNKNOWN_MODE.as_bytes()).await?;
         }
@@ -1331,6 +1333,29 @@ where
             let _ = storage.store_article(g, &article).await?;
         }
         writer.write_all(RESP_235_TRANSFER_OK.as_bytes()).await?;
+    } else {
+        writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;
+    }
+    Ok(())
+}
+
+/// Handle the CHECK command (streaming extension, RFC 4644).
+#[tracing::instrument(skip_all)]
+async fn handle_check<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    storage: &DynStorage,
+    args: &[String],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if let Some(id) = args.get(0) {
+        if storage.get_article_by_id(id).await?.is_some() {
+            writer
+                .write_all(format!("438 {}\r\n", id).as_bytes())
+                .await?;
+        } else {
+            writer
+                .write_all(format!("238 {}\r\n", id).as_bytes())
+                .await?;
+        }
     } else {
         writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;
     }
@@ -1508,6 +1533,9 @@ where
             }
             "IHAVE" => {
                 handle_ihave(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
+            }
+            "CHECK" => {
+                handle_check(&mut write_half, &storage, &cmd.args).await?;
             }
             "TAKETHIS" => {
                 handle_takethis(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
