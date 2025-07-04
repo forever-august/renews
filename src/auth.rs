@@ -6,6 +6,9 @@ use std::sync::Arc;
 pub trait AuthProvider: Send + Sync {
     async fn add_user(&self, username: &str, password: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn verify_user(&self, username: &str, password: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    async fn add_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;
@@ -29,6 +32,11 @@ pub mod sqlite {
                 .await?;
             sqlx::query(
                 "CREATE TABLE IF NOT EXISTS users (\n                    username TEXT PRIMARY KEY,\n                    password_hash TEXT NOT NULL\n                )",
+            )
+            .execute(&pool)
+            .await?;
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS admins (\n                    username TEXT PRIMARY KEY REFERENCES users(username)\n                )",
             )
             .execute(&pool)
             .await?;
@@ -62,6 +70,30 @@ pub mod sqlite {
             } else {
                 Ok(false)
             }
+        }
+
+        async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+            let row = sqlx::query("SELECT 1 FROM admins WHERE username = ?")
+                .bind(username)
+                .fetch_optional(&self.pool)
+                .await?;
+            Ok(row.is_some())
+        }
+
+        async fn add_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("INSERT OR IGNORE INTO admins (username) VALUES (?)")
+                .bind(username)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM admins WHERE username = ?")
+                .bind(username)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
         }
     }
 }
