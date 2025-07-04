@@ -85,3 +85,37 @@ async fn ihave_missing_headers_rejected() {
             .is_none()
     );
 }
+
+#[tokio::test]
+async fn takethis_missing_headers_rejected() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc.test").await.unwrap();
+    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    let article = concat!(
+        "TAKETHIS <missing@test>\r\n",
+        "Message-ID: <missing@test>\r\n",
+        "Newsgroups: misc.test\r\n",
+        "\r\n",
+        "Body\r\n",
+        ".\r\n",
+    );
+    writer.write_all(article.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("439"));
+    assert!(
+        storage
+            .get_article_by_id("<missing@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
