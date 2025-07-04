@@ -1,15 +1,7 @@
 pub mod parse;
 pub use parse::{
-    Command,
-    Message,
-    Response,
-    ensure_message_id,
-    ensure_date,
-    parse_command,
-    parse_datetime,
-    parse_message,
-    parse_range,
-    parse_response,
+    Command, Message, Response, ensure_date, ensure_message_id, parse_command, parse_datetime,
+    parse_message, parse_range, parse_response,
 };
 
 pub mod auth;
@@ -1225,38 +1217,16 @@ where
     ensure_message_id(&mut message);
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
-    let newsgroups = match message
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-    {
-        Some((_, v)) => v
-            .split(',')
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>(),
-        None => Vec::new(),
-    };
-    if newsgroups.is_empty() {
-        writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
-        return Ok(());
-    }
-    let existing = storage.list_groups().await?;
-    if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
-        writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
-        return Ok(());
-    }
     let size = msg.as_bytes().len() as u64;
-    for g in &newsgroups {
-        if let Some(max) = cfg.max_size_for_group(g) {
-            if size > max {
-                writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
-                return Ok(());
-            }
+    let newsgroups = match validate_article(storage, cfg, &message, size).await {
+        Ok(g) => g,
+        Err(_) => {
+            writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
+            return Ok(());
         }
-    }
+    };
     for g in newsgroups {
-        let _ = storage.store_article(g, &message).await?;
+        let _ = storage.store_article(&g, &message).await?;
     }
     writer
         .write_all(RESP_240_ARTICLE_RECEIVED.as_bytes())
@@ -1282,6 +1252,49 @@ async fn read_message<R: AsyncBufRead + Unpin>(
         }
     }
     Ok(msg)
+}
+
+async fn validate_article(
+    storage: &DynStorage,
+    cfg: &Config,
+    article: &Message,
+    size: u64,
+) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+    let has_from = article
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("From"));
+    let has_subject = article
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("Subject"));
+    let newsgroups: Vec<String> = article
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+        .map(|(_, v)| {
+            v.split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if !has_from || !has_subject || newsgroups.is_empty() {
+        return Err("missing required headers".into());
+    }
+    let existing = storage.list_groups().await?;
+    if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
+        return Err("unknown group".into());
+    }
+    for g in &newsgroups {
+        if let Some(max) = cfg.max_size_for_group(g) {
+            if size > max {
+                return Err("article too large".into());
+            }
+        }
+    }
+    Ok(newsgroups)
 }
 
 /// Handle the IHAVE command as defined in RFC 3977 Section 6.3.2.
@@ -1314,37 +1327,16 @@ where
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
-        let newsgroups = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        if newsgroups.is_empty() {
-            writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
-            return Ok(());
-        }
-        let existing = storage.list_groups().await?;
-        if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
-            writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
-            return Ok(());
-        }
         let size = msg.as_bytes().len() as u64;
-        for g in &newsgroups {
-            if let Some(max) = cfg.max_size_for_group(g) {
-                if size > max {
-                    writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
-                    return Ok(());
-                }
+        let newsgroups = match validate_article(storage, cfg, &article, size).await {
+            Ok(g) => g,
+            Err(_) => {
+                writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
+                return Ok(());
             }
-        }
+        };
         for g in newsgroups {
-            let _ = storage.store_article(g, &article).await?;
+            let _ = storage.store_article(&g, &article).await?;
         }
         writer.write_all(RESP_235_TRANSFER_OK.as_bytes()).await?;
     } else {
@@ -1409,43 +1401,18 @@ where
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
-        let newsgroups = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(|s| s.trim())
-                    .filter(|s| !s.is_empty())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        if newsgroups.is_empty() {
-            writer
-                .write_all(format!("439 {}\r\n", id).as_bytes())
-                .await?;
-            return Ok(());
-        }
-        let existing = storage.list_groups().await?;
-        if !newsgroups.iter().all(|g| existing.iter().any(|e| e == g)) {
-            writer
-                .write_all(format!("439 {}\r\n", id).as_bytes())
-                .await?;
-            return Ok(());
-        }
         let size = msg.as_bytes().len() as u64;
-        for g in &newsgroups {
-            if let Some(max) = cfg.max_size_for_group(g) {
-                if size > max {
-                    writer
-                        .write_all(format!("439 {}\r\n", id).as_bytes())
-                        .await?;
-                    return Ok(());
-                }
+        let newsgroups = match validate_article(storage, cfg, &article, size).await {
+            Ok(g) => g,
+            Err(_) => {
+                writer
+                    .write_all(format!("439 {}\r\n", id).as_bytes())
+                    .await?;
+                return Ok(());
             }
-        }
+        };
         for g in newsgroups {
-            let _ = storage.store_article(g, &article).await?;
+            let _ = storage.store_article(&g, &article).await?;
         }
         writer
             .write_all(format!("239 {}\r\n", id).as_bytes())

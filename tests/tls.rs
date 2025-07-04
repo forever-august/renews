@@ -88,6 +88,8 @@ async fn tls_authinfo_and_post() {
     let article = concat!(
         "Message-ID: <post@test>\r\n",
         "Newsgroups: misc\r\n",
+        "From: user@example.com\r\n",
+        "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
         ".\r\n",
@@ -131,6 +133,8 @@ async fn post_without_msgid_generates_one() {
     line.clear();
     let article = concat!(
         "Newsgroups: misc\r\n",
+        "From: user@example.com\r\n",
+        "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
         ".\r\n",
@@ -173,6 +177,8 @@ async fn post_without_date_adds_header() {
     line.clear();
     let article = concat!(
         "Newsgroups: misc\r\n",
+        "From: user@example.com\r\n",
+        "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
         ".\r\n",
