@@ -145,10 +145,14 @@ impl Config {
     pub fn retention_for_group(&self, group: &str) -> Option<Duration> {
         if let Some(rule) = self.rule_for_group(group) {
             if let Some(days) = rule.retention_days {
-                return Some(Duration::days(days));
+                if days > 0 {
+                    return Some(Duration::days(days));
+                } else {
+                    return None;
+                }
             }
         }
-        self.default_retention_days.map(Duration::days)
+        self.default_retention_days.and_then(|d| if d > 0 { Some(Duration::days(d)) } else { None })
     }
 
     pub fn max_size_for_group(&self, group: &str) -> Option<u64> {
