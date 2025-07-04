@@ -2,6 +2,7 @@ use renews::config::Config;
 use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use tokio::sync::RwLock;
 
 mod common;
 
@@ -14,7 +15,9 @@ async fn ihave_rejects_large_article() {
             .unwrap(),
     );
     storage.add_group("misc.test", false).await.unwrap();
-    let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=10\n").unwrap();
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
+        toml::from_str("port=1199\ndefault_max_article_bytes=10\n").unwrap(),
+    ));
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -39,7 +42,9 @@ async fn ihave_rejects_large_article_with_suffix() {
             .unwrap(),
     );
     storage.add_group("misc.test", false).await.unwrap();
-    let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=\"1K\"\n").unwrap();
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
+        toml::from_str("port=1199\ndefault_max_article_bytes=\"1K\"\n").unwrap(),
+    ));
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
