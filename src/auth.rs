@@ -12,6 +12,9 @@ pub trait AuthProvider: Send + Sync {
     async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn update_pgp_key(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn get_pgp_key(&self, username: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>>;
+    async fn add_moderator(&self, username: &str, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn is_moderator(&self, username: &str, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;
@@ -34,12 +37,17 @@ pub mod sqlite {
                 .connect(path)
                 .await?;
             sqlx::query(
-                "CREATE TABLE IF NOT EXISTS users (\n                    username TEXT PRIMARY KEY,\n                    password_hash TEXT NOT NULL\n                )",
+                "CREATE TABLE IF NOT EXISTS users (\n                    username TEXT PRIMARY KEY,\n                    password_hash TEXT NOT NULL,\n                    key TEXT\n                )",
             )
             .execute(&pool)
             .await?;
             sqlx::query(
-                "CREATE TABLE IF NOT EXISTS admins (\n                    username TEXT PRIMARY KEY REFERENCES users(username),\n                    key TEXT NOT NULL\n                )",
+                "CREATE TABLE IF NOT EXISTS admins (\n                    username TEXT PRIMARY KEY REFERENCES users(username)\n                )",
+            )
+            .execute(&pool)
+            .await?;
+            sqlx::query(
+                "CREATE TABLE IF NOT EXISTS moderators (\n                    username TEXT REFERENCES users(username),\n                    pattern TEXT,\n                    PRIMARY KEY(username, pattern)\n                )",
             )
             .execute(&pool)
             .await?;
@@ -54,9 +62,10 @@ pub mod sqlite {
             let hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)?
                 .to_string();
-            sqlx::query("INSERT OR REPLACE INTO users (username, password_hash) VALUES (?, ?)")
+            sqlx::query("INSERT OR REPLACE INTO users (username, password_hash, key) VALUES (?, ?, (SELECT key FROM users WHERE username = ?))")
                 .bind(username)
                 .bind(hash)
+                .bind(username)
                 .execute(&self.pool)
                 .await?;
             Ok(())
@@ -68,6 +77,10 @@ pub mod sqlite {
                 .execute(&self.pool)
                 .await?;
             sqlx::query("DELETE FROM admins WHERE username = ?")
+                .bind(username)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM moderators WHERE username = ?")
                 .bind(username)
                 .execute(&self.pool)
                 .await?;
@@ -96,9 +109,13 @@ pub mod sqlite {
         }
 
         async fn add_admin(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-            sqlx::query("INSERT OR REPLACE INTO admins (username, key) VALUES (?, ?)")
+            sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
                 .bind(username)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("UPDATE users SET key = ? WHERE username = ?")
                 .bind(key)
+                .bind(username)
                 .execute(&self.pool)
                 .await?;
             Ok(())
@@ -113,7 +130,7 @@ pub mod sqlite {
         }
 
         async fn update_pgp_key(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-            sqlx::query("UPDATE admins SET key = ? WHERE username = ?")
+            sqlx::query("UPDATE users SET key = ? WHERE username = ?")
                 .bind(key)
                 .bind(username)
                 .execute(&self.pool)
@@ -122,15 +139,47 @@ pub mod sqlite {
         }
 
         async fn get_pgp_key(&self, username: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-            if let Some(row) = sqlx::query("SELECT key FROM admins WHERE username = ?")
+            if let Some(row) = sqlx::query("SELECT key FROM users WHERE username = ?")
                 .bind(username)
                 .fetch_optional(&self.pool)
                 .await? {
-                let k: String = row.get(0);
-                Ok(Some(k))
+                let k: Option<String> = row.try_get("key")?;
+                Ok(k)
             } else {
                 Ok(None)
             }
+        }
+
+        async fn add_moderator(&self, username: &str, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("INSERT OR REPLACE INTO moderators (username, pattern) VALUES (?, ?)")
+                .bind(username)
+                .bind(pattern)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM moderators WHERE username = ? AND pattern = ?")
+                .bind(username)
+                .bind(pattern)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn is_moderator(&self, username: &str, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+            let rows = sqlx::query("SELECT pattern FROM moderators WHERE username = ?")
+                .bind(username)
+                .fetch_all(&self.pool)
+                .await?;
+            for row in rows {
+                let pat: String = row.try_get("pattern")?;
+                if crate::wildmat::wildmat(&pat, group) {
+                    return Ok(true);
+                }
+            }
+            Ok(false)
         }
     }
 }
