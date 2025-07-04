@@ -209,22 +209,20 @@ async fn resolve_articles(
             return Err(ArticleQueryError::RangeEmpty);
         }
         let mut articles = Vec::new();
-        let mut found = false;
         for n in nums {
             if let Some(article) = storage
                 .get_article_by_number(group, n)
                 .await
                 .map_err(|_| ArticleQueryError::NotFoundByNumber)?
             {
-                found = true;
                 state.current_article = Some(n);
                 articles.push((n, article));
             }
         }
-        if found {
-            Ok(articles)
-        } else {
+        if articles.is_empty() {
             Err(ArticleQueryError::NotFoundByNumber)
+        } else {
+            Ok(articles)
         }
     } else {
         let group = match state.current_group.as_deref() {
@@ -261,7 +259,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(name) = args.get(0) {
         let groups = storage.list_groups().await?;
-        if !groups.iter().any(|g| g == name) {
+        if !groups.contains(name) {
             writer.write_all(RESP_411_NO_GROUP.as_bytes()).await?;
             return Ok(());
         }
