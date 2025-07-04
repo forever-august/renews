@@ -1,4 +1,5 @@
 port = 1199
+site_name = "example.com"
 db_path = "/var/spool/renews.db"
 auth_db_path = "/var/spool/renews_auth.db"
 tls_port = 563

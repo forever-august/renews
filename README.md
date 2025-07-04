@@ -19,6 +19,8 @@ otherwise `/etc/renews.toml` is assumed. The
 following keys are recognised:
 
 - `port` - TCP port for plain NNTP connections.
+- `site_name` - hostname advertised by the server. Defaults to the `HOSTNAME`
+  environment variable or `localhost` when unset.
 - `db_path` - path to the SQLite database file. Defaults to `/var/spool/renews.db`.
 - `auth_db_path` - optional path to the authentication database. Defaults to `db_path` when unset.
 - `tls_port` - optional port for NNTP over TLS.
@@ -34,6 +36,7 @@ An example configuration is provided in the repository:
 
 ```toml
 port = 1199
+site_name = "example.com"
 db_path = "/var/spool/renews.db"
 auth_db_path = "/var/spool/renews_auth.db"
 tls_port = 563
