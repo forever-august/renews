@@ -54,9 +54,6 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let auth_path = cfg.auth_db_path.as_deref().unwrap_or(&cfg.db_path);
     let auth_conn = format!("sqlite:{}", auth_path);
     let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_conn).await?);
-    for g in &cfg.groups {
-        storage.add_group(g).await?;
-    }
     let addr = format!("127.0.0.1:{}", cfg.port);
     info!("listening on {addr}");
     let listener = TcpListener::bind(&addr).await?;
