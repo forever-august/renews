@@ -1314,30 +1314,60 @@ async fn validate_article(
         m
     };
     if requires_approval {
-        let approved = article
+        let approved_values: Vec<String> = article
             .headers
             .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Approved"))
-            .map(|(_, v)| v.trim())
-            .ok_or("missing approval")?;
+            .filter(|(k, _)| k.eq_ignore_ascii_case("Approved"))
+            .map(|(_, v)| v.trim().to_string())
+            .collect();
+        if approved_values.is_empty() {
+            return Err("missing approval".into());
+        }
+        let sig_headers: Vec<String> = article
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
+            .map(|(_, v)| v.clone())
+            .collect();
+        if sig_headers.len() < approved_values.len() {
+            return Err("missing signature".into());
+        }
         for g in &newsgroups {
             if storage.is_group_moderated(g).await? {
-                if !auth.is_moderator(approved, g).await? {
+                let mut ok = false;
+                for a in &approved_values {
+                    if auth.is_moderator(a, g).await? {
+                        ok = true;
+                        break;
+                    }
+                }
+                if !ok {
                     return Err("not moderator".into());
                 }
             }
         }
-        let sig_header = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
-            .map(|(_, v)| v.clone())
-            .ok_or("missing signature")?;
-        let mut words = sig_header.split_whitespace();
-        let version = words.next().ok_or("bad signature")?;
-        let signed = words.next().ok_or("bad signature")?;
-        let sig_rest = words.collect::<Vec<_>>().join("\n");
-        control::verify_pgp(article, auth, approved, version, signed, &sig_rest).await?;
+        for (i, approved) in approved_values.iter().enumerate() {
+            let sig_header = sig_headers
+                .get(i)
+                .ok_or("missing signature")?
+                .clone();
+            let mut words = sig_header.split_whitespace();
+            let version = words.next().ok_or("bad signature")?;
+            let signed = words.next().ok_or("bad signature")?;
+            let sig_rest = words.collect::<Vec<_>>().join("\n");
+            let mut tmp_headers: Vec<(String, String)> = article
+                .headers
+                .iter()
+                .filter(|(k, _)| !k.eq_ignore_ascii_case("Approved"))
+                .cloned()
+                .collect();
+            tmp_headers.push(("Approved".to_string(), approved.clone()));
+            let tmp_msg = Message {
+                headers: tmp_headers,
+                body: article.body.clone(),
+            };
+            control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest).await?;
+        }
     }
     Ok(newsgroups)
 }
