@@ -1,7 +1,7 @@
 pub mod parse;
 pub use parse::{
-    Command, Message, Response, parse_command, parse_datetime, parse_message, parse_range,
-    parse_response,
+    parse_command, parse_datetime, parse_message, parse_range, parse_response, Command, Message,
+    Response,
 };
 
 pub mod auth;
@@ -22,6 +22,7 @@ pub struct ConnectionState {
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
+use chrono::Utc;
 use std::error::Error;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
@@ -666,6 +667,18 @@ fn get_header_value(msg: &Message, name: &str) -> Option<String> {
     None
 }
 
+fn ensure_date_header(msg: &mut Message) {
+    if msg
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("Date"))
+    {
+        return;
+    }
+    let now = Utc::now();
+    msg.headers.push(("Date".to_string(), now.to_rfc2822()));
+}
+
 async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Option<String> {
     match name.to_ascii_lowercase().as_str() {
         ":lines" => Some(msg.body.lines().count().to_string()),
@@ -1207,13 +1220,14 @@ where
             msg.push_str(&line);
         }
     }
-    let (_, message) = match parse_message(&msg) {
+    let (_, mut message) = match parse_message(&msg) {
         Ok(m) => m,
         Err(_) => {
             writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
             return Ok(());
         }
     };
+    ensure_date_header(&mut message);
     let newsgroups = match message
         .headers
         .iter()
