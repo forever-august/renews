@@ -9,6 +9,10 @@ fn default_db_path() -> String {
     "/var/spool/renews.db".into()
 }
 
+fn default_site_name() -> String {
+    std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
+}
+
 fn parse_size(input: &str) -> Option<u64> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -80,6 +84,8 @@ where
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub port: u16,
+    #[serde(default = "default_site_name")]
+    pub site_name: String,
     #[serde(default = "default_db_path")]
     pub db_path: String,
     #[serde(default)]
