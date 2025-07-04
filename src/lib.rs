@@ -1226,7 +1226,7 @@ where
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
     let size = msg.as_bytes().len() as u64;
-    let newsgroups = match validate_article(storage, cfg, &message, size).await {
+    let newsgroups = match validate_article(storage, auth, cfg, &message, size).await {
         Ok(g) => g,
         Err(_) => {
             writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
@@ -1264,6 +1264,7 @@ async fn read_message<R: AsyncBufRead + Unpin>(
 
 async fn validate_article(
     storage: &DynStorage,
+    auth: &DynAuth,
     cfg: &Config,
     article: &Message,
     size: u64,
@@ -1312,13 +1313,31 @@ async fn validate_article(
         }
         m
     };
-    if requires_approval
-        && !article
+    if requires_approval {
+        let approved = article
             .headers
             .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("Approved"))
-    {
-        return Err("missing approval".into());
+            .find(|(k, _)| k.eq_ignore_ascii_case("Approved"))
+            .map(|(_, v)| v.trim())
+            .ok_or("missing approval")?;
+        for g in &newsgroups {
+            if storage.is_group_moderated(g).await? {
+                if !auth.is_moderator(approved, g).await? {
+                    return Err("not moderator".into());
+                }
+            }
+        }
+        let sig_header = article
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
+            .map(|(_, v)| v.clone())
+            .ok_or("missing signature")?;
+        let mut words = sig_header.split_whitespace();
+        let version = words.next().ok_or("bad signature")?;
+        let signed = words.next().ok_or("bad signature")?;
+        let sig_rest = words.collect::<Vec<_>>().join("\n");
+        control::verify_pgp(article, auth, approved, version, signed, &sig_rest).await?;
     }
     Ok(newsgroups)
 }
@@ -1359,7 +1378,7 @@ where
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.as_bytes().len() as u64;
-        let newsgroups = match validate_article(storage, cfg, &article, size).await {
+        let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
             Ok(g) => g,
             Err(_) => {
                 writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
@@ -1440,7 +1459,7 @@ where
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.as_bytes().len() as u64;
-        let newsgroups = match validate_article(storage, cfg, &article, size).await {
+        let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
             Ok(g) => g,
             Err(_) => {
                 writer

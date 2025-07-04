@@ -62,18 +62,15 @@ pub fn canonical_text(msg: &Message, signed_headers: &str) -> String {
     out
 }
 
-async fn verify_pgp(
+pub async fn verify_pgp(
     msg: &Message,
     auth: &DynAuth,
-    from: &str,
+    user: &str,
     version: &str,
     signed_headers: &str,
     sig_data: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if !auth.is_admin(from).await? {
-        return Err("not admin".into());
-    }
-    let key_text = auth.get_pgp_key(from).await?.ok_or("no key")?;
+    let key_text = auth.get_pgp_key(user).await?.ok_or("no key")?;
     let (key, _) = SignedPublicKey::from_string(&key_text)?;
     let armor = format!(
         "-----BEGIN PGP SIGNATURE-----\nVersion: {}\n\n{}\n-----END PGP SIGNATURE-----\n",
@@ -110,6 +107,9 @@ pub async fn handle_control(
         .find(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
         .map(|(_, v)| v.clone())
         .ok_or("missing signature")?;
+    if !auth.is_admin(from).await? {
+        return Err("not admin".into());
+    }
     let mut words = sig_header.split_whitespace();
     let version = words.next().ok_or("bad signature")?;
     let signed = words.next().ok_or("bad signature")?;
