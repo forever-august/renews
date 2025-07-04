@@ -148,3 +148,48 @@ async fn control_cancel_removes_article() {
             .is_none()
     );
 }
+#[tokio::test]
+async fn admin_cancel_ignores_lock() {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+    use sha2::{Digest, Sha256};
+
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    storage.add_group("misc.test", false).await.unwrap();
+
+    // store an article with a cancel-lock
+    let key = "secret";
+    let key_b64 = STANDARD.encode(key);
+    let lock_hash = Sha256::digest(key_b64.as_bytes());
+    let lock_b64 = STANDARD.encode(lock_hash);
+    let orig = format!(
+        "Message-ID: <al@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{}\r\n\r\nBody",
+        lock_b64
+    );
+    let (_, msg) = parse_message(&orig).unwrap();
+    storage.store_article("misc.test", &msg).await.unwrap();
+
+    // admin setup
+    auth.add_user("admin@example.org", "x").await.unwrap();
+    auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
+    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
+    let (mut reader, mut writer) = common::connect(addr).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+
+    writer.write_all(b"IHAVE <c2@test>\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    let article = build_control_article("cancel <al@test>", "cancel\n");
+    writer.write_all(article.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("235"));
+    assert!(
+        storage
+            .get_article_by_id("<al@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
