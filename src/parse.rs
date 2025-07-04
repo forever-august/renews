@@ -265,6 +265,21 @@ pub fn ensure_message_id(msg: &mut Message) {
         .push(("Message-ID".into(), format!("<{}>", hex)));
 }
 
+/// Ensure a Date header is present. When missing, one is set to the current
+/// time in RFC 2822 format.
+pub fn ensure_date(msg: &mut Message) {
+    if msg
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("Date"))
+    {
+        return;
+    }
+    let now = chrono::Utc::now();
+    msg.headers
+        .push(("Date".into(), now.to_rfc2822()));
+}
+
 /// Parse the date and time arguments used by NEWGROUPS and NEWNEWS
 /// commands as described in RFC 3977 Sections 7.3.1 and 7.4.1.
 pub fn parse_datetime(
@@ -416,6 +431,26 @@ mod tests {
             .map(|(_, v)| v.clone())
             .collect();
         assert_eq!(ids, vec!["<1@test>".to_string()]);
+    }
+
+    #[test]
+    fn test_ensure_date_adds_header() {
+        let (_, mut msg) = parse_message("Newsgroups: misc\r\n\r\nBody").unwrap();
+        ensure_date(&mut msg);
+        assert!(msg.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("Date")));
+    }
+
+    #[test]
+    fn test_ensure_date_preserves_existing() {
+        let (_, mut msg) = parse_message("Date: 6 Oct 1998 04:38:40 -0500\r\n\r\nBody").unwrap();
+        ensure_date(&mut msg);
+        let dates: Vec<_> = msg
+            .headers
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("Date"))
+            .map(|(_, v)| v.clone())
+            .collect();
+        assert_eq!(dates, vec!["6 Oct 1998 04:38:40 -0500".to_string()]);
     }
 
     #[test]

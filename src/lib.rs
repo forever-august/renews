@@ -4,6 +4,7 @@ pub use parse::{
     Message,
     Response,
     ensure_message_id,
+    ensure_date,
     parse_command,
     parse_datetime,
     parse_message,
@@ -1222,6 +1223,7 @@ where
         }
     };
     ensure_message_id(&mut message);
+    parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
     let newsgroups = match message
         .headers
@@ -1310,6 +1312,7 @@ where
             }
         };
         ensure_message_id(&mut article);
+        parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let newsgroups = article
             .headers
@@ -1404,6 +1407,7 @@ where
             }
         };
         ensure_message_id(&mut article);
+        parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let newsgroups = article
             .headers
