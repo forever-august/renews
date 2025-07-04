@@ -64,6 +64,134 @@ pub struct Message {
     pub body: String,
 }
 
+/// Unescape a Message-ID according to RFC 2822 quoted-pair rules.
+/// This removes surrounding whitespace and comments, strips quote
+/// characters when present and processes backslash escapes.
+pub fn unescape_message_id(id: &str) -> String {
+    let mut out = String::new();
+    let trimmed = id.trim();
+    if !trimmed.starts_with('<') || !trimmed.ends_with('>') {
+        return trimmed.to_string();
+    }
+    out.push('<');
+    let mut chars = trimmed[1..trimmed.len() - 1].chars().peekable();
+    let mut in_quotes = false;
+    let mut in_brackets = false;
+    let mut comment_depth = 0u32;
+    while let Some(c) = chars.next() {
+        if comment_depth > 0 {
+            if c == '(' {
+                comment_depth += 1;
+            } else if c == ')' {
+                comment_depth -= 1;
+            }
+            continue;
+        }
+        match c {
+            '"' if !in_brackets => {
+                in_quotes = !in_quotes;
+            }
+            '[' if !in_quotes => {
+                in_brackets = true;
+                out.push('[');
+            }
+            ']' if in_brackets => {
+                in_brackets = false;
+                out.push(']');
+            }
+            '\\' if in_quotes || in_brackets => {
+                if let Some(n) = chars.next() {
+                    out.push(n);
+                }
+            }
+            '(' if !in_quotes && !in_brackets => {
+                comment_depth = 1;
+            }
+            c if c.is_whitespace() && !in_quotes && !in_brackets => {}
+            _ => out.push(c),
+        }
+    }
+    out.push('>');
+    out
+}
+
+/// Escape a Message-ID by quoting components when necessary and
+/// escaping special characters. The input should already be unescaped.
+pub fn escape_message_id(id: &str) -> String {
+    let trimmed = id.trim();
+    if !trimmed.starts_with('<') || !trimmed.ends_with('>') {
+        return trimmed.to_string();
+    }
+    let inner = &trimmed[1..trimmed.len() - 1];
+    let (left, right) = match inner.split_once('@') {
+        Some(v) => v,
+        None => return trimmed.to_string(),
+    };
+    let mut esc_left = String::new();
+    let needs_quote = left.chars().any(|c| {
+        !(c.is_ascii_alphanumeric()
+            || matches!(
+                c,
+                '!' | '#'
+                    | '$'
+                    | '%'
+                    | '&'
+                    | '\''
+                    | '*'
+                    | '+'
+                    | '-'
+                    | '/'
+                    | '='
+                    | '?'
+                    | '^'
+                    | '_'
+                    | '`'
+                    | '{'
+                    | '|'
+                    | '}'
+                    | '~'
+                    | '.'
+            ))
+    });
+    if needs_quote {
+        esc_left.push('"');
+    }
+    for ch in left.chars() {
+        if ch == '"' || ch == '\\' {
+            esc_left.push('\\');
+        }
+        esc_left.push(ch);
+    }
+    if needs_quote {
+        esc_left.push('"');
+    }
+
+    let mut esc_right = String::new();
+    if right.starts_with('[') && right.ends_with(']') {
+        esc_right.push('[');
+        let inner = &right[1..right.len() - 1];
+        for ch in inner.chars() {
+            if ch == '\\' || ch == ']' || ch == '[' {
+                esc_right.push('\\');
+            }
+            esc_right.push(ch);
+        }
+        esc_right.push(']');
+    } else {
+        esc_right.push_str(right);
+    }
+    format!("<{}@{}>", esc_left, esc_right)
+}
+
+/// Replace the Message-ID header of `msg` with an escaped version.
+pub fn escape_message_id_header(msg: &mut Message) {
+    for (name, val) in msg.headers.iter_mut() {
+        if name.eq_ignore_ascii_case("Message-ID") {
+            *val = escape_message_id(val);
+        }
+    }
+}
+
 /// Parse a single article header line including folded continuation
 /// lines as defined in RFC 3977 Section 3.6 "Articles".
 fn parse_header_line(mut input: &str) -> IResult<&str, (String, String)> {
@@ -107,7 +235,12 @@ fn parse_headers(mut input: &str) -> IResult<&str, Vec<(String, String)>> {
 /// Parse an entire article consisting of headers and body
 /// following the rules in RFC 3977 Section 3.6.
 pub fn parse_message(input: &str) -> IResult<&str, Message> {
-    let (input, headers) = parse_headers(input)?;
+    let (input, mut headers) = parse_headers(input)?;
+    for (name, val) in headers.iter_mut() {
+        if name.eq_ignore_ascii_case("Message-ID") {
+            *val = unescape_message_id(val);
+        }
+    }
     let body = input.to_string();
     Ok(("", Message { headers, body }))
 }
@@ -265,10 +398,11 @@ mod tests {
     fn test_ensure_message_id_adds_header() {
         let (_, mut msg) = parse_message("Newsgroups: misc\r\n\r\nBody").unwrap();
         ensure_message_id(&mut msg);
-        assert!(msg
-            .headers
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("Message-ID")));
+        assert!(
+            msg.headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+        );
     }
 
     #[test]
@@ -282,5 +416,26 @@ mod tests {
             .map(|(_, v)| v.clone())
             .collect();
         assert_eq!(ids, vec!["<1@test>".to_string()]);
+    }
+
+    #[test]
+    fn test_escape_unescape_message_id() {
+        let text = "Message-ID: <\"id\\\"left\"@example.com>\r\n\r\nB";
+        let (_, mut msg) = parse_message(text).unwrap();
+        let id_unescaped = msg
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(id_unescaped, "<id\"left@example.com>");
+        escape_message_id_header(&mut msg);
+        let id_escaped = msg
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+            .map(|(_, v)| v.clone())
+            .unwrap();
+        assert_eq!(id_escaped, "<\"id\\\"left\"@example.com>");
     }
 }

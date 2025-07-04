@@ -1222,6 +1222,7 @@ where
         }
     };
     ensure_message_id(&mut message);
+    parse::escape_message_id_header(&mut message);
     let newsgroups = match message
         .headers
         .iter()
@@ -1309,6 +1310,7 @@ where
             }
         };
         ensure_message_id(&mut article);
+        parse::escape_message_id_header(&mut article);
         let newsgroups = article
             .headers
             .iter()
@@ -1402,6 +1404,7 @@ where
             }
         };
         ensure_message_id(&mut article);
+        parse::escape_message_id_header(&mut article);
         let newsgroups = article
             .headers
             .iter()
