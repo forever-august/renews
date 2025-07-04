@@ -80,8 +80,6 @@ where
 #[derive(Deserialize, Clone)]
 pub struct Config {
     pub port: u16,
-    #[serde(default)]
-    pub groups: Vec<String>,
     #[serde(default = "default_db_path")]
     pub db_path: String,
     #[serde(default)]
