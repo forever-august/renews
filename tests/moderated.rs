@@ -58,6 +58,41 @@ fn build_article() -> String {
     format!("{}{}\r\n\r\nBody\r\n.\r\n", headers, xhdr)
 }
 
+fn build_cross_article() -> String {
+    let base = concat!(
+        "Message-ID: <pa@test>\r\n",
+        "Newsgroups: mod.one,mod.two\r\n",
+        "From: poster@example.com\r\n",
+        "Subject: t\r\n",
+        "Date: Wed, 05 Oct 2022 00:00:00 GMT\r\n",
+    );
+    // build first signature for mod1
+    let article1 = format!("{}Approved: mod1\r\n\r\nBody\n", base);
+    let (_, msg1) = parse_message(&article1).unwrap();
+    let signed = "Message-ID,Newsgroups,From,Subject,Approved,Date";
+    let data1 = canonical_text(&msg1, signed);
+    let (ver1, lines1) = build_sig(&data1);
+    let mut x1 = format!("X-PGP-Sig: {} {}", ver1, signed);
+    for l in &lines1 {
+        x1.push_str("\r\n ");
+        x1.push_str(l);
+    }
+    // build second signature for mod2
+    let article2 = format!("{}Approved: mod2\r\n\r\nBody\n", base);
+    let (_, msg2) = parse_message(&article2).unwrap();
+    let data2 = canonical_text(&msg2, signed);
+    let (ver2, lines2) = build_sig(&data2);
+    let mut x2 = format!("X-PGP-Sig: {} {}", ver2, signed);
+    for l in &lines2 {
+        x2.push_str("\r\n ");
+        x2.push_str(l);
+    }
+    format!(
+        "{}Approved: mod1\r\nApproved: mod2\r\n{}\r\n{}\r\n\r\nBody\r\n.\r\n",
+        base, x1, x2
+    )
+}
+
 #[tokio::test]
 async fn post_requires_approval_for_moderated_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
@@ -145,5 +180,53 @@ async fn post_with_approval_succeeds() {
             .await
             .unwrap()
             .is_some()
+    );
+}
+
+#[tokio::test]
+async fn cross_post_different_moderators() {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    storage.add_group("mod.one", true).await.unwrap();
+    storage.add_group("mod.two", true).await.unwrap();
+    auth.add_user("poster", "pass").await.unwrap();
+    auth.add_user("mod1", "x").await.unwrap();
+    auth.add_user("mod2", "x").await.unwrap();
+    auth.update_pgp_key("mod1", ADMIN_PUB).await.unwrap();
+    auth.update_pgp_key("mod2", ADMIN_PUB).await.unwrap();
+    auth.add_moderator("mod1", "mod.one").await.unwrap();
+    auth.add_moderator("mod2", "mod.two").await.unwrap();
+    let (addr, cert, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
+    let mut line = String::new();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"AUTHINFO USER poster\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"MODE READER\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"GROUP mod.one\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    line.clear();
+    writer.write_all(b"POST\r\n").await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("340"));
+    line.clear();
+    let article = build_cross_article();
+    writer.write_all(article.as_bytes()).await.unwrap();
+    reader.read_line(&mut line).await.unwrap();
+    assert!(line.starts_with("240"));
+    assert_eq!(
+        storage.list_article_numbers("mod.one").await.unwrap(),
+        vec![1]
+    );
+    assert_eq!(
+        storage.list_article_numbers("mod.two").await.unwrap(),
+        vec![1]
     );
 }
