@@ -49,6 +49,10 @@ enum AdminCommand {
     AddAdmin { username: String, key: String },
     /// Revoke admin privileges from a user
     RemoveAdmin { username: String },
+    /// Add a moderator pattern for a user
+    AddModerator { username: String, pattern: String },
+    /// Remove a moderator pattern for a user
+    RemoveModerator { username: String, pattern: String },
 }
 
 fn load_tls_config(
@@ -86,6 +90,12 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
         AdminCommand::RemoveUser { username } => auth.remove_user(&username).await?,
         AdminCommand::AddAdmin { username, key } => auth.add_admin(&username, &key).await?,
         AdminCommand::RemoveAdmin { username } => auth.remove_admin(&username).await?,
+        AdminCommand::AddModerator { username, pattern } => {
+            auth.add_moderator(&username, &pattern).await?
+        }
+        AdminCommand::RemoveModerator { username, pattern } => {
+            auth.remove_moderator(&username, &pattern).await?
+        }
     }
     Ok(())
 }
