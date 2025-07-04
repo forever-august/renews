@@ -41,8 +41,8 @@ enum AdminCommand {
     AddUser { username: String, password: String },
     /// Remove a user
     RemoveUser { username: String },
-    /// Grant admin privileges to a user
-    AddAdmin { username: String },
+    /// Grant admin privileges to a user with the provided PGP public key
+    AddAdmin { username: String, key: String },
     /// Revoke admin privileges from a user
     RemoveAdmin { username: String },
 }
@@ -80,7 +80,7 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
         AdminCommand::RemoveGroup { group } => storage.remove_group(&group).await?,
         AdminCommand::AddUser { username, password } => auth.add_user(&username, &password).await?,
         AdminCommand::RemoveUser { username } => auth.remove_user(&username).await?,
-        AdminCommand::AddAdmin { username } => auth.add_admin(&username).await?,
+        AdminCommand::AddAdmin { username, key } => auth.add_admin(&username, &key).await?,
         AdminCommand::RemoveAdmin { username } => auth.remove_admin(&username).await?,
     }
     Ok(())
