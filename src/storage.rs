@@ -28,6 +28,9 @@ pub trait Storage: Send + Sync {
     /// Add a newsgroup to the server's list
     async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 
+    /// Remove a newsgroup from the server's list
+    async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+
     /// Retrieve all newsgroups carried by the server
     async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
 
@@ -238,6 +241,24 @@ pub mod sqlite {
                 .bind(now)
                 .execute(&self.pool)
                 .await?;
+            Ok(())
+        }
+
+        #[tracing::instrument(skip_all)]
+        async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM group_articles WHERE group_name = ?")
+                .bind(group)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM groups WHERE name = ?")
+                .bind(group)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query(
+                "DELETE FROM messages WHERE message_id NOT IN (SELECT DISTINCT message_id FROM group_articles)"
+            )
+            .execute(&self.pool)
+            .await?;
             Ok(())
         }
 

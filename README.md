@@ -80,3 +80,25 @@ WantedBy=multi-user.target
 Install the file as `/etc/systemd/system/renews.service` and run
 `systemctl enable --now renews` to start the server at boot.
 
+
+## Administration
+
+Use the `admin` subcommand to manage newsgroups and users without starting the
+server. These commands read the same configuration file as the server itself.
+
+```bash
+# configuration is supplied via the environment
+export RENEWS_CONFIG=/opt/renews/config.toml
+
+# add a newsgroup
+renews admin add-group rust.news
+
+# remove a user
+renews admin remove-user alice
+
+# grant admin privileges
+renews admin add-admin alice
+
+# revoke admin privileges
+renews admin remove-admin alice
+```
