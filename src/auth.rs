@@ -5,6 +5,7 @@ use std::sync::Arc;
 #[async_trait]
 pub trait AuthProvider: Send + Sync {
     async fn add_user(&self, username: &str, password: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn verify_user(&self, username: &str, password: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
     async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
     async fn add_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
@@ -54,6 +55,18 @@ pub mod sqlite {
             sqlx::query("INSERT OR REPLACE INTO users (username, password_hash) VALUES (?, ?)")
                 .bind(username)
                 .bind(hash)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM users WHERE username = ?")
+                .bind(username)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query("DELETE FROM admins WHERE username = ?")
+                .bind(username)
                 .execute(&self.pool)
                 .await?;
             Ok(())

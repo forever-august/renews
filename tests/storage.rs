@@ -43,6 +43,10 @@ async fn add_and_list_groups() {
     storage.add_group("g2").await.unwrap();
     let groups = storage.list_groups().await.unwrap();
     assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
+
+    storage.remove_group("g1").await.unwrap();
+    let groups = storage.list_groups().await.unwrap();
+    assert_eq!(groups, vec!["g2".to_string()]);
 }
 
 #[tokio::test]
