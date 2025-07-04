@@ -8,7 +8,11 @@ mod common;
 #[tokio::test]
 async fn ihave_rejects_large_article() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
     storage.add_group("misc.test").await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=10\n").unwrap();
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
@@ -20,7 +24,7 @@ async fn ihave_rejects_large_article() {
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("335"));
     line.clear();
-    let article = "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\n0123456789A\r\n.\r\n";
+    let article = "Message-ID: <1@test>\r\nFrom: a@test\r\nSubject: S\r\nNewsgroups: misc.test\r\n\r\n0123456789A\r\n.\r\n";
     writer.write_all(article.as_bytes()).await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("437"));
@@ -29,7 +33,11 @@ async fn ihave_rejects_large_article() {
 #[tokio::test]
 async fn ihave_rejects_large_article_with_suffix() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
     storage.add_group("misc.test").await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=\"1K\"\n").unwrap();
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
@@ -43,7 +51,7 @@ async fn ihave_rejects_large_article_with_suffix() {
     line.clear();
     let body = "A".repeat(1100);
     let article = format!(
-        "Message-ID: <2@test>\r\nNewsgroups: misc.test\r\n\r\n{}\r\n.\r\n",
+        "Message-ID: <2@test>\r\nFrom: b@test\r\nSubject: B\r\nNewsgroups: misc.test\r\n\r\n{}\r\n.\r\n",
         body
     );
     writer.write_all(article.as_bytes()).await.unwrap();

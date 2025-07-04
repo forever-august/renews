@@ -87,6 +87,8 @@ async fn tls_authinfo_and_post() {
     line.clear();
     let article = concat!(
         "Message-ID: <post@test>\r\n",
+        "From: poster@example.com\r\n",
+        "Subject: test\r\n",
         "Newsgroups: misc\r\n",
         "\r\n",
         "Body\r\n",

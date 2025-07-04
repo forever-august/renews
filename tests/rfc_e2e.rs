@@ -1390,6 +1390,8 @@ async fn mode_stream_check_and_takethis() {
 
     let art1 = concat!(
         "TAKETHIS <stream1@test>\r\n",
+        "From: poster1@test\r\n",
+        "Subject: one\r\n",
         "Newsgroups: misc.test\r\n",
         "Message-ID: <stream1@test>\r\n",
         "\r\n",
@@ -1403,6 +1405,8 @@ async fn mode_stream_check_and_takethis() {
 
     let art2 = concat!(
         "TAKETHIS <stream2@test>\r\n",
+        "From: poster2@test\r\n",
+        "Subject: two\r\n",
         "Newsgroups: misc.test\r\n",
         "Message-ID: <stream2@test>\r\n",
         "\r\n",

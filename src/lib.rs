@@ -1214,6 +1214,12 @@ where
             return Ok(());
         }
     };
+    let from = get_header_value(&message, "From").unwrap_or_default();
+    let subject = get_header_value(&message, "Subject").unwrap_or_default();
+    if from.is_empty() || subject.is_empty() {
+        writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
+        return Ok(());
+    }
     let newsgroups = match message
         .headers
         .iter()
@@ -1300,6 +1306,12 @@ where
                 return Ok(());
             }
         };
+        let from = get_header_value(&article, "From").unwrap_or_default();
+        let subject = get_header_value(&article, "Subject").unwrap_or_default();
+        if from.is_empty() || subject.is_empty() {
+            writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
+            return Ok(());
+        }
         let newsgroups = article
             .headers
             .iter()
@@ -1392,6 +1404,14 @@ where
                 return Ok(());
             }
         };
+        let from = get_header_value(&article, "From").unwrap_or_default();
+        let subject = get_header_value(&article, "Subject").unwrap_or_default();
+        if from.is_empty() || subject.is_empty() {
+            writer
+                .write_all(format!("439 {}\r\n", id).as_bytes())
+                .await?;
+            return Ok(());
+        }
         let newsgroups = article
             .headers
             .iter()
