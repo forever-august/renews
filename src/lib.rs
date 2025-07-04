@@ -24,9 +24,11 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
 use std::error::Error;
+use std::sync::Arc;
 use tokio::io::{
     self, AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader,
 };
+use tokio::sync::RwLock;
 use tracing::debug;
 
 const RESP_CRLF: &str = "\r\n";
@@ -1345,10 +1347,7 @@ async fn validate_article(
             }
         }
         for (i, approved) in approved_values.iter().enumerate() {
-            let sig_header = sig_headers
-                .get(i)
-                .ok_or("missing signature")?
-                .clone();
+            let sig_header = sig_headers.get(i).ok_or("missing signature")?.clone();
             let mut words = sig_header.split_whitespace();
             let version = words.next().ok_or("bad signature")?;
             let signed = words.next().ok_or("bad signature")?;
@@ -1513,7 +1512,7 @@ pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
     auth: DynAuth,
-    cfg: Config,
+    cfg: Arc<RwLock<Config>>,
     is_tls: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
@@ -1601,12 +1600,13 @@ where
                 .await?;
             }
             "IHAVE" => {
+                let cfg_guard = cfg.read().await;
                 handle_ihave(
                     &mut reader,
                     &mut write_half,
                     &storage,
                     &auth,
-                    &cfg,
+                    &cfg_guard,
                     &cmd.args,
                 )
                 .await?;
@@ -1615,12 +1615,13 @@ where
                 handle_check(&mut write_half, &storage, &cmd.args).await?;
             }
             "TAKETHIS" => {
+                let cfg_guard = cfg.read().await;
                 handle_takethis(
                     &mut reader,
                     &mut write_half,
                     &storage,
                     &auth,
-                    &cfg,
+                    &cfg_guard,
                     &cmd.args,
                 )
                 .await?;
@@ -1642,8 +1643,16 @@ where
             }
             "POST" => {
                 if state.is_tls {
-                    handle_post(&mut reader, &mut write_half, &storage, &auth, &cfg, &state)
-                        .await?;
+                    let cfg_guard = cfg.read().await;
+                    handle_post(
+                        &mut reader,
+                        &mut write_half,
+                        &storage,
+                        &auth,
+                        &cfg_guard,
+                        &state,
+                    )
+                    .await?;
                 } else {
                     write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }

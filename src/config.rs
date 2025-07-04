@@ -160,4 +160,14 @@ impl Config {
             .and_then(|r| r.max_article_bytes)
             .or(self.default_max_article_bytes)
     }
+
+    /// Update runtime-adjustable values from a new configuration.
+    /// Only retention, group, and TLS settings are changed.
+    pub fn update_runtime(&mut self, other: Config) {
+        self.default_retention_days = other.default_retention_days;
+        self.default_max_article_bytes = other.default_max_article_bytes;
+        self.group_settings = other.group_settings;
+        self.tls_cert = other.tls_cert;
+        self.tls_key = other.tls_key;
+    }
 }

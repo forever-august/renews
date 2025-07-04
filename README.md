@@ -71,6 +71,7 @@ After=network.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/renews --config /opt/renews/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
 WorkingDirectory=/opt/renews
 Restart=on-failure
 User=renews
@@ -82,6 +83,10 @@ WantedBy=multi-user.target
 
 Install the file as `/etc/systemd/system/renews.service` and run
 `systemctl enable --now renews` to start the server at boot.
+
+Sending `SIGHUP` to the process (for example with `systemctl reload`) reloads
+the configuration. Retention, group, and TLS settings are updated at runtime;
+the listening ports and database paths remain unchanged.
 
 
 ## Administration

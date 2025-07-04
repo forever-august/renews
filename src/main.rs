@@ -14,6 +14,8 @@ use renews::config::Config;
 use renews::retention::cleanup_expired_articles;
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
+use tokio::signal::unix::{SignalKind, signal};
+use tokio::sync::RwLock;
 
 #[derive(Parser)]
 struct Args {
@@ -104,18 +106,34 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    let cfg = Config::from_file(&args.config)?;
+    let cfg_path = args.config.clone();
+    let cfg_initial = Config::from_file(&cfg_path)?;
 
     if let Some(Command::Admin(cmd)) = args.command {
-        run_admin(cmd, &cfg).await?;
+        run_admin(cmd, &cfg_initial).await?;
         return Ok(());
     }
-    let db_conn = format!("sqlite:{}", cfg.db_path);
+    let cfg = Arc::new(RwLock::new(cfg_initial));
+    let tls_acceptor: Arc<RwLock<Option<TlsAcceptor>>> = Arc::new(RwLock::new(None));
+    let db_conn = {
+        let cfg_guard = cfg.read().await;
+        format!("sqlite:{}", cfg_guard.db_path)
+    };
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&db_conn).await?);
-    let auth_path = cfg.auth_db_path.as_deref().unwrap_or(&cfg.db_path);
+    let auth_path = {
+        let cfg_guard = cfg.read().await;
+        cfg_guard
+            .auth_db_path
+            .as_deref()
+            .unwrap_or(&cfg_guard.db_path)
+            .to_string()
+    };
     let auth_conn = format!("sqlite:{}", auth_path);
     let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_conn).await?);
-    let addr = format!("127.0.0.1:{}", cfg.port);
+    let addr = {
+        let cfg_guard = cfg.read().await;
+        format!("127.0.0.1:{}", cfg_guard.port)
+    };
     info!("listening on {addr}");
     let listener = TcpListener::bind(&addr).await?;
     let storage_clone = storage.clone();
@@ -136,50 +154,94 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     });
 
-    if let (Some(tls_port), Some(cert), Some(key)) =
-        (cfg.tls_port, cfg.tls_cert.as_ref(), cfg.tls_key.as_ref())
     {
-        let tls_addr = format!("127.0.0.1:{}", tls_port);
-        info!("listening TLS on {tls_addr}");
-        let tls_listener = TcpListener::bind(&tls_addr).await?;
-        let tls_config = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
+        let cfg_guard = cfg.read().await;
+        if let (Some(tls_port), Some(cert), Some(key)) = (
+            cfg_guard.tls_port,
+            cfg_guard.tls_cert.as_ref(),
+            cfg_guard.tls_key.as_ref(),
+        ) {
+            let tls_addr = format!("127.0.0.1:{}", tls_port);
+            info!("listening TLS on {tls_addr}");
+            let tls_listener = TcpListener::bind(&tls_addr).await?;
+            let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
+            *tls_acceptor.write().await = Some(acceptor.clone());
+            let storage_clone = storage.clone();
+            let auth_clone = auth.clone();
+            let cfg_clone = cfg.clone();
+            let acceptor_handle = tls_acceptor.clone();
+            tokio::spawn(async move {
+                loop {
+                    let (socket, _) = tls_listener.accept().await.unwrap();
+                    info!("accepted TLS connection");
+                    let st = storage_clone.clone();
+                    let au = auth_clone.clone();
+                    let cfg = cfg_clone.clone();
+                    let acceptor_opt = { acceptor_handle.read().await.clone() };
+                    tokio::spawn(async move {
+                        if let Some(acc) = acceptor_opt {
+                            match acc.accept(socket).await {
+                                Ok(stream) => {
+                                    if let Err(e) =
+                                        renews::handle_client(stream, st, au, cfg, true).await
+                                    {
+                                        error!("client error: {e}");
+                                    }
+                                }
+                                Err(e) => error!("tls error: {e}"),
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
         let storage_clone = storage.clone();
-        let auth_clone = auth.clone();
         let cfg_clone = cfg.clone();
         tokio::spawn(async move {
             loop {
-                let (socket, _) = tls_listener.accept().await.unwrap();
-                info!("accepted TLS connection");
-                let acceptor = tls_config.clone();
-                let st = storage_clone.clone();
-                let au = auth_clone.clone();
-                let cfg = cfg_clone.clone();
-                tokio::spawn(async move {
-                    match acceptor.accept(socket).await {
-                        Ok(stream) => {
-                            if let Err(e) = renews::handle_client(stream, st, au, cfg, true).await {
-                                error!("client error: {e}");
-                            }
-                        }
-                        Err(e) => error!("tls error: {e}"),
-                    }
-                });
+                let cfg_guard = cfg_clone.read().await;
+                if let Err(e) = cleanup_expired_articles(&*storage_clone, &cfg_guard).await {
+                    error!("retention cleanup error: {e}");
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
             }
         });
-    }
 
-    let storage_clone = storage.clone();
-    let cfg_clone = cfg.clone();
-    tokio::spawn(async move {
-        loop {
-            if let Err(e) = cleanup_expired_articles(&*storage_clone, &cfg_clone).await {
-                error!("retention cleanup error: {e}");
+        // Reload configuration on SIGHUP
+        let cfg_reload = cfg.clone();
+        let tls_reload = tls_acceptor.clone();
+        let cfg_path_reload = cfg_path.clone();
+        tokio::spawn(async move {
+            if let Ok(mut hup) = signal(SignalKind::hangup()) {
+                while hup.recv().await.is_some() {
+                    match Config::from_file(&cfg_path_reload) {
+                        Ok(new_cfg) => {
+                            if let (Some(cert), Some(key)) = (
+                                new_cfg.tls_cert.as_ref(),
+                                new_cfg.tls_key.as_ref(),
+                            ) {
+                                match load_tls_config(cert, key) {
+                                    Ok(conf) => {
+                                        *tls_reload.write().await =
+                                            Some(TlsAcceptor::from(Arc::new(conf)));
+                                    }
+                                    Err(e) => error!("failed to load tls config: {e}"),
+                                }
+                            }
+                            cfg_reload.write().await.update_runtime(new_cfg);
+                            info!("configuration reloaded");
+                        }
+                        Err(e) => {
+                            error!("failed to reload config: {e}");
+                        }
+                    }
+                }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-        }
-    });
+        });
 
-    tokio::signal::ctrl_c().await?;
-    info!("shutdown signal received");
-    Ok(())
+        tokio::signal::ctrl_c().await?;
+        info!("shutdown signal received");
+        Ok(())
+    }
 }
