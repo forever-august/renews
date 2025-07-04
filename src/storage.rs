@@ -79,6 +79,12 @@ pub trait Storage: Send + Sync {
         &self,
         message_id: &str,
     ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>>;
+
+    /// Delete an article by Message-ID from all groups
+    async fn delete_article_by_id(
+        &self,
+        message_id: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -397,6 +403,24 @@ pub mod sqlite {
             } else {
                 Ok(None)
             }
+        }
+
+        async fn delete_article_by_id(
+            &self,
+            message_id: &str,
+        ) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("DELETE FROM group_articles WHERE message_id = ?")
+                .bind(message_id)
+                .execute(&self.pool)
+                .await?;
+            sqlx::query(
+                "DELETE FROM messages WHERE message_id = ? AND NOT EXISTS (SELECT 1 FROM group_articles WHERE message_id = ?)",
+            )
+            .bind(message_id)
+            .bind(message_id)
+            .execute(&self.pool)
+            .await?;
+            Ok(())
         }
     }
 }

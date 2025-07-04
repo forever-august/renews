@@ -8,8 +8,10 @@ pub trait AuthProvider: Send + Sync {
     async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn verify_user(&self, username: &str, password: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
     async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
-    async fn add_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn add_admin(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn update_pgp_key(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn get_pgp_key(&self, username: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;
@@ -37,7 +39,7 @@ pub mod sqlite {
             .execute(&pool)
             .await?;
             sqlx::query(
-                "CREATE TABLE IF NOT EXISTS admins (\n                    username TEXT PRIMARY KEY REFERENCES users(username)\n                )",
+                "CREATE TABLE IF NOT EXISTS admins (\n                    username TEXT PRIMARY KEY REFERENCES users(username),\n                    key TEXT NOT NULL\n                )",
             )
             .execute(&pool)
             .await?;
@@ -93,9 +95,10 @@ pub mod sqlite {
             Ok(row.is_some())
         }
 
-        async fn add_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-            sqlx::query("INSERT OR IGNORE INTO admins (username) VALUES (?)")
+        async fn add_admin(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("INSERT OR REPLACE INTO admins (username, key) VALUES (?, ?)")
                 .bind(username)
+                .bind(key)
                 .execute(&self.pool)
                 .await?;
             Ok(())
@@ -107,6 +110,27 @@ pub mod sqlite {
                 .execute(&self.pool)
                 .await?;
             Ok(())
+        }
+
+        async fn update_pgp_key(&self, username: &str, key: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+            sqlx::query("UPDATE admins SET key = ? WHERE username = ?")
+                .bind(key)
+                .bind(username)
+                .execute(&self.pool)
+                .await?;
+            Ok(())
+        }
+
+        async fn get_pgp_key(&self, username: &str) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+            if let Some(row) = sqlx::query("SELECT key FROM admins WHERE username = ?")
+                .bind(username)
+                .fetch_optional(&self.pool)
+                .await? {
+                let k: String = row.get(0);
+                Ok(Some(k))
+            } else {
+                Ok(None)
+            }
         }
     }
 }

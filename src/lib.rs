@@ -9,6 +9,7 @@ pub mod config;
 pub mod retention;
 pub mod storage;
 pub mod wildmat;
+pub mod control;
 
 #[derive(Default)]
 pub struct ConnectionState {
@@ -1181,6 +1182,7 @@ async fn handle_post<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    auth: &DynAuth,
     cfg: &Config,
     state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -1214,6 +1216,12 @@ where
             return Ok(());
         }
     };
+    if control::handle_control(&message, storage, auth).await? {
+        writer
+            .write_all(RESP_240_ARTICLE_RECEIVED.as_bytes())
+            .await?;
+        return Ok(());
+    }
     ensure_message_id(&mut message);
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
@@ -1303,6 +1311,7 @@ async fn handle_ihave<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    auth: &DynAuth,
     cfg: &Config,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -1324,6 +1333,10 @@ where
                 return Ok(());
             }
         };
+        if control::handle_control(&article, storage, auth).await? {
+            writer.write_all(RESP_235_TRANSFER_OK.as_bytes()).await?;
+            return Ok(());
+        }
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
@@ -1374,6 +1387,7 @@ async fn handle_takethis<R, W>(
     reader: &mut R,
     writer: &mut W,
     storage: &DynStorage,
+    auth: &DynAuth,
     cfg: &Config,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>>
@@ -1398,6 +1412,12 @@ where
                 return Ok(());
             }
         };
+        if control::handle_control(&article, storage, auth).await? {
+            writer
+                .write_all(format!("239 {}\r\n", id).as_bytes())
+                .await?;
+            return Ok(());
+        }
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
@@ -1516,13 +1536,13 @@ where
                 .await?;
             }
             "IHAVE" => {
-                handle_ihave(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
+                handle_ihave(&mut reader, &mut write_half, &storage, &auth, &cfg, &cmd.args).await?;
             }
             "CHECK" => {
                 handle_check(&mut write_half, &storage, &cmd.args).await?;
             }
             "TAKETHIS" => {
-                handle_takethis(&mut reader, &mut write_half, &storage, &cfg, &cmd.args).await?;
+                handle_takethis(&mut reader, &mut write_half, &storage, &auth, &cfg, &cmd.args).await?;
             }
             "CAPABILITIES" => {
                 handle_capabilities(&mut write_half, &state).await?;
@@ -1541,7 +1561,7 @@ where
             }
             "POST" => {
                 if state.is_tls {
-                    handle_post(&mut reader, &mut write_half, &storage, &cfg, &state).await?;
+                    handle_post(&mut reader, &mut write_half, &storage, &auth, &cfg, &state).await?;
                 } else {
                     write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }
