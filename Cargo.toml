@@ -22,6 +22,8 @@ tracing-subscriber = { version = "0.3", features = ["fmt"] }
 sha1 = "0.10"
 pgp = "0.16"
 rand = "0.8"
+base64 = "0.21"
+sha2 = "0.10"
 
 [dev-dependencies]
 rcgen = "0.14"
