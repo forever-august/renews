@@ -104,4 +104,10 @@ renews admin add-admin alice
 
 # revoke admin privileges
 renews admin remove-admin alice
+
+# add moderator permissions
+renews admin add-moderator alice 'rust.*'
+
+# remove moderator permissions
+renews admin remove-moderator alice 'rust.*'
 ```
