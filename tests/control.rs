@@ -1,7 +1,7 @@
-use renews::control::canonical_text;
-use renews::storage::{Storage, sqlite::SqliteStorage};
 use renews::auth::{AuthProvider, sqlite::SqliteAuth};
+use renews::control::canonical_text;
 use renews::parse_message;
+use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
@@ -18,7 +18,8 @@ fn build_sig(data: &str) -> (String, Vec<String>) {
     use rand::thread_rng;
 
     let (key, _) = SignedSecretKey::from_string(ADMIN_SEC).unwrap();
-    let cfg = SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
+    let cfg =
+        SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
     let sig = cfg
         .sign(&key.primary_key, &Password::empty(), data.as_bytes())
         .unwrap();
@@ -55,7 +56,11 @@ fn build_control_article(cmd: &str, body: &str) -> String {
         xhdr.push_str("\r\n ");
         xhdr.push_str(l);
     }
-    let term = if body.ends_with("\r\n") { ".\r\n" } else { "\r\n.\r\n" };
+    let term = if body.ends_with("\r\n") {
+        ".\r\n"
+    } else {
+        "\r\n.\r\n"
+    };
     format!(
         "{}Newsgroups: test.group\r\n{}\r\n\r\n{}{}",
         headers, xhdr, body, term
@@ -67,7 +72,9 @@ async fn control_newgroup_and_rmgroup() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
     auth.add_user("admin@example.org", "x").await.unwrap();
-    auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
+    auth.add_admin("admin@example.org", ADMIN_PUB)
+        .await
+        .unwrap();
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -81,7 +88,13 @@ async fn control_newgroup_and_rmgroup() {
     writer.write_all(article.as_bytes()).await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("235"));
-    assert!(storage.list_groups().await.unwrap().contains(&"test.group".to_string()));
+    assert!(
+        storage
+            .list_groups()
+            .await
+            .unwrap()
+            .contains(&"test.group".to_string())
+    );
 
     // remove group
     line.clear();
@@ -92,18 +105,29 @@ async fn control_newgroup_and_rmgroup() {
     writer.write_all(article.as_bytes()).await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("235"));
-    assert!(!storage.list_groups().await.unwrap().contains(&"test.group".to_string()));
+    assert!(
+        !storage
+            .list_groups()
+            .await
+            .unwrap()
+            .contains(&"test.group".to_string())
+    );
 }
 
 #[tokio::test]
 async fn control_cancel_removes_article() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc.test").await.unwrap();
-    let (_, art) = parse_message("Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nFrom: u@test\r\nSubject: t\r\n\r\nBody").unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
+    let (_, art) = parse_message(
+        "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nFrom: u@test\r\nSubject: t\r\n\r\nBody",
+    )
+    .unwrap();
     storage.store_article("misc.test", &art).await.unwrap();
     auth.add_user("admin@example.org", "x").await.unwrap();
-    auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
+    auth.add_admin("admin@example.org", ADMIN_PUB)
+        .await
+        .unwrap();
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -116,5 +140,11 @@ async fn control_cancel_removes_article() {
     writer.write_all(article.as_bytes()).await.unwrap();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("235"));
-    assert!(storage.get_article_by_id("<a@test>").await.unwrap().is_none());
+    assert!(
+        storage
+            .get_article_by_id("<a@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }

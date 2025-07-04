@@ -39,8 +39,8 @@ async fn numbering_is_per_group() {
 async fn add_and_list_groups() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
     assert!(storage.list_groups().await.unwrap().is_empty());
-    storage.add_group("g1").await.unwrap();
-    storage.add_group("g2").await.unwrap();
+    storage.add_group("g1", false).await.unwrap();
+    storage.add_group("g2", false).await.unwrap();
     let groups = storage.list_groups().await.unwrap();
     assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
 
@@ -56,8 +56,8 @@ async fn purge_old_articles() {
     use tokio::time::sleep;
 
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
-    storage.add_group("g1").await.unwrap();
-    storage.add_group("g2").await.unwrap();
+    storage.add_group("g1", false).await.unwrap();
+    storage.add_group("g2", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nB").unwrap();
     storage.store_article("g1", &msg).await.unwrap();
     storage.store_article("g2", &msg).await.unwrap();

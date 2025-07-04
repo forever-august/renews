@@ -1,19 +1,31 @@
-use crate::{Message, storage::DynStorage, auth::DynAuth};
-use pgp::composed::{SignedPublicKey, StandaloneSignature, Deserializable};
+use crate::{Message, auth::DynAuth, storage::DynStorage};
+use pgp::composed::{Deserializable, SignedPublicKey, StandaloneSignature};
 use std::error::Error;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ControlCommand {
     Cancel(String),
-    NewGroup { group: String },
+    NewGroup { group: String, moderated: bool },
     RmGroup(String),
 }
 
 fn parse_command(val: &str) -> Option<ControlCommand> {
     let mut parts = val.split_whitespace();
     match parts.next()?.to_ascii_lowercase().as_str() {
-        "cancel" => parts.next().map(|id| ControlCommand::Cancel(id.to_string())),
-        "newgroup" => parts.next().map(|g| ControlCommand::NewGroup { group: g.to_string() }),
+        "cancel" => parts
+            .next()
+            .map(|id| ControlCommand::Cancel(id.to_string())),
+        "newgroup" => {
+            let group = parts.next()?;
+            let moderated = parts
+                .next()
+                .map(|w| w.eq_ignore_ascii_case("moderated"))
+                .unwrap_or(false);
+            Some(ControlCommand::NewGroup {
+                group: group.to_string(),
+                moderated,
+            })
+        }
         "rmgroup" => parts.next().map(|g| ControlCommand::RmGroup(g.to_string())),
         _ => None,
     }
@@ -61,10 +73,7 @@ async fn verify_pgp(
     if !auth.is_admin(from).await? {
         return Err("not admin".into());
     }
-    let key_text = auth
-        .get_pgp_key(from)
-        .await?
-        .ok_or("no key")?;
+    let key_text = auth.get_pgp_key(from).await?.ok_or("no key")?;
     let (key, _) = SignedPublicKey::from_string(&key_text)?;
     let armor = format!(
         "-----BEGIN PGP SIGNATURE-----\nVersion: {}\n\n{}\n-----END PGP SIGNATURE-----\n",
@@ -111,8 +120,8 @@ pub async fn handle_control(
         ControlCommand::Cancel(id) => {
             storage.delete_article_by_id(&id).await?;
         }
-        ControlCommand::NewGroup { group } => {
-            storage.add_group(&group).await?;
+        ControlCommand::NewGroup { group, moderated } => {
+            storage.add_group(&group, moderated).await?;
         }
         ControlCommand::RmGroup(group) => {
             storage.remove_group(&group).await?;

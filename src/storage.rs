@@ -25,8 +25,13 @@ pub trait Storage: Send + Sync {
         message_id: &str,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
 
-    /// Add a newsgroup to the server's list
-    async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    /// Add a newsgroup to the server's list. When `moderated` is true the group
+    /// requires an `Approved` header on posted articles.
+    async fn add_group(
+        &self,
+        group: &str,
+        moderated: bool,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Remove a newsgroup from the server's list
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
@@ -85,6 +90,9 @@ pub trait Storage: Send + Sync {
         &self,
         message_id: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Check if a group is moderated.
+    async fn is_group_moderated(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -137,7 +145,8 @@ pub mod sqlite {
             sqlx::query(
                 "CREATE TABLE IF NOT EXISTS groups (
                     name TEXT PRIMARY KEY,
-                    created_at INTEGER NOT NULL
+                    created_at INTEGER NOT NULL,
+                    moderated INTEGER NOT NULL DEFAULT 0
                 )",
             )
             .execute(&pool)
@@ -240,13 +249,20 @@ pub mod sqlite {
         }
 
         #[tracing::instrument(skip_all)]
-        async fn add_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+        async fn add_group(
+            &self,
+            group: &str,
+            moderated: bool,
+        ) -> Result<(), Box<dyn Error + Send + Sync>> {
             let now = chrono::Utc::now().timestamp();
-            sqlx::query("INSERT OR IGNORE INTO groups (name, created_at) VALUES (?, ?)")
-                .bind(group)
-                .bind(now)
-                .execute(&self.pool)
-                .await?;
+            sqlx::query(
+                "INSERT OR IGNORE INTO groups (name, created_at, moderated) VALUES (?, ?, ?)",
+            )
+            .bind(group)
+            .bind(now)
+            .bind(if moderated { 1 } else { 0 })
+            .execute(&self.pool)
+            .await?;
             Ok(())
         }
 
@@ -266,6 +282,23 @@ pub mod sqlite {
             .execute(&self.pool)
             .await?;
             Ok(())
+        }
+
+        #[tracing::instrument(skip_all)]
+        async fn is_group_moderated(
+            &self,
+            group: &str,
+        ) -> Result<bool, Box<dyn Error + Send + Sync>> {
+            let row = sqlx::query("SELECT moderated FROM groups WHERE name = ?")
+                .bind(group)
+                .fetch_optional(&self.pool)
+                .await?;
+            if let Some(r) = row {
+                let m: i64 = r.try_get("moderated")?;
+                Ok(m != 0)
+            } else {
+                Ok(false)
+            }
         }
 
         #[tracing::instrument(skip_all)]
@@ -296,7 +329,9 @@ pub mod sqlite {
         }
 
         #[tracing::instrument(skip_all)]
-        async fn list_groups_with_times(&self) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>> {
+        async fn list_groups_with_times(
+            &self,
+        ) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>> {
             let rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
                 .fetch_all(&self.pool)
                 .await?;
@@ -392,11 +427,10 @@ pub mod sqlite {
             &self,
             message_id: &str,
         ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
-            if let Some(row) =
-                sqlx::query("SELECT size FROM messages WHERE message_id = ?")
-                    .bind(message_id)
-                    .fetch_optional(&self.pool)
-                    .await?
+            if let Some(row) = sqlx::query("SELECT size FROM messages WHERE message_id = ?")
+                .bind(message_id)
+                .fetch_optional(&self.pool)
+                .await?
             {
                 let size: i64 = row.try_get("size")?;
                 Ok(Some(size as u64))

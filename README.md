@@ -94,7 +94,7 @@ server. These commands read the same configuration file as the server itself.
 export RENEWS_CONFIG=/opt/renews/config.toml
 
 # add a newsgroup
-renews admin add-group rust.news
+renews admin add-group rust.news --moderated
 
 # remove a user
 renews admin remove-user alice

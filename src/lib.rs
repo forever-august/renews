@@ -6,10 +6,10 @@ pub use parse::{
 
 pub mod auth;
 pub mod config;
+pub mod control;
 pub mod retention;
 pub mod storage;
 pub mod wildmat;
-pub mod control;
 
 #[derive(Default)]
 pub struct ConnectionState {
@@ -1302,6 +1302,24 @@ async fn validate_article(
             }
         }
     }
+    let requires_approval = {
+        let mut m = false;
+        for g in &newsgroups {
+            if storage.is_group_moderated(g).await? {
+                m = true;
+                break;
+            }
+        }
+        m
+    };
+    if requires_approval
+        && !article
+            .headers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("Approved"))
+    {
+        return Err("missing approval".into());
+    }
     Ok(newsgroups)
 }
 
@@ -1536,13 +1554,29 @@ where
                 .await?;
             }
             "IHAVE" => {
-                handle_ihave(&mut reader, &mut write_half, &storage, &auth, &cfg, &cmd.args).await?;
+                handle_ihave(
+                    &mut reader,
+                    &mut write_half,
+                    &storage,
+                    &auth,
+                    &cfg,
+                    &cmd.args,
+                )
+                .await?;
             }
             "CHECK" => {
                 handle_check(&mut write_half, &storage, &cmd.args).await?;
             }
             "TAKETHIS" => {
-                handle_takethis(&mut reader, &mut write_half, &storage, &auth, &cfg, &cmd.args).await?;
+                handle_takethis(
+                    &mut reader,
+                    &mut write_half,
+                    &storage,
+                    &auth,
+                    &cfg,
+                    &cmd.args,
+                )
+                .await?;
             }
             "CAPABILITIES" => {
                 handle_capabilities(&mut write_half, &state).await?;
@@ -1561,7 +1595,8 @@ where
             }
             "POST" => {
                 if state.is_tls {
-                    handle_post(&mut reader, &mut write_half, &storage, &auth, &cfg, &state).await?;
+                    handle_post(&mut reader, &mut write_half, &storage, &auth, &cfg, &state)
+                        .await?;
                 } else {
                     write_half.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
                 }
