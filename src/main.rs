@@ -34,7 +34,11 @@ enum Command {
 #[derive(Subcommand)]
 enum AdminCommand {
     /// Add a newsgroup
-    AddGroup { group: String },
+    AddGroup {
+        group: String,
+        #[arg(long)]
+        moderated: bool,
+    },
     /// Remove a newsgroup
     RemoveGroup { group: String },
     /// Add a user
@@ -76,7 +80,7 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
     let auth_conn = format!("sqlite:{}", auth_path);
     let auth = SqliteAuth::new(&auth_conn).await?;
     match cmd {
-        AdminCommand::AddGroup { group } => storage.add_group(&group).await?,
+        AdminCommand::AddGroup { group, moderated } => storage.add_group(&group, moderated).await?,
         AdminCommand::RemoveGroup { group } => storage.remove_group(&group).await?,
         AdminCommand::AddUser { username, password } => auth.add_user(&username, &password).await?,
         AdminCommand::RemoveUser { username } => auth.remove_user(&username).await?,

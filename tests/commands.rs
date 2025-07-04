@@ -1,6 +1,6 @@
 use chrono::{Duration, Utc};
-use renews::storage::{Storage, sqlite::SqliteStorage};
 use renews::parse_message;
+use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
@@ -9,8 +9,12 @@ mod common;
 #[tokio::test]
 async fn head_and_list_commands() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: T\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
@@ -70,8 +74,12 @@ async fn head_and_list_commands() {
 #[tokio::test]
 async fn listgroup_and_navigation_commands() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc", &m1).await.unwrap();
@@ -209,8 +217,12 @@ async fn listgroup_and_navigation_commands() {
 #[tokio::test]
 async fn capabilities_and_misc_commands() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
 
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut write_half) = common::connect(addr).await;
@@ -292,8 +304,12 @@ async fn capabilities_and_misc_commands() {
 #[tokio::test]
 async fn no_group_returns_412() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
@@ -321,8 +337,12 @@ async fn no_group_returns_412() {
 #[tokio::test]
 async fn responses_include_number_and_id() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
@@ -390,8 +410,12 @@ async fn responses_include_number_and_id() {
 #[tokio::test]
 async fn post_and_dot_stuffing() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
 
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut write_half) = common::connect(addr).await;
@@ -428,8 +452,12 @@ async fn post_and_dot_stuffing() {
 #[tokio::test]
 async fn body_returns_proper_crlf() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nline1\r\nline2\r\n").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
@@ -466,8 +494,12 @@ async fn body_returns_proper_crlf() {
 #[tokio::test]
 async fn newgroups_accepts_gmt_argument() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
 
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut write_half) = common::connect(addr).await;
@@ -504,8 +536,12 @@ async fn newgroups_accepts_gmt_argument() {
 #[tokio::test]
 async fn newnews_accepts_gmt_argument() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
@@ -542,8 +578,12 @@ async fn newnews_accepts_gmt_argument() {
 #[tokio::test]
 async fn post_without_selecting_group() {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    storage.add_group("misc").await.unwrap();
+    let auth = Arc::new(
+        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
+            .await
+            .unwrap(),
+    );
+    storage.add_group("misc", false).await.unwrap();
 
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut write_half) = common::connect(addr).await;

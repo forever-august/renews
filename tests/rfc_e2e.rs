@@ -224,7 +224,7 @@ async fn group_select_returns_211() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -243,7 +243,7 @@ async fn article_success_by_number() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -271,7 +271,7 @@ async fn article_success_by_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -296,7 +296,7 @@ async fn article_id_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -333,7 +333,7 @@ async fn head_success_by_number() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -361,7 +361,7 @@ async fn head_success_by_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -386,7 +386,7 @@ async fn head_number_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -410,7 +410,7 @@ async fn head_id_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -429,7 +429,7 @@ async fn head_no_current_article_selected() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -451,7 +451,7 @@ async fn body_success_by_number() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -479,7 +479,7 @@ async fn body_success_by_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -504,7 +504,7 @@ async fn body_number_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -528,7 +528,7 @@ async fn body_id_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -565,7 +565,7 @@ async fn stat_success_by_number() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -589,7 +589,7 @@ async fn stat_success_by_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -610,7 +610,7 @@ async fn stat_number_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -634,7 +634,7 @@ async fn stat_id_not_found() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -671,7 +671,7 @@ async fn listgroup_returns_numbers() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -721,8 +721,8 @@ async fn list_newsgroups_returns_groups() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
-    storage.add_group("alt.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
+    storage.add_group("alt.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -754,7 +754,7 @@ async fn list_all_keywords() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();
@@ -841,7 +841,7 @@ async fn newnews_lists_recent_articles() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -876,7 +876,7 @@ async fn newnews_no_matches_returns_empty() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -915,7 +915,7 @@ async fn hdr_subject_by_message_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -942,7 +942,7 @@ async fn hdr_subject_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: A\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
@@ -979,7 +979,7 @@ async fn hdr_all_headers_message_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody")
             .unwrap();
@@ -1015,7 +1015,7 @@ async fn xpat_subject_message_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
     let (addr, _h) = common::setup_server(storage, auth.clone()).await;
@@ -1045,7 +1045,7 @@ async fn xpat_subject_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: apple\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: banana\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
@@ -1082,7 +1082,7 @@ async fn over_message_id() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -1114,7 +1114,7 @@ async fn over_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
     let (_, m2) =
@@ -1153,7 +1153,7 @@ async fn head_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
@@ -1189,7 +1189,7 @@ async fn body_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
@@ -1225,7 +1225,7 @@ async fn article_range() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
@@ -1261,7 +1261,7 @@ async fn ihave_example() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
 
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
@@ -1309,7 +1309,7 @@ async fn takethis_example() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (_, exist) = parse_message(
         "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test\r\n\r\nBody",
     )
@@ -1366,7 +1366,7 @@ async fn mode_stream_check_and_takethis() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
     let (mut reader, mut writer) = common::connect(addr).await;
     let mut line = String::new();

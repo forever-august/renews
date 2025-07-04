@@ -13,7 +13,7 @@ async fn ihave_rejects_large_article() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=10\n").unwrap();
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
@@ -38,7 +38,7 @@ async fn ihave_rejects_large_article_with_suffix() {
             .await
             .unwrap(),
     );
-    storage.add_group("misc.test").await.unwrap();
+    storage.add_group("misc.test", false).await.unwrap();
     let cfg: Config = toml::from_str("port=1199\ndefault_max_article_bytes=\"1K\"\n").unwrap();
     let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
     let (mut reader, mut writer) = common::connect(addr).await;
