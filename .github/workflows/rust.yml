@@ -17,15 +17,10 @@ jobs:
           toolchain: stable
           override: true
       - run: cargo build --verbose
-      - run: cargo test --verbose
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: false
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
+      - run: cargo llvm-cov --workspace --lcov --output-path lcov.info
       - uses: actions/upload-artifact@v4
         with:
           name: lcov
@@ -39,7 +34,7 @@ jobs:
       pull-requests: write
       contents: read
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: lcov
       - name: Setup LCOV
