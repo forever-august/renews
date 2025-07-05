@@ -18,9 +18,14 @@ fn build_sig(data: &str) -> (String, Vec<String>) {
     use rand::thread_rng;
 
     let (key, _) = SignedSecretKey::from_string(ADMIN_SEC).unwrap();
-    let cfg = SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
-    let sig = cfg.sign(&key.primary_key, &Password::empty(), data.as_bytes()).unwrap();
-    let armored = StandaloneSignature::new(sig).to_armored_string(Default::default()).unwrap();
+    let cfg =
+        SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
+    let sig = cfg
+        .sign(&key.primary_key, &Password::empty(), data.as_bytes())
+        .unwrap();
+    let armored = StandaloneSignature::new(sig)
+        .to_armored_string(Default::default())
+        .unwrap();
     let version = "1".to_string();
     let mut lines = Vec::new();
     for line in armored.lines() {
@@ -99,7 +104,9 @@ async fn post_requires_approval_for_moderated_group() {
     let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
     storage.add_group("mod.test", true).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -149,7 +156,9 @@ async fn post_with_approval_succeeds() {
     auth.add_user("user", "pass").await.unwrap();
     auth.update_pgp_key("user", ADMIN_PUB).await.unwrap();
     auth.add_moderator("user", "mod.*").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -196,7 +205,9 @@ async fn cross_post_different_moderators() {
     auth.update_pgp_key("mod2", ADMIN_PUB).await.unwrap();
     auth.add_moderator("mod1", "mod.one").await.unwrap();
     auth.add_moderator("mod2", "mod.two").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();

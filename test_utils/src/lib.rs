@@ -11,6 +11,24 @@ use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector, rustls};
 use tokio_test::io::Builder as IoBuilder;
 
+/// Generate a self-signed TLS certificate for use in tests.
+pub fn generate_self_signed_cert() -> (
+    rustls::Certificate,
+    rustls::PrivateKey,
+    String,
+) {
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(["localhost".to_string()]).unwrap();
+    let cert_der = cert.der().to_vec();
+    let key_der = signing_key.serialize_der();
+    let pem = cert.pem();
+    (
+        rustls::Certificate(cert_der),
+        rustls::PrivateKey(key_der),
+        pem,
+    )
+}
+
 pub async fn setup_server(
     storage: Arc<dyn Storage>,
     auth: Arc<dyn AuthProvider>,
@@ -58,27 +76,19 @@ pub async fn connect(
     (BufReader::new(r), w)
 }
 
-pub async fn setup_tls_server(
+pub async fn setup_tls_server_with_cert(
     storage: Arc<dyn Storage>,
     auth: Arc<dyn AuthProvider>,
+    cert: rustls::Certificate,
+    key: rustls::PrivateKey,
 ) -> (
     std::net::SocketAddr,
-    rustls::Certificate,
-    String,
     tokio::task::JoinHandle<()>,
 ) {
-    let CertifiedKey { cert, signing_key } =
-        generate_simple_self_signed(["localhost".to_string()]).unwrap();
-    let cert_der = cert.der().to_vec();
-    let cert_pem = cert.pem();
-    let key = signing_key.serialize_der();
     let tls_config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(
-            vec![rustls::Certificate(cert_der.clone())],
-            rustls::PrivateKey(key),
-        )
+        .with_single_cert(vec![cert.clone()], key)
         .unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(tls_config));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -93,7 +103,22 @@ pub async fn setup_tls_server(
             .await
             .unwrap();
     });
-    (addr, rustls::Certificate(cert_der), cert_pem, handle)
+    (addr, handle)
+}
+
+pub async fn setup_tls_server(
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+) -> (
+    std::net::SocketAddr,
+    rustls::Certificate,
+    String,
+    tokio::task::JoinHandle<()>,
+) {
+    let (cert, key, pem) = generate_self_signed_cert();
+    let (addr, handle) =
+        setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
+    (addr, cert, pem, handle)
 }
 
 pub async fn connect_tls(

@@ -61,8 +61,10 @@ async fn peer_transfer_helper(interval: u64) {
     let cfg_a: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(
         toml::from_str("port=119\nsite_name='A'").unwrap(),
     ));
-    let (addr_b, _cert_b, pem, handle_b) =
-        common::setup_tls_server(storage_b.clone(), auth.clone()).await;
+    let (cert, key, pem) = common::generate_self_signed_cert();
+    let (addr_b, handle_b) =
+        common::setup_tls_server_with_cert(storage_b.clone(), auth.clone(), cert.clone(), key)
+            .await;
     let ca_file = NamedTempFile::new().unwrap();
     fs::write(ca_file.path(), pem).unwrap();
     unsafe { std::env::set_var("SSL_CERT_FILE", ca_file.path()) };
