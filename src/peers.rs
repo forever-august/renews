@@ -124,10 +124,7 @@ impl PeerDb {
             if ts == 0 {
                 return Ok(None);
             }
-            Ok(Some(DateTime::<Utc>::from_naive_utc_and_offset(
-                chrono::NaiveDateTime::from_timestamp(ts, 0),
-                Utc,
-            )))
+            Ok(DateTime::<Utc>::from_timestamp(ts, 0))
         } else {
             Ok(None)
         }
