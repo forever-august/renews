@@ -24,3 +24,5 @@ max_article_bytes = "2M"
 sitename = "peer.example.com"
 patterns = ["*"]
 sync_interval_secs = 3600
+username = "peeruser"
+password = "peerpass"

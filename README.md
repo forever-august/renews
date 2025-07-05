@@ -25,7 +25,7 @@ following keys are recognised:
 - `auth_db_path` - optional path to the authentication database. Defaults to `/var/renews/auth.db` when unset.
 - `peer_db_path` - path to the peer state database. Defaults to `/var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
-- `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged.
+- `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. Each peer may also specify optional `username` and `password` used for `AUTHINFO` when sending articles.
 - `tls_port` - optional port for NNTP over TLS.
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
@@ -63,6 +63,8 @@ max_article_bytes = "2M"
 sitename = "peer.example.com"
 patterns = ["*"]
 sync_interval_secs = 3600
+username = "peeruser"
+password = "peerpass"
 ```
 
 `tls_port`, `tls_cert` and `tls_key` must all be set for TLS support to be

@@ -141,6 +141,10 @@ pub struct PeerRule {
     pub patterns: Vec<String>,
     #[serde(default)]
     pub sync_interval_secs: Option<u64>,
+    #[serde(default)]
+    pub username: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
 }
 
 impl Config {
