@@ -763,7 +763,6 @@ async fn ihave_example() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn takethis_example() {
     let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();

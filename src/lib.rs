@@ -1461,6 +1461,7 @@ where
 {
     if let Some(id) = args.get(0) {
         if storage.get_article_by_id(id).await?.is_some() {
+            let _ = read_message(reader).await?;
             writer
                 .write_all(format!("439 {}\r\n", id).as_bytes())
                 .await?;

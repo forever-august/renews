@@ -171,7 +171,11 @@ impl ClientMock {
         let mut builder = IoBuilder::new();
         builder.write(b"201 NNTP Service Ready - no posting allowed\r\n");
         for (cmd, resps) in self.steps {
-            builder.read(format!("{}\r\n", cmd).as_bytes());
+            let mut cmd_bytes = cmd.into_bytes();
+            if !cmd_bytes.ends_with(b"\n") {
+                cmd_bytes.extend_from_slice(b"\r\n");
+            }
+            builder.read(&cmd_bytes);
             for line in resps {
                 builder.write(format!("{}\r\n", line).as_bytes());
             }
