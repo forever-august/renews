@@ -6,7 +6,19 @@ use std::error::Error;
 use std::fmt;
 
 fn default_db_path() -> String {
-    "/var/spool/renews.db".into()
+    "/var/renews/news.db".into()
+}
+
+fn default_auth_db_path() -> Option<String> {
+    Some("/var/renews/auth.db".into())
+}
+
+fn default_peer_db_path() -> String {
+    "/var/renews/peers.db".into()
+}
+
+fn default_peer_sync_secs() -> u64 {
+    3600
 }
 
 fn default_site_name() -> String {
@@ -88,8 +100,14 @@ pub struct Config {
     pub site_name: String,
     #[serde(default = "default_db_path")]
     pub db_path: String,
-    #[serde(default)]
+    #[serde(default = "default_auth_db_path")]
     pub auth_db_path: Option<String>,
+    #[serde(default = "default_peer_db_path")]
+    pub peer_db_path: String,
+    #[serde(default = "default_peer_sync_secs")]
+    pub peer_sync_secs: u64,
+    #[serde(default)]
+    pub peers: Vec<PeerRule>,
     #[serde(default)]
     pub tls_port: Option<u16>,
     #[serde(default)]
@@ -114,6 +132,15 @@ pub struct GroupRule {
     pub retention_days: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_size")]
     pub max_article_bytes: Option<u64>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct PeerRule {
+    pub sitename: String,
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    #[serde(default)]
+    pub sync_interval_secs: Option<u64>,
 }
 
 impl Config {
@@ -152,7 +179,8 @@ impl Config {
                 }
             }
         }
-        self.default_retention_days.and_then(|d| if d > 0 { Some(Duration::days(d)) } else { None })
+        self.default_retention_days
+            .and_then(|d| if d > 0 { Some(Duration::days(d)) } else { None })
     }
 
     pub fn max_size_for_group(&self, group: &str) -> Option<u64> {
@@ -167,6 +195,8 @@ impl Config {
         self.default_retention_days = other.default_retention_days;
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
+        self.peer_sync_secs = other.peer_sync_secs;
+        self.peers = other.peers;
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
     }
