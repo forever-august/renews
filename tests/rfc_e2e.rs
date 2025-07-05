@@ -130,449 +130,275 @@ async fn commands_are_case_insensitive() {
 
 #[tokio::test]
 async fn group_select_returns_211() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("211"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 0 0 0 misc.test")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_success_by_number() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"ARTICLE 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("220"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect_multi(
+            "ARTICLE 1",
+            vec![
+                "220 1 <1@test> article follows",
+                "Message-ID: <1@test>",
+                "",
+                "Body",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_success_by_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"ARTICLE <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("220"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect_multi(
+            "ARTICLE <1@test>",
+            vec![
+                "220 0 <1@test> article follows",
+                "Message-ID: <1@test>",
+                "",
+                "Body",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_id_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"ARTICLE <nope@id>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("430"));
+    ClientMock::new()
+        .expect("ARTICLE <nope@id>", "430 no such article")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_number_no_group() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"ARTICLE 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("ARTICLE 1", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_success_by_number() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("221"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect_multi(
+            "HEAD 1",
+            vec![
+                "221 1 <1@test> article headers follow",
+                "Message-ID: <1@test>",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_success_by_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("221"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect_multi(
+            "HEAD <1@test>",
+            vec![
+                "221 0 <1@test> article headers follow",
+                "Message-ID: <1@test>",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_number_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD 2\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("423"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect("HEAD 2", "423 no such article number in this group")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_id_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD <nope@id>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("430"));
+    ClientMock::new()
+        .expect("HEAD <nope@id>", "430 no such article")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_no_current_article_selected() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("420"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 0 0 0 misc.test")
+        .expect("HEAD", "420 no current article selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_success_by_number() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("222"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect_multi(
+            "BODY 1",
+            vec![
+                "222 1 <1@test> article body follows",
+                "Body",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_success_by_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("222"));
-    while line.trim_end() != "." {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-    }
+    ClientMock::new()
+        .expect_multi(
+            "BODY <1@test>",
+            vec![
+                "222 0 <1@test> article body follows",
+                "Body",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_number_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY 2\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("423"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect("BODY 2", "423 no such article number in this group")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_id_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY <nope@id>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("430"));
+    ClientMock::new()
+        .expect("BODY <nope@id>", "430 no such article")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_number_no_group() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("BODY 1", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn stat_success_by_number() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"STAT 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("223"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect("STAT 1", "223 1 <1@test> article exists")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn stat_success_by_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"STAT <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("223"));
+    ClientMock::new()
+        .expect("STAT <1@test>", "223 0 <1@test> article exists")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn stat_number_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"STAT 2\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("423"));
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 1 1 1 misc.test")
+        .expect("STAT 2", "423 no such article number in this group")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn stat_id_not_found() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"STAT <nope@id>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("430"));
+    ClientMock::new()
+        .expect("STAT <nope@id>", "430 no such article")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn stat_number_no_group() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"STAT 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("STAT 1", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
