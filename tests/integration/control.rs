@@ -12,8 +12,8 @@ async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
     (storage as _, auth as _)
 }
 
-const ADMIN_SEC: &str = include_str!("data/admin.sec.asc");
-const ADMIN_PUB: &str = include_str!("data/admin.pub.asc");
+const ADMIN_SEC: &str = include_str!("../data/admin.sec.asc");
+const ADMIN_PUB: &str = include_str!("../data/admin.pub.asc");
 
 fn build_sig(data: &str) -> (String, Vec<String>) {
     use pgp::composed::{Deserializable, SignedSecretKey, StandaloneSignature};
