@@ -9,6 +9,7 @@ use tokio::io::{self, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector, rustls};
+use tokio_test::io::Builder as IoBuilder;
 
 pub async fn setup_server(
     storage: Arc<dyn Storage>,
@@ -114,4 +115,47 @@ pub async fn connect_tls(
     let tls_stream = connector.connect(server_name, stream).await.unwrap();
     let (r, w) = io::split(tls_stream);
     (BufReader::new(r), w)
+}
+
+/// Builder to mock a client connection using `tokio_test::io`.
+pub struct ClientMock {
+    steps: Vec<(String, Vec<String>)>,
+}
+
+impl ClientMock {
+    pub fn new() -> Self {
+        Self { steps: Vec::new() }
+    }
+
+    /// Expect a command with a single-line response.
+    pub fn expect(mut self, cmd: &str, resp: &str) -> Self {
+        self.steps
+            .push((cmd.to_string(), vec![resp.to_string()]));
+        self
+    }
+
+    /// Expect a command with a multi-line response.
+    pub fn expect_multi<S: Into<String>>(mut self, cmd: &str, resp: Vec<S>) -> Self {
+        self.steps.push((cmd.to_string(), resp.into_iter().map(Into::into).collect()));
+        self
+    }
+
+    pub async fn run(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
+        use renews::config::Config;
+        use tokio::sync::RwLock;
+        let mut builder = IoBuilder::new();
+        builder.write(b"201 NNTP Service Ready - no posting allowed\r\n");
+        for (cmd, resps) in self.steps {
+            builder.read(format!("{}\r\n", cmd).as_bytes());
+            for line in resps {
+                builder.write(format!("{}\r\n", line).as_bytes());
+            }
+        }
+        builder.read(b"");
+        let mock = builder.build();
+        let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
+        renews::handle_client(mock, storage, auth, cfg, false)
+            .await
+            .unwrap();
+    }
 }

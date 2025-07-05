@@ -1,219 +1,131 @@
 use renews::parse_message;
 use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
+use test_utils::{self as common, ClientMock};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use test_utils as common;
+async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
+    use renews::auth::sqlite::SqliteAuth;
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
+
+fn capabilities_lines() -> Vec<String> {
+    vec![
+        "101 Capability list follows".into(),
+        "VERSION 2".into(),
+        format!("IMPLEMENTATION Renews {}", env!("CARGO_PKG_VERSION")),
+        "READER".into(),
+        "NEWNEWS".into(),
+        "IHAVE".into(),
+        "STREAMING".into(),
+        "OVER MSGID".into(),
+        "HDR".into(),
+        "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS".into(),
+        ".".into(),
+    ]
+}
 
 #[tokio::test]
 async fn unknown_command_mail() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MAIL\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("500"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("MAIL", "500 command not recognized")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn capabilities_and_unknown_command() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"CAPABILITIES\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("101"));
-    let mut has_list = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed.starts_with("LIST ") {
-            has_list = true;
-            assert!(trimmed.contains("ACTIVE"));
-            assert!(trimmed.contains("NEWSGROUPS"));
-            assert!(trimmed.contains("OVERVIEW.FMT"));
-            assert!(trimmed.contains("HEADERS"));
-        }
-    }
-    assert!(has_list);
-    line.clear();
-    writer.write_all(b"OVER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect_multi("CAPABILITIES", capabilities_lines())
+        .expect("OVER", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn unsupported_mode_variant() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE POSTER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("501"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("MODE POSTER", "501 unknown mode")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_syntax_error() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer
-        .write_all(b"ARTICLE a.message.id@no.angle.brackets\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("501"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect(
+            "ARTICLE a.message.id@no.angle.brackets",
+            "501 invalid id",
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_without_group_returns_412() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD 1\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("HEAD 1", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn list_unknown_keyword() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"LIST ACTIVE u[ks].*\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect_multi(
+            "LIST ACTIVE u[ks].*",
+            vec![
+                String::from("215 list of newsgroups follows"),
+                String::from("."),
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn list_distrib_pats_not_supported() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"LIST DISTRIB.PATS\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("503"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("LIST DISTRIB.PATS", "503 feature not supported")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn unknown_command_xencrypt() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer
-        .write_all(b"XENCRYPT RSA abcd=efg\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("500"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("XENCRYPT RSA abcd=efg", "500 command not recognized")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn mode_reader_success() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("201"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("MODE READER", "201 Posting prohibited")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn commands_are_case_insensitive() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"mode reader\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("201"));
-    line.clear();
-    writer.write_all(b"quit\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("205"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("mode reader", "201 Posting prohibited")
+        .expect("quit", "205 closing connection")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
