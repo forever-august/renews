@@ -9,3 +9,4 @@ tokio-rustls = "0.24"
 rcgen = "0.14"
 toml = "0.8"
 renews = { path = ".." }
+tokio-test = "0.4"
