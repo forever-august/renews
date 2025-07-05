@@ -1,12 +1,12 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use renews::auth::{AuthProvider, sqlite::SqliteAuth};
+use renews::auth::sqlite::SqliteAuth;
 use renews::parse_message;
 use renews::storage::{Storage, sqlite::SqliteStorage};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-mod common;
+use test_utils as common;
 
 #[tokio::test]
 async fn cancel_key_allows_cancel() {

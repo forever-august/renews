@@ -2034,6 +2034,7 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "async-trait",
+ "base64 0.21.7",
  "chrono",
  "clap",
  "nom",
@@ -2045,8 +2046,10 @@ dependencies = [
  "serde",
  "serde_json",
  "sha1",
+ "sha2",
  "sqlx",
  "tempfile",
+ "test_utils",
  "tokio",
  "tokio-rustls",
  "toml",
@@ -2709,6 +2712,17 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "test_utils"
+version = "0.1.0"
+dependencies = [
+ "rcgen",
+ "renews",
+ "tokio",
+ "tokio-rustls",
+ "toml",
 ]
 
 [[package]]
