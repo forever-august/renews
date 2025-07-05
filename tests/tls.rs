@@ -13,7 +13,8 @@ async fn tls_quit() {
             .await
             .unwrap(),
     );
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage, auth).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) = common::setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -32,7 +33,8 @@ async fn tls_mode_reader() {
             .await
             .unwrap(),
     );
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage, auth).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) = common::setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -51,7 +53,9 @@ async fn tls_post_requires_auth() {
             .unwrap(),
     );
     storage.add_group("misc", false).await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth, cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -84,7 +88,9 @@ async fn tls_authinfo_and_post() {
     );
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -142,7 +148,9 @@ async fn post_without_msgid_generates_one() {
     );
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
@@ -195,7 +203,9 @@ async fn post_without_date_adds_header() {
     );
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (addr, cert, _pem, _h) = common::setup_tls_server(storage.clone(), auth.clone()).await;
+    let (cert, key, _pem) = common::generate_self_signed_cert();
+    let (addr, _h) =
+        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
     let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
