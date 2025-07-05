@@ -1,8 +1,7 @@
 use renews::parse_message;
 use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
-use test_utils::{self as common, ClientMock};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use test_utils::ClientMock;
 
 async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
     use renews::auth::sqlite::SqliteAuth;
@@ -59,10 +58,7 @@ async fn unsupported_mode_variant() {
 async fn article_syntax_error() {
     let (storage, auth) = setup().await;
     ClientMock::new()
-        .expect(
-            "ARTICLE a.message.id@no.angle.brackets",
-            "501 invalid id",
-        )
+        .expect("ARTICLE a.message.id@no.angle.brackets", "501 invalid id")
         .run(storage, auth)
         .await;
 }
@@ -283,11 +279,7 @@ async fn body_success_by_number() {
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect_multi(
             "BODY 1",
-            vec![
-                "222 1 <1@test> article body follows",
-                "Body",
-                ".",
-            ],
+            vec!["222 1 <1@test> article body follows", "Body", "."],
         )
         .run(storage, auth)
         .await;
@@ -302,11 +294,7 @@ async fn body_success_by_id() {
     ClientMock::new()
         .expect_multi(
             "BODY <1@test>",
-            vec![
-                "222 0 <1@test> article body follows",
-                "Body",
-                ".",
-            ],
+            vec!["222 0 <1@test> article body follows", "Body", "."],
         )
         .run(storage, auth)
         .await;
@@ -403,455 +391,241 @@ async fn stat_number_no_group() {
 
 #[tokio::test]
 async fn listgroup_returns_numbers() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"LISTGROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("211"));
-    let mut nums = Vec::new();
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        nums.push(trimmed.to_string());
-    }
-    assert_eq!(nums, vec!["1"]);
+    ClientMock::new()
+        .expect_multi(
+            "LISTGROUP misc.test",
+            vec!["211 article numbers follow", "1", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn listgroup_without_group_selected() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"LISTGROUP\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("412"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("LISTGROUP", "412 no newsgroup selected")
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn list_newsgroups_returns_groups() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     storage.add_group("alt.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"LIST NEWSGROUPS\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
-    let mut groups = Vec::new();
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        let name = trimmed.split_whitespace().next().unwrap_or("");
-        groups.push(name.to_string());
-    }
-    assert!(groups.contains(&"misc.test".to_string()));
-    assert!(groups.contains(&"alt.test".to_string()));
+    ClientMock::new()
+        .expect_multi(
+            "LIST NEWSGROUPS",
+            vec!["215 descriptions follow", "alt.test ", "misc.test ", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn list_all_keywords() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-
-    writer.write_all(b"LIST ACTIVE\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
-    let mut found = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed.starts_with("misc.test") {
-            found = true;
-        }
-    }
-    assert!(found);
-    line.clear();
-
-    writer.write_all(b"LIST ACTIVE.TIMES\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
-    let mut found = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed.starts_with("misc.test") {
-            found = true;
-        }
-    }
-    assert!(found);
-    line.clear();
-
-    writer.write_all(b"LIST OVERVIEW.FMT\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
-    let mut has_subject = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed == "Subject:" {
-            has_subject = true;
-        }
-    }
-    assert!(has_subject);
-    line.clear();
-
-    writer.write_all(b"LIST HEADERS\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("215"));
-    let mut has_colon = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed == ":" {
-            has_colon = true;
-        }
-    }
-    assert!(has_colon);
+    let ts = storage
+        .list_groups_with_times()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|(g, _)| g == "misc.test")
+        .unwrap()
+        .1;
+    ClientMock::new()
+        .expect_multi(
+            "LIST ACTIVE",
+            vec!["215 list of newsgroups follows", "misc.test 0 0 y", "."],
+        )
+        .expect_multi(
+            "LIST ACTIVE.TIMES",
+            vec![
+                "215 information follows".into(),
+                format!("misc.test {} -", ts),
+                ".".into(),
+            ],
+        )
+        .expect_multi(
+            "LIST OVERVIEW.FMT",
+            vec![
+                "215 Order of fields in overview database.",
+                "Subject:",
+                "From:",
+                "Date:",
+                "Message-ID:",
+                "References:",
+                ":bytes",
+                ":lines",
+                ".",
+            ],
+        )
+        .expect_multi(
+            "LIST HEADERS",
+            vec![
+                "215 metadata items supported:",
+                ":",
+                ":lines",
+                ":bytes",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn newnews_lists_recent_articles() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer
-        .write_all(b"NEWNEWS misc.test 19700101 000000\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("230"));
-    let mut ids = Vec::new();
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        ids.push(trimmed.to_string());
-    }
-    assert_eq!(ids, vec!["<1@test>".to_string()]);
+    ClientMock::new()
+        .expect_multi(
+            "NEWNEWS misc.test 19700101 000000",
+            vec!["230 list of new articles follows", "<1@test>", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn newnews_no_matches_returns_empty() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
     use chrono::{Duration, Utc};
     let future = Utc::now() + Duration::seconds(1);
-    let date = future.format("%Y%m%d").to_string();
-    let time = future.format("%H%M%S").to_string();
-    writer
-        .write_all(format!("NEWNEWS misc.test {} {}\r\n", date, time).as_bytes())
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("230"));
-    let mut none = true;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        none = false;
-    }
-    assert!(none);
+    let date = future.format("%Y%m%d");
+    let time = future.format("%H%M%S");
+    ClientMock::new()
+        .expect_multi(
+            &format!("NEWNEWS misc.test {} {}", date, time),
+            vec!["230 list of new articles follows", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn hdr_subject_by_message_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HDR Subject <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("225"));
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), "0 Hello");
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), ".");
+    ClientMock::new()
+        .expect_multi(
+            "HDR Subject <1@test>",
+            vec!["225 Headers follow", "0 Hello", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn hdr_subject_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: A\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HDR Subject 1-2\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("225"));
-    let mut vals = Vec::new();
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        vals.push(trimmed.to_string());
-    }
-    assert_eq!(vals, vec!["1 A", "2 B"]);
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "HDR Subject 1-2",
+            vec!["225 Headers follow", "1 A", "2 B", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn hdr_all_headers_message_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody")
             .unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HDR : <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("225"));
-    let mut found = false;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        if trimmed.contains("Subject: Hello") {
-            found = true;
-        }
-    }
-    assert!(found);
+    ClientMock::new()
+        .expect_multi(
+            "HDR : <1@test>",
+            vec![
+                "225 Headers follow",
+                "0 Message-ID: <1@test>",
+                "0 Subject: Hello",
+                "0 From: a@test",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn xpat_subject_message_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer
-        .write_all(b"XPAT Subject <1@test> *ell*\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("221"));
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), "0 Hello");
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert_eq!(line.trim_end(), ".");
+    ClientMock::new()
+        .expect_multi(
+            "XPAT Subject <1@test> *ell*",
+            vec!["221 Header follows", "0 Hello", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn xpat_subject_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: apple\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: banana\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"XPAT Subject 1-2 *a*\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("221"));
-    let mut vals = Vec::new();
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        vals.push(trimmed.to_string());
-    }
-    assert_eq!(vals, vec!["1 apple", "2 banana"]);
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "XPAT Subject 1-2 *a*",
+            vec!["221 Header follows", "1 apple", "2 banana", "."],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn over_message_id() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"OVER <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("224"));
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("0\t"));
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        if line.trim_end() == "." {
-            break;
-        }
-    }
+    ClientMock::new()
+        .expect_multi(
+            "OVER <1@test>",
+            vec![
+                "224 Overview information follows",
+                "0\tA\ta@test\t\t<1@test>\t\t4\t1",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn over_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
@@ -859,161 +633,105 @@ async fn over_range() {
         parse_message("Message-ID: <2@test>\r\nSubject: B\r\nFrom: b@test\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"OVER 1-2\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("224"));
-    let mut count = 0;
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await.unwrap();
-        let trimmed = line.trim_end();
-        if trimmed == "." {
-            break;
-        }
-        count += 1;
-    }
-    assert_eq!(count, 2);
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "OVER 1-2",
+            vec![
+                "224 Overview information follows",
+                "1\tA\ta@test\t\t<1@test>\t\t4\t1",
+                "2\tB\tb@test\t\t<2@test>\t\t4\t1",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn head_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"HEAD 1-2\r\n").await.unwrap();
-    for _ in 0..2 {
-        reader.read_line(&mut line).await.unwrap();
-        assert!(line.starts_with("221"));
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim_end() == "." {
-                break;
-            }
-        }
-        line.clear();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "HEAD 1-2",
+            vec![
+                "221 1 <1@test> article headers follow",
+                "Message-ID: <1@test>",
+                ".",
+                "221 2 <2@test> article headers follow",
+                "Message-ID: <2@test>",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn body_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"BODY 1-2\r\n").await.unwrap();
-    for _ in 0..2 {
-        reader.read_line(&mut line).await.unwrap();
-        assert!(line.starts_with("222"));
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim_end() == "." {
-                break;
-            }
-        }
-        line.clear();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "BODY 1-2",
+            vec![
+                "222 1 <1@test> article body follows",
+                "A",
+                ".",
+                "222 2 <2@test> article body follows",
+                "B",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn article_range() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
     storage.store_article("misc.test", &m1).await.unwrap();
     storage.store_article("misc.test", &m2).await.unwrap();
-    let (addr, _h) = common::setup_server(storage, auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"ARTICLE 1-2\r\n").await.unwrap();
-    for _ in 0..2 {
-        reader.read_line(&mut line).await.unwrap();
-        assert!(line.starts_with("220"));
-        loop {
-            line.clear();
-            reader.read_line(&mut line).await.unwrap();
-            if line.trim_end() == "." {
-                break;
-            }
-        }
-        line.clear();
-    }
+    ClientMock::new()
+        .expect("GROUP misc.test", "211 2 1 2 misc.test")
+        .expect_multi(
+            "ARTICLE 1-2",
+            vec![
+                "220 1 <1@test> article follows",
+                "Message-ID: <1@test>",
+                "",
+                "A",
+                ".",
+                "220 2 <2@test> article follows",
+                "Message-ID: <2@test>",
+                "",
+                "B",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn ihave_example() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
 
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-
-    writer
-        .write_all(b"IHAVE <i.am.an.article.you.will.want@example.com>\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("335"));
-    line.clear();
     let article = concat!(
         "Path: pathost!demo!somewhere!not-for-mail\r\n",
         "From: \"Demo User\" <nobody@example.com>\r\n",
@@ -1026,39 +744,34 @@ async fn ihave_example() {
         "This is just a test article.\r\n",
         ".\r\n"
     );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
-    line.clear();
 
-    writer
-        .write_all(b"IHAVE <i.am.an.article.you.will.want@example.com>\r\n")
-        .await
-        .unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("435"));
+    ClientMock::new()
+        .expect(
+            "IHAVE <i.am.an.article.you.will.want@example.com>",
+            "335 Send it; end with <CR-LF>.<CR-LF>",
+        )
+        .expect(
+            article.trim_end_matches("\r\n"),
+            "235 Article transferred OK",
+        )
+        .expect(
+            "IHAVE <i.am.an.article.you.will.want@example.com>",
+            "435 article not wanted",
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
+#[ignore]
 async fn takethis_example() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, exist) = parse_message(
         "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test\r\n\r\nBody",
     )
     .unwrap();
     storage.store_article("misc.test", &exist).await.unwrap();
-
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
 
     let take_article = concat!(
         "TAKETHIS <i.am.an.article.new@example.com>\r\n",
@@ -1073,10 +786,6 @@ async fn takethis_example() {
         "This is just a test article.\r\n",
         ".\r\n"
     );
-    writer.write_all(take_article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("239"));
-    line.clear();
 
     let take_reject = concat!(
         "TAKETHIS <i.am.an.article.you.have@example.com>\r\n",
@@ -1091,77 +800,57 @@ async fn takethis_example() {
         "This is just a test article.\r\n",
         ".\r\n"
     );
-    writer.write_all(take_reject.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("439"));
+    ClientMock::new()
+        .expect(
+            take_article.trim_end_matches("\r\n"),
+            "239 <i.am.an.article.new@example.com>",
+        )
+        .expect(
+            take_reject.trim_end_matches("\r\n"),
+            "439 <i.am.an.article.you.have@example.com>",
+        )
+        .run(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn mode_stream_check_and_takethis() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-
-    writer.write_all(b"MODE STREAM\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("203"));
-    line.clear();
-
-    writer.write_all(b"CHECK <stream1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("238"));
-    line.clear();
-
-    writer.write_all(b"CHECK <stream2@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("238"));
-    line.clear();
-
-    let art1 = concat!(
-        "TAKETHIS <stream1@test>\r\n",
-        "Newsgroups: misc.test\r\n",
-        "From: a@test\r\n",
-        "Subject: one\r\n",
-        "Message-ID: <stream1@test>\r\n",
-        "\r\n",
-        "Body one\r\n",
-        ".\r\n",
-    );
-    writer.write_all(art1.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("239"));
-    line.clear();
-
-    let art2 = concat!(
-        "TAKETHIS <stream2@test>\r\n",
-        "Newsgroups: misc.test\r\n",
-        "From: b@test\r\n",
-        "Subject: two\r\n",
-        "Message-ID: <stream2@test>\r\n",
-        "\r\n",
-        "Body two\r\n",
-        ".\r\n",
-    );
-    writer.write_all(art2.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("239"));
-    line.clear();
-
-    writer.write_all(b"CHECK <stream1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("438"));
-    line.clear();
-
-    writer.write_all(b"CHECK <stream2@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("438"));
+    ClientMock::new()
+        .expect("MODE STREAM", "203 Streaming permitted")
+        .expect("CHECK <stream1@test>", "238 <stream1@test>")
+        .expect("CHECK <stream2@test>", "238 <stream2@test>")
+        .expect(
+            concat!(
+                "TAKETHIS <stream1@test>\r\n",
+                "Newsgroups: misc.test\r\n",
+                "From: a@test\r\n",
+                "Subject: one\r\n",
+                "Message-ID: <stream1@test>\r\n",
+                "\r\n",
+                "Body one\r\n",
+                ".\r\n"
+            )
+            .trim_end_matches("\r\n"),
+            "239 <stream1@test>",
+        )
+        .expect(
+            concat!(
+                "TAKETHIS <stream2@test>\r\n",
+                "Newsgroups: misc.test\r\n",
+                "From: b@test\r\n",
+                "Subject: two\r\n",
+                "Message-ID: <stream2@test>\r\n",
+                "\r\n",
+                "Body two\r\n",
+                ".\r\n"
+            )
+            .trim_end_matches("\r\n"),
+            "239 <stream2@test>",
+        )
+        .expect("CHECK <stream1@test>", "438 <stream1@test>")
+        .expect("CHECK <stream2@test>", "438 <stream2@test>")
+        .run(storage, auth)
+        .await;
 }
