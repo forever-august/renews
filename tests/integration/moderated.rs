@@ -1,49 +1,9 @@
-use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 use renews::control::canonical_text;
 use renews::parse_message;
-use renews::storage::{sqlite::SqliteStorage, Storage};
-use std::sync::Arc;
 
-use test_utils::ClientMock;
+use crate::utils::{self, ClientMock, build_sig};
 
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
-
-const ADMIN_SEC: &str = include_str!("../data/admin.sec.asc");
 const ADMIN_PUB: &str = include_str!("../data/admin.pub.asc");
-
-fn build_sig(data: &str) -> (String, Vec<String>) {
-    use pgp::composed::{Deserializable, SignedSecretKey, StandaloneSignature};
-    use pgp::packet::SignatureConfig;
-    use pgp::packet::SignatureType;
-    use pgp::types::Password;
-    use rand::thread_rng;
-
-    let (key, _) = SignedSecretKey::from_string(ADMIN_SEC).unwrap();
-    let cfg =
-        SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
-    let sig = cfg
-        .sign(&key.primary_key, &Password::empty(), data.as_bytes())
-        .unwrap();
-    let armored = StandaloneSignature::new(sig)
-        .to_armored_string(Default::default())
-        .unwrap();
-    let version = "1".to_string();
-    let mut lines = Vec::new();
-    for line in armored.lines() {
-        if line.starts_with("-----BEGIN") || line.starts_with("Version") || line.is_empty() {
-            continue;
-        }
-        if line.starts_with("-----END") {
-            break;
-        }
-        lines.push(line.to_string());
-    }
-    (version, lines)
-}
 
 fn build_article() -> String {
     let headers = concat!(
@@ -105,7 +65,7 @@ fn build_cross_article() -> String {
 
 #[tokio::test]
 async fn post_requires_approval_for_moderated_group() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("mod.test", true).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     ClientMock::new()
@@ -113,7 +73,10 @@ async fn post_requires_approval_for_moderated_group() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP mod.test", "211 0 0 0 mod.test")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(
             concat!(
                 "Message-ID: <p@test>\r\n",
@@ -139,7 +102,7 @@ async fn post_requires_approval_for_moderated_group() {
 
 #[tokio::test]
 async fn post_with_approval_succeeds() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("mod.test", true).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     auth.update_pgp_key("user", ADMIN_PUB).await.unwrap();
@@ -150,7 +113,10 @@ async fn post_with_approval_succeeds() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP mod.test", "211 0 0 0 mod.test")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(article.trim_end_matches("\r\n"), "240 article received")
         .run_tls(storage.clone(), auth)
         .await;
@@ -165,7 +131,7 @@ async fn post_with_approval_succeeds() {
 
 #[tokio::test]
 async fn cross_post_different_moderators() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("mod.one", true).await.unwrap();
     storage.add_group("mod.two", true).await.unwrap();
     auth.add_user("poster", "pass").await.unwrap();
@@ -181,7 +147,10 @@ async fn cross_post_different_moderators() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP mod.one", "211 0 0 0 mod.one")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(article.trim_end_matches("\r\n"), "240 article received")
         .run_tls(storage.clone(), auth)
         .await;

@@ -4,15 +4,17 @@ mod auth;
 mod cancel_lock;
 #[path = "integration/control.rs"]
 mod control;
+#[path = "integration/max_size.rs"]
+mod max_size;
 #[path = "integration/moderated.rs"]
 mod moderated;
 #[path = "integration/peers.rs"]
 mod peers;
 #[path = "integration/retention.rs"]
 mod retention;
-#[path = "integration/max_size.rs"]
-mod max_size;
 #[path = "integration/storage.rs"]
 mod storage;
 #[path = "integration/tls.rs"]
 mod tls;
+#[path = "utils.rs"]
+mod utils;

@@ -8,7 +8,7 @@ use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
 
-use test_utils as common;
+use crate::utils as common;
 
 #[tokio::test]
 async fn add_and_remove_peers() {

@@ -1,32 +1,7 @@
 use chrono::{Duration, Utc};
 use renews::parse_message;
-use renews::storage::{sqlite::SqliteStorage, Storage};
-use std::sync::Arc;
 
-use test_utils::ClientMock;
-
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
-    use renews::auth::sqlite::SqliteAuth;
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
-
-fn capabilities_lines() -> Vec<String> {
-    vec![
-        "101 Capability list follows".into(),
-        "VERSION 2".into(),
-        format!("IMPLEMENTATION Renews {}", env!("CARGO_PKG_VERSION")),
-        "READER".into(),
-        "NEWNEWS".into(),
-        "IHAVE".into(),
-        "STREAMING".into(),
-        "OVER MSGID".into(),
-        "HDR".into(),
-        "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS".into(),
-        ".".into(),
-    ]
-}
+use crate::utils::{self, ClientMock};
 
 fn help_lines() -> Vec<String> {
     vec![
@@ -60,10 +35,9 @@ fn help_lines() -> Vec<String> {
 
 #[tokio::test]
 async fn head_and_list_commands() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) =
-        parse_message("Message-ID: <1@test>\r\nSubject: T\r\n\r\nBody").unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: T\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
 
     ClientMock::new()
@@ -89,7 +63,7 @@ async fn head_and_list_commands() {
 
 #[tokio::test]
 async fn listgroup_and_navigation_commands() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
@@ -109,7 +83,11 @@ async fn listgroup_and_navigation_commands() {
         )
         .expect_multi(
             "HEAD 1",
-            vec!["221 1 <1@test> article headers follow", "Message-ID: <1@test>", "."],
+            vec![
+                "221 1 <1@test> article headers follow",
+                "Message-ID: <1@test>",
+                ".",
+            ],
         )
         .expect("NEXT", "223 2 <2@test> article exists")
         .expect("LAST", "223 1 <1@test> article exists")
@@ -123,7 +101,12 @@ async fn listgroup_and_navigation_commands() {
         )
         .expect_multi(
             "NEWNEWS misc 19700101 000000",
-            vec!["230 list of new articles follows", "<1@test>", "<2@test>", "."],
+            vec![
+                "230 list of new articles follows",
+                "<1@test>",
+                "<2@test>",
+                ".",
+            ],
         )
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
@@ -132,13 +115,13 @@ async fn listgroup_and_navigation_commands() {
 
 #[tokio::test]
 async fn capabilities_and_misc_commands() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
 
     let date = Utc::now().format("%Y%m%d%H%M%S").to_string();
 
     ClientMock::new()
-        .expect_multi("CAPABILITIES", capabilities_lines())
+        .expect_multi("CAPABILITIES", utils::capabilities_lines())
         .expect("DATE", &format!("111 {}", date))
         .expect_multi("HELP", help_lines())
         .expect_multi(
@@ -152,7 +135,7 @@ async fn capabilities_and_misc_commands() {
 
 #[tokio::test]
 async fn no_group_returns_412() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
@@ -167,7 +150,7 @@ async fn no_group_returns_412() {
 
 #[tokio::test]
 async fn responses_include_number_and_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
@@ -177,7 +160,11 @@ async fn responses_include_number_and_id() {
         .expect("GROUP misc", "211 1 1 1 misc")
         .expect_multi(
             "HEAD 1",
-            vec!["221 1 <1@test> article headers follow", "Message-ID: <1@test>", "."],
+            vec![
+                "221 1 <1@test> article headers follow",
+                "Message-ID: <1@test>",
+                ".",
+            ],
         )
         .expect_multi(
             "BODY 1",
@@ -201,7 +188,7 @@ async fn responses_include_number_and_id() {
 
 #[tokio::test]
 async fn post_and_dot_stuffing() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
 
     ClientMock::new()
@@ -223,7 +210,7 @@ async fn post_and_dot_stuffing() {
 
 #[tokio::test]
 async fn body_returns_proper_crlf() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nline1\r\nline2\r\n").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
@@ -233,12 +220,7 @@ async fn body_returns_proper_crlf() {
         .expect("GROUP misc", "211 1 1 1 misc")
         .expect_multi(
             "BODY 1",
-            vec![
-                "222 1 <1@test> article body follows",
-                "line1",
-                "line2",
-                ".",
-            ],
+            vec!["222 1 <1@test> article body follows", "line1", "line2", "."],
         )
         .run(storage, auth)
         .await;
@@ -246,7 +228,7 @@ async fn body_returns_proper_crlf() {
 
 #[tokio::test]
 async fn newgroups_accepts_gmt_argument() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
 
     ClientMock::new()
@@ -261,7 +243,7 @@ async fn newgroups_accepts_gmt_argument() {
 
 #[tokio::test]
 async fn newnews_accepts_gmt_argument() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc", &msg).await.unwrap();
@@ -278,7 +260,7 @@ async fn newnews_accepts_gmt_argument() {
 
 #[tokio::test]
 async fn post_without_selecting_group() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
 
     ClientMock::new()

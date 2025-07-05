@@ -11,12 +11,68 @@ use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector, rustls};
 use tokio_test::io::Builder as IoBuilder;
 
+/// Create an in-memory storage and auth provider pair for tests.
+pub async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
+    use renews::auth::sqlite::SqliteAuth;
+    use renews::storage::sqlite::SqliteStorage;
+
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
+
+/// Lines returned by the CAPABILITIES command.
+pub fn capabilities_lines() -> Vec<String> {
+    vec![
+        "101 Capability list follows".into(),
+        "VERSION 2".into(),
+        format!("IMPLEMENTATION Renews {}", env!("CARGO_PKG_VERSION")),
+        "READER".into(),
+        "NEWNEWS".into(),
+        "IHAVE".into(),
+        "STREAMING".into(),
+        "OVER MSGID".into(),
+        "HDR".into(),
+        "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS".into(),
+        ".".into(),
+    ]
+}
+
+/// Build a detached PGP signature for the provided data.
+pub fn build_sig(data: &str) -> (String, Vec<String>) {
+    use pgp::composed::{Deserializable, SignedSecretKey, StandaloneSignature};
+    use pgp::packet::SignatureConfig;
+    use pgp::packet::SignatureType;
+    use pgp::types::Password;
+    use rand::thread_rng;
+
+    const ADMIN_SEC: &str = include_str!("integration/../data/admin.sec.asc");
+
+    let (key, _) = SignedSecretKey::from_string(ADMIN_SEC).unwrap();
+    let cfg =
+        SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
+    let sig = cfg
+        .sign(&key.primary_key, &Password::empty(), data.as_bytes())
+        .unwrap();
+    let armored = StandaloneSignature::new(sig)
+        .to_armored_string(Default::default())
+        .unwrap();
+    let version = "1".to_string();
+    let mut lines = Vec::new();
+    for line in armored.lines() {
+        if line.starts_with("-----BEGIN") || line.starts_with("Version") || line.is_empty() {
+            continue;
+        }
+        if line.starts_with("-----END") {
+            break;
+        }
+        lines.push(line.to_string());
+    }
+    (version, lines)
+}
+
 /// Generate a self-signed TLS certificate for use in tests.
-pub fn generate_self_signed_cert() -> (
-    rustls::Certificate,
-    rustls::PrivateKey,
-    String,
-) {
+pub fn generate_self_signed_cert() -> (rustls::Certificate, rustls::PrivateKey, String) {
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(["localhost".to_string()]).unwrap();
     let cert_der = cert.der().to_vec();
@@ -81,10 +137,7 @@ pub async fn setup_tls_server_with_cert(
     auth: Arc<dyn AuthProvider>,
     cert: rustls::Certificate,
     key: rustls::PrivateKey,
-) -> (
-    std::net::SocketAddr,
-    tokio::task::JoinHandle<()>,
-) {
+) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let tls_config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
@@ -116,8 +169,7 @@ pub async fn setup_tls_server(
     tokio::task::JoinHandle<()>,
 ) {
     let (cert, key, pem) = generate_self_signed_cert();
-    let (addr, handle) =
-        setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
+    let (addr, handle) = setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
     (addr, cert, pem, handle)
 }
 
@@ -154,14 +206,14 @@ impl ClientMock {
 
     /// Expect a command with a single-line response.
     pub fn expect(mut self, cmd: &str, resp: &str) -> Self {
-        self.steps
-            .push((cmd.to_string(), vec![resp.to_string()]));
+        self.steps.push((cmd.to_string(), vec![resp.to_string()]));
         self
     }
 
     /// Expect a command with a multi-line response.
     pub fn expect_multi<S: Into<String>>(mut self, cmd: &str, resp: Vec<S>) -> Self {
-        self.steps.push((cmd.to_string(), resp.into_iter().map(Into::into).collect()));
+        self.steps
+            .push((cmd.to_string(), resp.into_iter().map(Into::into).collect()));
         self
     }
 

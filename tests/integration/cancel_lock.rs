@@ -1,21 +1,12 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use renews::auth::sqlite::SqliteAuth;
 use renews::parse_message;
-use renews::storage::{sqlite::SqliteStorage, Storage};
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 
-use test_utils::ClientMock;
-
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
+use crate::utils::{self, ClientMock};
 
 #[tokio::test]
 async fn cancel_key_allows_cancel() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
 
     let key = "secret";
@@ -35,7 +26,10 @@ async fn cancel_key_allows_cancel() {
     );
     ClientMock::new()
         .expect("IHAVE <c@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
-        .expect(cancel.trim_end_matches("\r\n"), "235 Article transferred OK")
+        .expect(
+            cancel.trim_end_matches("\r\n"),
+            "235 Article transferred OK",
+        )
         .run(storage.clone(), auth)
         .await;
     assert!(
