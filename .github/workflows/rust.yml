@@ -7,7 +7,8 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  build-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,28 +17,31 @@ jobs:
           toolchain: stable
           override: true
       - run: cargo build --verbose
-
-  test:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      pull-requests: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      - run: cargo test --verbose
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
           override: false
-      - run: cargo test --verbose
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
-      - run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info --branch
+      - run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lcov
+          path: lcov.info
+
+  coverage:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: build-test
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: lcov
       - name: Setup LCOV
         uses: hrishikesh-kadam/setup-lcov@v1
       - name: Report code coverage
@@ -46,3 +50,4 @@ jobs:
           coverage-files: lcov.info
           github-token: ${{ secrets.GITHUB_TOKEN }}
           update-comment: true
+          artifact-name: code-coverage-report
