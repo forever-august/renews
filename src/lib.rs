@@ -7,6 +7,7 @@ pub use parse::{
 pub mod auth;
 pub mod config;
 pub mod control;
+pub mod peers;
 pub mod retention;
 pub mod storage;
 pub mod wildmat;
@@ -108,7 +109,7 @@ const RESP_100_HELP_FOLLOWS: &str = "100 help text follows\r\n";
 const RESP_203_STREAMING_PERMITTED: &str = "203 Streaming permitted\r\n";
 const DOT: &str = ".";
 
-fn extract_message_id(msg: &Message) -> Option<&str> {
+pub fn extract_message_id(msg: &Message) -> Option<&str> {
     msg.headers.iter().find_map(|(k, v)| {
         if k.eq_ignore_ascii_case("Message-ID") {
             Some(v.as_str())
@@ -118,7 +119,7 @@ fn extract_message_id(msg: &Message) -> Option<&str> {
     })
 }
 
-async fn send_body<W: AsyncWrite + Unpin>(
+pub async fn send_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     body: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -141,7 +142,7 @@ async fn send_body<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn send_headers<W: AsyncWrite + Unpin>(
+pub async fn send_headers<W: AsyncWrite + Unpin>(
     writer: &mut W,
     article: &Message,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -153,7 +154,7 @@ async fn send_headers<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-async fn write_simple<W: AsyncWrite + Unpin>(
+pub async fn write_simple<W: AsyncWrite + Unpin>(
     writer: &mut W,
     msg: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {

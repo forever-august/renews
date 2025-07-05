@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use tracing::{error, info};
 
 use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 use renews::config::Config;
+use renews::peers::{PeerConfig, PeerDb, peer_task};
 use renews::retention::cleanup_expired_articles;
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
@@ -130,6 +132,37 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     };
     let auth_conn = format!("sqlite:{}", auth_path);
     let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_conn).await?);
+    let peer_db = {
+        let cfg_guard = cfg.read().await;
+        let conn = format!("sqlite:{}", cfg_guard.peer_db_path);
+        PeerDb::new(&conn).await?
+    };
+    {
+        let cfg_guard = cfg.read().await;
+        let names: Vec<String> = cfg_guard.peers.iter().map(|p| p.sitename.clone()).collect();
+        peer_db.sync_config(&names).await?;
+    }
+    let peer_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>> =
+        Arc::new(RwLock::new(HashMap::new()));
+    {
+        let cfg_guard = cfg.read().await;
+        let default_interval = cfg_guard.peer_sync_secs;
+        for peer in cfg_guard.peers.iter() {
+            let pc = PeerConfig::from(peer);
+            let name = pc.sitename.clone();
+            let db_clone = peer_db.clone();
+            let storage_clone = storage.clone();
+            let site = cfg_guard.site_name.clone();
+            let handle = tokio::spawn(peer_task(
+                pc.clone(),
+                default_interval,
+                db_clone,
+                storage_clone,
+                site,
+            ));
+            peer_tasks.write().await.insert(name, handle);
+        }
+    }
     let addr = {
         let cfg_guard = cfg.read().await;
         format!("127.0.0.1:{}", cfg_guard.port)
@@ -212,21 +245,59 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let cfg_reload = cfg.clone();
         let tls_reload = tls_acceptor.clone();
         let cfg_path_reload = cfg_path.clone();
+        let peer_db_reload = peer_db.clone();
+        let peer_tasks_reload = peer_tasks.clone();
+        let storage_reload = storage.clone();
         tokio::spawn(async move {
             if let Ok(mut hup) = signal(SignalKind::hangup()) {
                 while hup.recv().await.is_some() {
                     match Config::from_file(&cfg_path_reload) {
                         Ok(new_cfg) => {
-                            if let (Some(cert), Some(key)) = (
-                                new_cfg.tls_cert.as_ref(),
-                                new_cfg.tls_key.as_ref(),
-                            ) {
+                            if let (Some(cert), Some(key)) =
+                                (new_cfg.tls_cert.as_ref(), new_cfg.tls_key.as_ref())
+                            {
                                 match load_tls_config(cert, key) {
                                     Ok(conf) => {
                                         *tls_reload.write().await =
                                             Some(TlsAcceptor::from(Arc::new(conf)));
                                     }
                                     Err(e) => error!("failed to load tls config: {e}"),
+                                }
+                            }
+                            {
+                                let names: Vec<String> =
+                                    new_cfg.peers.iter().map(|p| p.sitename.clone()).collect();
+                                if let Err(e) = peer_db_reload.sync_config(&names).await {
+                                    error!("peer db sync error: {e}");
+                                }
+                                let mut tasks = peer_tasks_reload.write().await;
+                                let default_interval = new_cfg.peer_sync_secs;
+                                for peer in new_cfg.peers.iter() {
+                                    if !tasks.contains_key(&peer.sitename) {
+                                        let dbc = peer_db_reload.clone();
+                                        let pc = PeerConfig::from(peer);
+                                        let name = pc.sitename.clone();
+                                        let storage_clone = storage_reload.clone();
+                                        let site = new_cfg.site_name.clone();
+                                        let handle = tokio::spawn(peer_task(
+                                            pc.clone(),
+                                            default_interval,
+                                            dbc,
+                                            storage_clone,
+                                            site,
+                                        ));
+                                        tasks.insert(name, handle);
+                                    }
+                                }
+                                let to_remove: Vec<String> = tasks
+                                    .keys()
+                                    .filter(|k| !new_cfg.peers.iter().any(|p| &p.sitename == *k))
+                                    .cloned()
+                                    .collect();
+                                for name in to_remove {
+                                    if let Some(h) = tasks.remove(&name) {
+                                        h.abort();
+                                    }
                                 }
                             }
                             cfg_reload.write().await.update_runtime(new_cfg);
