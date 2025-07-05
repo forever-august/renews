@@ -167,9 +167,48 @@ impl ClientMock {
 
     pub async fn run(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
         use renews::config::Config;
+        self.run_with(storage, auth, toml::from_str("port=119").unwrap(), false)
+            .await;
+    }
+
+    pub async fn run_tls(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
+        use renews::config::Config;
+        self.run_with(storage, auth, toml::from_str("port=119").unwrap(), true)
+            .await;
+    }
+
+    pub async fn run_with_cfg(
+        self,
+        cfg: renews::config::Config,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        self.run_with(storage, auth, cfg, false).await;
+    }
+
+    pub async fn run_with_cfg_tls(
+        self,
+        cfg: renews::config::Config,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        self.run_with(storage, auth, cfg, true).await;
+    }
+
+    async fn run_with(
+        self,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+        cfg: renews::config::Config,
+        tls: bool,
+    ) {
         use tokio::sync::RwLock;
         let mut builder = IoBuilder::new();
-        builder.write(b"201 NNTP Service Ready - no posting allowed\r\n");
+        if tls {
+            builder.write(b"200 NNTP Service Ready\r\n");
+        } else {
+            builder.write(b"201 NNTP Service Ready - no posting allowed\r\n");
+        }
         for (cmd, resps) in self.steps {
             let mut cmd_bytes = cmd.into_bytes();
             if !cmd_bytes.ends_with(b"\n") {
@@ -182,8 +221,8 @@ impl ClientMock {
         }
         builder.read(b"");
         let mock = builder.build();
-        let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
-        renews::handle_client(mock, storage, auth, cfg, false)
+        let cfg: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(cfg));
+        renews::handle_client(mock, storage, auth, cfg, tls)
             .await
             .unwrap();
     }

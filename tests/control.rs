@@ -1,11 +1,16 @@
 use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 use renews::control::canonical_text;
 use renews::parse_message;
-use renews::storage::{Storage, sqlite::SqliteStorage};
+use renews::storage::{sqlite::SqliteStorage, Storage};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use test_utils as common;
+use test_utils::ClientMock;
+
+async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
 
 const ADMIN_SEC: &str = include_str!("data/admin.sec.asc");
 const ADMIN_PUB: &str = include_str!("data/admin.pub.asc");
@@ -69,25 +74,16 @@ fn build_control_article(cmd: &str, body: &str) -> String {
 
 #[tokio::test]
 async fn control_newgroup_and_rmgroup() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     auth.add_user("admin@example.org", "x").await.unwrap();
-    auth.add_admin("admin@example.org", ADMIN_PUB)
-        .await
-        .unwrap();
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"IHAVE <ctrl@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("335"));
-    line.clear();
+    auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
+
     let article = build_control_article("newgroup test.group", "test group body\n");
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
+    ClientMock::new()
+        .expect("IHAVE <ctrl@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "235 Article transferred OK")
+        .run(storage.clone(), auth.clone())
+        .await;
     assert!(
         storage
             .list_groups()
@@ -96,15 +92,12 @@ async fn control_newgroup_and_rmgroup() {
             .contains(&"test.group".to_string())
     );
 
-    // remove group
-    line.clear();
-    writer.write_all(b"IHAVE <ctrl2@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
     let article = build_control_article("rmgroup test.group", "rm body\n");
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
+    ClientMock::new()
+        .expect("IHAVE <ctrl2@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "235 Article transferred OK")
+        .run(storage.clone(), auth.clone())
+        .await;
     assert!(
         !storage
             .list_groups()
@@ -116,8 +109,7 @@ async fn control_newgroup_and_rmgroup() {
 
 #[tokio::test]
 async fn control_cancel_removes_article() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, art) = parse_message(
         "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nFrom: u@test\r\nSubject: t\r\n\r\nBody",
@@ -125,21 +117,13 @@ async fn control_cancel_removes_article() {
     .unwrap();
     storage.store_article("misc.test", &art).await.unwrap();
     auth.add_user("admin@example.org", "x").await.unwrap();
-    auth.add_admin("admin@example.org", ADMIN_PUB)
-        .await
-        .unwrap();
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"IHAVE <c@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
+    auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
     let article = build_control_article("cancel <a@test>", "cancel\n");
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
+    ClientMock::new()
+        .expect("IHAVE <c@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "235 Article transferred OK")
+        .run(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<a@test>")
@@ -153,8 +137,7 @@ async fn admin_cancel_ignores_lock() {
     use base64::{engine::general_purpose::STANDARD, Engine as _};
     use sha2::{Digest, Sha256};
 
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
 
     // store an article with a cancel-lock
@@ -172,19 +155,13 @@ async fn admin_cancel_ignores_lock() {
     // admin setup
     auth.add_user("admin@example.org", "x").await.unwrap();
     auth.add_admin("admin@example.org", ADMIN_PUB).await.unwrap();
-    let (addr, _h) = common::setup_server(storage.clone(), auth.clone()).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
 
-    writer.write_all(b"IHAVE <c2@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
     let article = build_control_article("cancel <al@test>", "cancel\n");
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
+    ClientMock::new()
+        .expect("IHAVE <c2@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "235 Article transferred OK")
+        .run(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<al@test>")

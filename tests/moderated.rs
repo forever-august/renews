@@ -1,11 +1,16 @@
 use renews::auth::{AuthProvider, sqlite::SqliteAuth};
 use renews::control::canonical_text;
 use renews::parse_message;
-use renews::storage::{Storage, sqlite::SqliteStorage};
+use renews::storage::{sqlite::SqliteStorage, Storage};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use test_utils as common;
+use test_utils::ClientMock;
+
+async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
 
 const ADMIN_SEC: &str = include_str!("data/admin.sec.asc");
 const ADMIN_PUB: &str = include_str!("data/admin.pub.asc");
@@ -100,45 +105,29 @@ fn build_cross_article() -> String {
 
 #[tokio::test]
 async fn post_requires_approval_for_moderated_group() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     storage.add_group("mod.test", true).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER user\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP mod.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
-    let article = concat!(
-        "Message-ID: <p@test>\r\n",
-        "Newsgroups: mod.test\r\n",
-        "From: user@example.com\r\n",
-        "Subject: t\r\n",
-        "\r\n",
-        "Body\r\n",
-        ".\r\n",
-    );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("441"));
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP mod.test", "211 0 0 0 mod.test")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            concat!(
+                "Message-ID: <p@test>\r\n",
+                "Newsgroups: mod.test\r\n",
+                "From: user@example.com\r\n",
+                "Subject: t\r\n",
+                "\r\n",
+                "Body\r\n",
+                ".",
+            ),
+            "441 posting failed",
+        )
+        .run_tls(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<p@test>")
@@ -150,39 +139,21 @@ async fn post_requires_approval_for_moderated_group() {
 
 #[tokio::test]
 async fn post_with_approval_succeeds() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     storage.add_group("mod.test", true).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     auth.update_pgp_key("user", ADMIN_PUB).await.unwrap();
     auth.add_moderator("user", "mod.*").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER user\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP mod.test\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
     let article = build_article();
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP mod.test", "211 0 0 0 mod.test")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .run_tls(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<pa@test>")
@@ -194,8 +165,7 @@ async fn post_with_approval_succeeds() {
 
 #[tokio::test]
 async fn cross_post_different_moderators() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
+    let (storage, auth) = setup().await;
     storage.add_group("mod.one", true).await.unwrap();
     storage.add_group("mod.two", true).await.unwrap();
     auth.add_user("poster", "pass").await.unwrap();
@@ -205,33 +175,16 @@ async fn cross_post_different_moderators() {
     auth.update_pgp_key("mod2", ADMIN_PUB).await.unwrap();
     auth.add_moderator("mod1", "mod.one").await.unwrap();
     auth.add_moderator("mod2", "mod.two").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER poster\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP mod.one\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
     let article = build_cross_article();
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
+    ClientMock::new()
+        .expect("AUTHINFO USER poster", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP mod.one", "211 0 0 0 mod.one")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .run_tls(storage.clone(), auth)
+        .await;
     assert_eq!(
         storage.list_article_numbers("mod.one").await.unwrap(),
         vec![1]
