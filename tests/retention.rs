@@ -10,7 +10,7 @@ use tokio::time::sleep;
 
 #[tokio::test]
 async fn cleanup_retention_zero_keeps_articles() {
-    let cfg: Config = toml::from_str("port=1199\ndefault_retention_days=0").unwrap();
+    let cfg: Config = toml::from_str("port=119\ndefault_retention_days=0").unwrap();
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nB").unwrap();
@@ -29,7 +29,7 @@ async fn cleanup_retention_zero_keeps_articles() {
 #[tokio::test]
 async fn cleanup_expires_header() {
     use chrono::Duration as ChronoDuration;
-    let cfg: Config = toml::from_str("port=1199\ndefault_retention_days=10").unwrap();
+    let cfg: Config = toml::from_str("port=119\ndefault_retention_days=10").unwrap();
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
     let past = (chrono::Utc::now() - ChronoDuration::days(1)).to_rfc2822();

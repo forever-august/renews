@@ -38,7 +38,7 @@ following keys are recognised:
 An example configuration is provided in the repository:
 
 ```toml
-port = 1199
+port = 119
 site_name = "example.com"
 db_path = "/var/renews/news.db"
 auth_db_path = "/var/renews/auth.db"

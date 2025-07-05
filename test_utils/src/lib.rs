@@ -18,7 +18,7 @@ pub async fn setup_server(
     let addr = listener.local_addr().unwrap();
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
-    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=1199").unwrap()));
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         handle_client(sock, store_clone, auth_clone, cfg, false)
@@ -63,11 +63,13 @@ pub async fn setup_tls_server(
 ) -> (
     std::net::SocketAddr,
     rustls::Certificate,
+    String,
     tokio::task::JoinHandle<()>,
 ) {
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(["localhost".to_string()]).unwrap();
     let cert_der = cert.der().to_vec();
+    let cert_pem = cert.pem();
     let key = signing_key.serialize_der();
     let tls_config = rustls::ServerConfig::builder()
         .with_safe_defaults()
@@ -82,7 +84,7 @@ pub async fn setup_tls_server(
     let addr = listener.local_addr().unwrap();
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
-    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=1199").unwrap()));
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
@@ -90,7 +92,7 @@ pub async fn setup_tls_server(
             .await
             .unwrap();
     });
-    (addr, rustls::Certificate(cert_der), handle)
+    (addr, rustls::Certificate(cert_der), cert_pem, handle)
 }
 
 pub async fn connect_tls(
