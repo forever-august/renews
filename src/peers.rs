@@ -1,14 +1,14 @@
 use chrono::{DateTime, Utc};
+use rustls_native_certs::load_native_certs;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::{
-    rustls::{self, RootCertStore},
     TlsConnector,
+    rustls::{self, RootCertStore},
 };
-use rustls_native_certs::load_native_certs;
 
 use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
@@ -136,6 +136,8 @@ pub struct PeerConfig {
     pub sitename: String,
     pub patterns: Vec<String>,
     pub sync_interval_secs: Option<u64>,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 impl From<&crate::config::PeerRule> for PeerConfig {
@@ -144,6 +146,8 @@ impl From<&crate::config::PeerRule> for PeerConfig {
             sitename: r.sitename.clone(),
             patterns: r.patterns.clone(),
             sync_interval_secs: r.sync_interval_secs,
+            username: r.username.clone(),
+            password: r.password.clone(),
         }
     }
 }
@@ -171,6 +175,7 @@ async fn send_article(
     host: &str,
     article: &Message,
     use_takethis: bool,
+    creds: Option<(&str, &str)>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
     let (host_part, port) = parse_host_port(host, 563);
@@ -183,6 +188,23 @@ async fn send_article(
     let mut reader = BufReader::new(read_half);
     let mut line = String::new();
     reader.read_line(&mut line).await?; // greeting
+    if let Some((user, pass)) = creds {
+        write_simple(&mut write_half, &format!("AUTHINFO USER {}\r\n", user)).await?;
+        line.clear();
+        reader.read_line(&mut line).await?;
+        if line.starts_with("381") {
+            write_simple(&mut write_half, &format!("AUTHINFO PASS {}\r\n", pass)).await?;
+            line.clear();
+            reader.read_line(&mut line).await?;
+            if !line.starts_with("281") {
+                let _ = write_half.shutdown().await;
+                return Ok(());
+            }
+        } else if !line.starts_with("281") {
+            let _ = write_half.shutdown().await;
+            return Ok(());
+        }
+    }
     if use_takethis {
         write_simple(&mut write_half, "MODE STREAM\r\n").await?;
         line.clear();
@@ -248,7 +270,8 @@ async fn sync_peer_once(
                 if !has_path {
                     article.headers.push(("Path".into(), site_name.to_string()));
                 }
-                let _ = send_article(&peer.sitename, &article, use_takethis).await;
+                let creds = peer.username.as_deref().zip(peer.password.as_deref());
+                let _ = send_article(&peer.sitename, &article, use_takethis, creds).await;
             }
         }
     }

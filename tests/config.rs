@@ -78,3 +78,17 @@ fn default_paths() {
     assert_eq!(cfg.peer_db_path, "/var/renews/peers.db");
     assert_eq!(cfg.peer_sync_secs, 3600);
 }
+
+#[test]
+fn peer_auth_fields() {
+    let toml = r#"port = 119
+[[peers]]
+sitename = "news.example.com"
+username = "u"
+password = "p"
+"#;
+    let cfg: Config = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.peers.len(), 1);
+    assert_eq!(cfg.peers[0].username.as_deref(), Some("u"));
+    assert_eq!(cfg.peers[0].password.as_deref(), Some("p"));
+}
