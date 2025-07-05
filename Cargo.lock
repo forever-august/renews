@@ -2118,9 +2118,9 @@ dependencies = [
  "sha2",
  "sqlx",
  "tempfile",
- "test_utils",
  "tokio",
  "tokio-rustls",
+ "tokio-test",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -2850,18 +2850,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "test_utils"
-version = "0.1.0"
-dependencies = [
- "rcgen",
- "renews",
- "tokio",
- "tokio-rustls",
- "tokio-test",
- "toml",
 ]
 
 [[package]]

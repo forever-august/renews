@@ -1,18 +1,8 @@
-use renews::auth::AuthProvider;
-use renews::storage::{sqlite::SqliteStorage, Storage};
-use std::sync::Arc;
-
-use test_utils::ClientMock;
-
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
+use crate::utils::{self, ClientMock};
 
 #[tokio::test]
 async fn tls_quit() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
@@ -21,7 +11,7 @@ async fn tls_quit() {
 
 #[tokio::test]
 async fn tls_mode_reader() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("MODE READER", "200 Posting allowed")
         .run_tls(storage, auth)
@@ -30,7 +20,7 @@ async fn tls_mode_reader() {
 
 #[tokio::test]
 async fn tls_post_requires_auth() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     ClientMock::new()
         .expect("MODE READER", "200 Posting allowed")
@@ -49,7 +39,7 @@ async fn tls_post_requires_auth() {
 
 #[tokio::test]
 async fn tls_authinfo_and_post() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     let article = concat!(
@@ -66,7 +56,10 @@ async fn tls_authinfo_and_post() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP misc", "211 0 0 0 misc")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(article.trim_end_matches("\r\n"), "240 article received")
         .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
@@ -82,7 +75,7 @@ async fn tls_authinfo_and_post() {
 
 #[tokio::test]
 async fn post_without_msgid_generates_one() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     let article = concat!(
@@ -98,7 +91,10 @@ async fn post_without_msgid_generates_one() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP misc", "211 0 0 0 misc")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(article.trim_end_matches("\r\n"), "240 article received")
         .run_tls(storage.clone(), auth.clone())
         .await;
@@ -115,7 +111,7 @@ async fn post_without_msgid_generates_one() {
 
 #[tokio::test]
 async fn post_without_date_adds_header() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
     let article = concat!(
@@ -131,7 +127,10 @@ async fn post_without_date_adds_header() {
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .expect("GROUP misc", "211 0 0 0 misc")
-        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
         .expect(article.trim_end_matches("\r\n"), "240 article received")
         .run_tls(storage.clone(), auth.clone())
         .await;

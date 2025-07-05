@@ -1,19 +1,12 @@
 use renews::config::Config;
-use renews::storage::{sqlite::SqliteStorage, Storage};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use test_utils::ClientMock;
-
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
+use crate::utils::{self, ClientMock};
 
 #[tokio::test]
 async fn ihave_rejects_large_article() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
         toml::from_str("port=119\ndefault_max_article_bytes=10\n").unwrap(),
@@ -38,7 +31,7 @@ async fn ihave_rejects_large_article() {
 
 #[tokio::test]
 async fn ihave_rejects_large_article_with_suffix() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
         toml::from_str("port=119\ndefault_max_article_bytes=\"1K\"\n").unwrap(),

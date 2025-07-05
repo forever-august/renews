@@ -1,34 +1,9 @@
+use crate::utils::{self, ClientMock};
 use renews::{parse_command, parse_message, parse_response};
-use renews::storage::{Storage, sqlite::SqliteStorage};
-use std::sync::Arc;
-use test_utils::ClientMock;
-
-async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
-    use renews::auth::sqlite::SqliteAuth;
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    (storage as _, auth as _)
-}
-
-fn capabilities_lines() -> Vec<String> {
-    vec![
-        "101 Capability list follows".into(),
-        "VERSION 2".into(),
-        format!("IMPLEMENTATION Renews {}", env!("CARGO_PKG_VERSION")),
-        "READER".into(),
-        "NEWNEWS".into(),
-        "IHAVE".into(),
-        "STREAMING".into(),
-        "OVER MSGID".into(),
-        "HDR".into(),
-        "LIST ACTIVE NEWSGROUPS ACTIVE.TIMES OVERVIEW.FMT HEADERS".into(),
-        ".".into(),
-    ]
-}
 
 #[tokio::test]
 async fn unknown_command_mail() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("MAIL", "500 command not recognized")
         .run(storage, auth)
@@ -54,14 +29,22 @@ fn parse_example_commands() {
         ),
         ("HEAD 53 54 55\r\n", "HEAD", vec!["53", "54", "55"]),
         ("LIST ACTIVE u[ks].*\r\n", "LIST", vec!["ACTIVE", "u[ks].*"]),
-        ("XENCRYPT RSA abcd=efg\r\n", "XENCRYPT", vec!["RSA", "abcd=efg"]),
+        (
+            "XENCRYPT RSA abcd=efg\r\n",
+            "XENCRYPT",
+            vec!["RSA", "abcd=efg"],
+        ),
         (
             "IHAVE <i.am.an.article.you.will.want@example.com>\r\n",
             "IHAVE",
             vec!["<i.am.an.article.you.will.want@example.com>"],
         ),
         ("GROUP secret.group\r\n", "GROUP", vec!["secret.group"]),
-        ("XSECRET fred flintstone\r\n", "XSECRET", vec!["fred", "flintstone"]),
+        (
+            "XSECRET fred flintstone\r\n",
+            "XSECRET",
+            vec!["fred", "flintstone"],
+        ),
         ("XENCRYPT\r\n", "XENCRYPT", vec![]),
         ("GROUP binary.group\r\n", "GROUP", vec!["binary.group"]),
         (
@@ -84,7 +67,10 @@ fn parse_example_commands() {
 #[test]
 fn parse_example_responses() {
     let examples = vec![
-        ("200 news.example.com server ready (posting allowed)\r\n", 200),
+        (
+            "200 news.example.com server ready (posting allowed)\r\n",
+            200,
+        ),
         ("211 1 1 1 misc.test\r\n", 211),
         (
             "340 send article to be posted. End with <CR-LF>.<CR-LF>\r\n",
@@ -107,10 +93,7 @@ fn parse_example_responses() {
         ("283 Encrypted link established\r\n", 283),
         ("211 5 1 20 secret.group selected\r\n", 211),
         ("401 XHOST Not on this virtual host\r\n", 401),
-        (
-            "290 binary.news.example.org virtual host selected\r\n",
-            290,
-        ),
+        ("290 binary.news.example.org virtual host selected\r\n", 290),
         ("211 5 1 77 binary.group selected\r\n", 211),
         ("403 Archive server temporarily offline\r\n", 403),
         ("400 Power supply failed, running on UPS\r\n", 400),
@@ -141,16 +124,22 @@ fn parse_example_article() {
         ("From".into(), "\"Demo User\" <nobody@example.net>".into())
     );
     assert_eq!(msg.headers[1], ("Newsgroups".into(), "misc.test".into()));
-    assert_eq!(msg.headers[2], ("Subject".into(), "I am just a test article".into()));
-    assert_eq!(msg.headers[3], ("Organization".into(), "An Example Net".into()));
+    assert_eq!(
+        msg.headers[2],
+        ("Subject".into(), "I am just a test article".into())
+    );
+    assert_eq!(
+        msg.headers[3],
+        ("Organization".into(), "An Example Net".into())
+    );
     assert_eq!(msg.body, "This is just a test article.");
 }
 
 #[tokio::test]
 async fn capabilities_and_unknown_command() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
-        .expect_multi("CAPABILITIES", capabilities_lines())
+        .expect_multi("CAPABILITIES", utils::capabilities_lines())
         .expect("OVER", "412 no newsgroup selected")
         .run(storage, auth)
         .await;
@@ -158,7 +147,7 @@ async fn capabilities_and_unknown_command() {
 
 #[tokio::test]
 async fn unsupported_mode_variant() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("MODE POSTER", "501 unknown mode")
         .run(storage, auth)
@@ -167,7 +156,7 @@ async fn unsupported_mode_variant() {
 
 #[tokio::test]
 async fn article_syntax_error() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("ARTICLE a.message.id@no.angle.brackets", "501 invalid id")
         .run(storage, auth)
@@ -176,7 +165,7 @@ async fn article_syntax_error() {
 
 #[tokio::test]
 async fn head_without_group_returns_412() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("HEAD 1", "412 no newsgroup selected")
         .run(storage, auth)
@@ -185,7 +174,7 @@ async fn head_without_group_returns_412() {
 
 #[tokio::test]
 async fn list_unknown_keyword() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect_multi(
             "LIST ACTIVE u[ks].*",
@@ -200,7 +189,7 @@ async fn list_unknown_keyword() {
 
 #[tokio::test]
 async fn list_distrib_pats_not_supported() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("LIST DISTRIB.PATS", "503 feature not supported")
         .run(storage, auth)
@@ -209,7 +198,7 @@ async fn list_distrib_pats_not_supported() {
 
 #[tokio::test]
 async fn unknown_command_xencrypt() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("XENCRYPT RSA abcd=efg", "500 command not recognized")
         .run(storage, auth)
@@ -218,7 +207,7 @@ async fn unknown_command_xencrypt() {
 
 #[tokio::test]
 async fn mode_reader_success() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
         .run(storage, auth)
@@ -227,7 +216,7 @@ async fn mode_reader_success() {
 
 #[tokio::test]
 async fn commands_are_case_insensitive() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("mode reader", "201 Posting prohibited")
         .expect("quit", "205 closing connection")
@@ -237,7 +226,7 @@ async fn commands_are_case_insensitive() {
 
 #[tokio::test]
 async fn group_select_returns_211() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 0 0 0 misc.test")
@@ -247,7 +236,7 @@ async fn group_select_returns_211() {
 
 #[tokio::test]
 async fn article_success_by_number() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -269,7 +258,7 @@ async fn article_success_by_number() {
 
 #[tokio::test]
 async fn article_success_by_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -290,7 +279,7 @@ async fn article_success_by_id() {
 
 #[tokio::test]
 async fn article_id_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("ARTICLE <nope@id>", "430 no such article")
@@ -300,7 +289,7 @@ async fn article_id_not_found() {
 
 #[tokio::test]
 async fn article_number_no_group() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("ARTICLE 1", "412 no newsgroup selected")
         .run(storage, auth)
@@ -309,7 +298,7 @@ async fn article_number_no_group() {
 
 #[tokio::test]
 async fn head_success_by_number() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -329,7 +318,7 @@ async fn head_success_by_number() {
 
 #[tokio::test]
 async fn head_success_by_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -348,7 +337,7 @@ async fn head_success_by_id() {
 
 #[tokio::test]
 async fn head_number_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -361,7 +350,7 @@ async fn head_number_not_found() {
 
 #[tokio::test]
 async fn head_id_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("HEAD <nope@id>", "430 no such article")
@@ -371,7 +360,7 @@ async fn head_id_not_found() {
 
 #[tokio::test]
 async fn head_no_current_article_selected() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 0 0 0 misc.test")
@@ -382,7 +371,7 @@ async fn head_no_current_article_selected() {
 
 #[tokio::test]
 async fn body_success_by_number() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -398,7 +387,7 @@ async fn body_success_by_number() {
 
 #[tokio::test]
 async fn body_success_by_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -413,7 +402,7 @@ async fn body_success_by_id() {
 
 #[tokio::test]
 async fn body_number_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -426,7 +415,7 @@ async fn body_number_not_found() {
 
 #[tokio::test]
 async fn body_id_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("BODY <nope@id>", "430 no such article")
@@ -436,7 +425,7 @@ async fn body_id_not_found() {
 
 #[tokio::test]
 async fn body_number_no_group() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("BODY 1", "412 no newsgroup selected")
         .run(storage, auth)
@@ -445,7 +434,7 @@ async fn body_number_no_group() {
 
 #[tokio::test]
 async fn stat_success_by_number() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -458,7 +447,7 @@ async fn stat_success_by_number() {
 
 #[tokio::test]
 async fn stat_success_by_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -470,7 +459,7 @@ async fn stat_success_by_id() {
 
 #[tokio::test]
 async fn stat_number_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -483,7 +472,7 @@ async fn stat_number_not_found() {
 
 #[tokio::test]
 async fn stat_id_not_found() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("STAT <nope@id>", "430 no such article")
@@ -493,7 +482,7 @@ async fn stat_id_not_found() {
 
 #[tokio::test]
 async fn stat_number_no_group() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("STAT 1", "412 no newsgroup selected")
         .run(storage, auth)
@@ -502,7 +491,7 @@ async fn stat_number_no_group() {
 
 #[tokio::test]
 async fn listgroup_returns_numbers() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -517,7 +506,7 @@ async fn listgroup_returns_numbers() {
 
 #[tokio::test]
 async fn listgroup_without_group_selected() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     ClientMock::new()
         .expect("LISTGROUP", "412 no newsgroup selected")
         .run(storage, auth)
@@ -526,7 +515,7 @@ async fn listgroup_without_group_selected() {
 
 #[tokio::test]
 async fn list_newsgroups_returns_groups() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     storage.add_group("alt.test", false).await.unwrap();
     ClientMock::new()
@@ -540,7 +529,7 @@ async fn list_newsgroups_returns_groups() {
 
 #[tokio::test]
 async fn list_all_keywords() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let ts = storage
         .list_groups_with_times()
@@ -593,7 +582,7 @@ async fn list_all_keywords() {
 
 #[tokio::test]
 async fn newnews_lists_recent_articles() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -608,7 +597,7 @@ async fn newnews_lists_recent_articles() {
 
 #[tokio::test]
 async fn newnews_no_matches_returns_empty() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -627,7 +616,7 @@ async fn newnews_no_matches_returns_empty() {
 
 #[tokio::test]
 async fn hdr_subject_by_message_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -642,7 +631,7 @@ async fn hdr_subject_by_message_id() {
 
 #[tokio::test]
 async fn hdr_subject_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: A\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
@@ -660,7 +649,7 @@ async fn hdr_subject_range() {
 
 #[tokio::test]
 async fn hdr_all_headers_message_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody")
@@ -683,7 +672,7 @@ async fn hdr_all_headers_message_id() {
 
 #[tokio::test]
 async fn xpat_subject_message_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
@@ -698,7 +687,7 @@ async fn xpat_subject_message_id() {
 
 #[tokio::test]
 async fn xpat_subject_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: apple\r\n\r\nBody").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: banana\r\n\r\nBody").unwrap();
@@ -716,7 +705,7 @@ async fn xpat_subject_range() {
 
 #[tokio::test]
 async fn over_message_id() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
@@ -736,7 +725,7 @@ async fn over_message_id() {
 
 #[tokio::test]
 async fn over_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) =
         parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
@@ -761,7 +750,7 @@ async fn over_range() {
 
 #[tokio::test]
 async fn head_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
@@ -786,7 +775,7 @@ async fn head_range() {
 
 #[tokio::test]
 async fn body_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
@@ -811,7 +800,7 @@ async fn body_range() {
 
 #[tokio::test]
 async fn article_range() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
     let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
@@ -840,7 +829,7 @@ async fn article_range() {
 
 #[tokio::test]
 async fn ihave_example() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
 
     let article = concat!(
@@ -875,7 +864,7 @@ async fn ihave_example() {
 
 #[tokio::test]
 async fn takethis_example() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, exist) = parse_message(
         "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test\r\n\r\nBody",
@@ -925,7 +914,7 @@ async fn takethis_example() {
 
 #[tokio::test]
 async fn mode_stream_check_and_takethis() {
-    let (storage, auth) = setup().await;
+    let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     ClientMock::new()
         .expect("MODE STREAM", "203 Streaming permitted")
