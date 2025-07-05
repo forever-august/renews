@@ -2,7 +2,7 @@ use renews::config::Config;
 
 #[test]
 fn retention_rules_match() {
-    let toml = r#"port = 1199
+    let toml = r#"port = 119
 default_retention_days = 10
 default_max_article_bytes = "1K"
 [[group_settings]]
@@ -24,7 +24,7 @@ max_article_bytes = "20K"
 
 #[test]
 fn runtime_update_preserves_immutable_fields() {
-    let initial = r#"port = 1199
+    let initial = r#"port = 119
 db_path = "/tmp/db1"
 auth_db_path = "/tmp/auth1"
 peer_db_path = "/tmp/peer1"
@@ -57,7 +57,7 @@ retention_days = 1
     let new_cfg: Config = toml::from_str(updated).unwrap();
     cfg.update_runtime(new_cfg);
 
-    assert_eq!(cfg.port, 1199);
+    assert_eq!(cfg.port, 119);
     assert_eq!(cfg.db_path, "/tmp/db1");
     assert_eq!(cfg.auth_db_path.as_deref(), Some("/tmp/auth1"));
     assert_eq!(cfg.peer_db_path, "/tmp/peer1");
@@ -72,7 +72,7 @@ retention_days = 1
 
 #[test]
 fn default_paths() {
-    let cfg: Config = toml::from_str("port=1199").unwrap();
+    let cfg: Config = toml::from_str("port=119").unwrap();
     assert_eq!(cfg.db_path, "/var/renews/news.db");
     assert_eq!(cfg.auth_db_path.as_deref(), Some("/var/renews/auth.db"));
     assert_eq!(cfg.peer_db_path, "/var/renews/peers.db");

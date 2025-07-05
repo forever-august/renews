@@ -2,8 +2,11 @@ use renews::peers::{PeerConfig, PeerDb, peer_task};
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
 use std::sync::Arc;
+use std::fs;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
+use tempfile::NamedTempFile;
+use serial_test::serial;
 
 use test_utils as common;
 
@@ -54,14 +57,13 @@ async fn peer_transfer_helper(interval: u64) {
     );
 
     let cfg_a: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(
-        toml::from_str("port=1199\nsite_name='A'").unwrap(),
+        toml::from_str("port=119\nsite_name='A'").unwrap(),
     ));
-    let cfg_b: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(
-        toml::from_str("port=1199\nsite_name='B'").unwrap(),
-    ));
-
-    let (addr_b, handle_b) =
-        common::setup_server_with_cfg(storage_b.clone(), auth.clone(), cfg_b).await;
+    let (addr_b, _cert_b, pem, handle_b) =
+        common::setup_tls_server(storage_b.clone(), auth.clone()).await;
+    let ca_file = NamedTempFile::new().unwrap();
+    fs::write(ca_file.path(), pem).unwrap();
+    unsafe { std::env::set_var("SSL_CERT_FILE", ca_file.path()) };
     let (addr_a, handle_a) =
         common::setup_server_with_cfg(storage_a.clone(), auth.clone(), cfg_a).await;
 
@@ -81,7 +83,7 @@ async fn peer_transfer_helper(interval: u64) {
     handle_a.await.unwrap();
 
     let db = PeerDb::new("sqlite::memory:").await.unwrap();
-    let peer_name = format!("{}", addr_b);
+    let peer_name = format!("localhost:{}", addr_b.port());
     db.sync_config(&[peer_name.clone()]).await.unwrap();
     let peer = PeerConfig {
         sitename: peer_name.clone(),
@@ -108,11 +110,13 @@ async fn peer_transfer_helper(interval: u64) {
 }
 
 #[tokio::test]
+#[serial]
 async fn peer_transfer_interval_zero() {
     peer_transfer_helper(0).await;
 }
 
 #[tokio::test]
+#[serial]
 async fn peer_transfer_interval_one() {
     peer_transfer_helper(1).await;
 }

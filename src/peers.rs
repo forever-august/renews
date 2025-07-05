@@ -1,12 +1,52 @@
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_rustls::{
+    rustls::{self, RootCertStore},
+    TlsConnector,
+};
+use rustls_native_certs::load_native_certs;
 
 use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
 use crate::{Message, extract_message_id, send_body, send_headers, write_simple};
+
+fn parse_host_port(addr: &str, default_port: u16) -> (String, u16) {
+    if let Some(stripped) = addr.strip_prefix('[') {
+        if let Some(end) = stripped.find(']') {
+            let host = stripped[..end].to_string();
+            if let Some(p) = stripped[end + 1..].strip_prefix(':') {
+                if let Ok(port) = p.parse() {
+                    return (host, port);
+                }
+            }
+            return (host, default_port);
+        }
+    }
+    if let Some(idx) = addr.rfind(':') {
+        if addr[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(port) = addr[idx + 1..].parse() {
+                return (addr[..idx].to_string(), port);
+            }
+        }
+    }
+    (addr.to_string(), default_port)
+}
+
+fn tls_connector() -> Result<TlsConnector, Box<dyn Error + Send + Sync>> {
+    let mut roots = RootCertStore::empty();
+    for cert in load_native_certs()? {
+        roots.add(&rustls::Certificate(cert.0))?;
+    }
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    Ok(TlsConnector::from(Arc::new(config)))
+}
 
 #[derive(Clone)]
 pub struct PeerDb {
@@ -136,8 +176,13 @@ async fn send_article(
     use_takethis: bool,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
-    let mut stream = TcpStream::connect(host).await?;
-    let (read_half, mut write_half) = stream.split();
+    let (host_part, port) = parse_host_port(host, 563);
+    let addr = format!("{}:{}", host_part, port);
+    let tcp = TcpStream::connect(addr).await?;
+    let connector = tls_connector()?;
+    let server_name = rustls::ServerName::try_from(host_part.as_str())?;
+    let tls_stream = connector.connect(server_name, tcp).await?;
+    let (read_half, mut write_half) = tokio::io::split(tls_stream);
     let mut reader = BufReader::new(read_half);
     let mut line = String::new();
     reader.read_line(&mut line).await?; // greeting
