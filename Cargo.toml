@@ -26,5 +26,6 @@ base64 = "0.21"
 sha2 = "0.10"
 
 [dev-dependencies]
-rcgen = "0.14"
 tempfile = "3"
+rcgen = "0.14"
+test_utils = { path = "test_utils" }

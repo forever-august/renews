@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
 
-mod common;
+use test_utils as common;
 
 #[tokio::test]
 async fn ihave_rejects_large_article() {

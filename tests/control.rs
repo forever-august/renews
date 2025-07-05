@@ -5,7 +5,7 @@ use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-mod common;
+use test_utils as common;
 
 const ADMIN_SEC: &str = include_str!("data/admin.sec.asc");
 const ADMIN_PUB: &str = include_str!("data/admin.pub.asc");

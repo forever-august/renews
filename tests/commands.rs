@@ -4,7 +4,7 @@ use renews::storage::{Storage, sqlite::SqliteStorage};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-mod common;
+use test_utils as common;
 
 #[tokio::test]
 async fn head_and_list_commands() {

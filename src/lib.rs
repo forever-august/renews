@@ -59,7 +59,6 @@ const RESP_235_TRANSFER_OK: &str = "235 Article transferred OK\r\n";
 const RESP_501_MSGID_REQUIRED: &str = "501 message-id required\r\n";
 const RESP_500_UNKNOWN_CMD: &str = "500 command not recognized\r\n";
 const RESP_500_SYNTAX: &str = "500 syntax error\r\n";
-const RESP_503_DATA_NOT_STORED: &str = "503 Data item not stored\r\n";
 const RESP_503_NOT_SUPPORTED: &str = "503 feature not supported\r\n";
 const RESP_224_OVERVIEW: &str = "224 Overview information follows\r\n";
 const RESP_225_HEADERS: &str = "225 Headers follow\r\n";
