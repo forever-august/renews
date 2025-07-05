@@ -1,74 +1,43 @@
 use renews::auth::AuthProvider;
-use renews::storage::{Storage, sqlite::SqliteStorage};
+use renews::storage::{sqlite::SqliteStorage, Storage};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-use test_utils as common;
+use test_utils::ClientMock;
+
+async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
 
 #[tokio::test]
 async fn tls_quit() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) = common::setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
-    line.clear();
-    writer.write_all(b"QUIT\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("205"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("QUIT", "205 closing connection")
+        .run_tls(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn tls_mode_reader() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) = common::setup_tls_server_with_cert(storage, auth, cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200"));
+    let (storage, auth) = setup().await;
+    ClientMock::new()
+        .expect("MODE READER", "200 Posting allowed")
+        .run_tls(storage, auth)
+        .await;
 }
 
 #[tokio::test]
 async fn tls_post_requires_auth() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth, cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("480"));
+    ClientMock::new()
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP misc", "211 0 0 0 misc")
+        .expect("POST", "480 authentication required")
+        .run_tls(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<post@test>")
@@ -80,39 +49,9 @@ async fn tls_post_requires_auth() {
 
 #[tokio::test]
 async fn tls_authinfo_and_post() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER user\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("381"));
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("281"));
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
     let article = concat!(
         "Message-ID: <post@test>\r\n",
         "Newsgroups: misc\r\n",
@@ -120,11 +59,18 @@ async fn tls_authinfo_and_post() {
         "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
-        ".\r\n",
+        ".",
     );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP misc", "211 0 0 0 misc")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect("QUIT", "205 closing connection")
+        .run_tls(storage.clone(), auth)
+        .await;
     assert!(
         storage
             .get_article_by_id("<post@test>")
@@ -132,56 +78,30 @@ async fn tls_authinfo_and_post() {
             .unwrap()
             .is_some()
     );
-    line.clear();
-    writer.write_all(b"QUIT\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("205"));
 }
 
 #[tokio::test]
 async fn post_without_msgid_generates_one() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER user\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
     let article = concat!(
         "Newsgroups: misc\r\n",
         "From: user@example.com\r\n",
         "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
-        ".\r\n",
+        ".",
     );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP misc", "211 0 0 0 misc")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .run_tls(storage.clone(), auth.clone())
+        .await;
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
@@ -195,48 +115,26 @@ async fn post_without_msgid_generates_one() {
 
 #[tokio::test]
 async fn post_without_date_adds_header() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc", false).await.unwrap();
     auth.add_user("user", "pass").await.unwrap();
-    let (cert, key, _pem) = common::generate_self_signed_cert();
-    let (addr, _h) =
-        common::setup_tls_server_with_cert(storage.clone(), auth.clone(), cert.clone(), key).await;
-    let (mut reader, mut writer) = common::connect_tls(addr, cert).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO USER user\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"AUTHINFO PASS pass\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"MODE READER\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"GROUP misc\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"POST\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("340"));
-    line.clear();
     let article = concat!(
         "Newsgroups: misc\r\n",
         "From: user@example.com\r\n",
         "Subject: test\r\n",
         "\r\n",
         "Body\r\n",
-        ".\r\n",
+        ".",
     );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("240"));
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect("MODE READER", "200 Posting allowed")
+        .expect("GROUP misc", "211 0 0 0 misc")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
+        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .run_tls(storage.clone(), auth.clone())
+        .await;
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(

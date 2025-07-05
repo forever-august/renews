@@ -1,65 +1,65 @@
 use renews::config::Config;
-use renews::storage::{Storage, sqlite::SqliteStorage};
+use renews::storage::{sqlite::SqliteStorage, Storage};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
 
-use test_utils as common;
+use test_utils::ClientMock;
+
+async fn setup() -> (Arc<dyn Storage>, Arc<dyn renews::auth::AuthProvider>) {
+    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
+    let auth = Arc::new(renews::auth::sqlite::SqliteAuth::new("sqlite::memory:").await.unwrap());
+    (storage as _, auth as _)
+}
 
 #[tokio::test]
 async fn ihave_rejects_large_article() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
         toml::from_str("port=119\ndefault_max_article_bytes=10\n").unwrap(),
     ));
-    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"IHAVE <1@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("335"));
-    line.clear();
-    let article = "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nFrom: a@test\r\nSubject: big\r\n\r\n0123456789A\r\n.\r\n";
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("437"));
+    let cfg_val = cfg.read().await.clone();
+    ClientMock::new()
+        .expect("IHAVE <1@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(
+            "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nFrom: a@test\r\nSubject: big\r\n\r\n0123456789A\r\n.",
+            "437 article rejected",
+        )
+        .run_with_cfg(cfg_val, storage.clone(), auth)
+        .await;
+    assert!(
+        storage
+            .get_article_by_id("<1@test>")
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
 async fn ihave_rejects_large_article_with_suffix() {
-    let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
-    let auth = Arc::new(
-        renews::auth::sqlite::SqliteAuth::new("sqlite::memory:")
-            .await
-            .unwrap(),
-    );
+    let (storage, auth) = setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
         toml::from_str("port=119\ndefault_max_article_bytes=\"1K\"\n").unwrap(),
     ));
-    let (addr, _h) = common::setup_server_with_cfg(storage.clone(), auth.clone(), cfg).await;
-    let (mut reader, mut writer) = common::connect(addr).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    line.clear();
-    writer.write_all(b"IHAVE <2@test>\r\n").await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("335"));
-    line.clear();
-    let body = "A".repeat(1100);
-    let article = format!(
-        "Message-ID: <2@test>\r\nNewsgroups: misc.test\r\nFrom: b@test\r\nSubject: big\r\n\r\n{}\r\n.\r\n",
-        body
+    let cfg_val = cfg.read().await.clone();
+    ClientMock::new()
+        .expect("IHAVE <2@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(
+            &format!(
+                "Message-ID: <2@test>\r\nNewsgroups: misc.test\r\nFrom: b@test\r\nSubject: big\r\n\r\n{}\r\n.",
+                "A".repeat(1100)
+            ),
+            "437 article rejected",
+        )
+        .run_with_cfg(cfg_val, storage.clone(), auth)
+        .await;
+    assert!(
+        storage
+            .get_article_by_id("<2@test>")
+            .await
+            .unwrap()
+            .is_none()
     );
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("437"));
 }
