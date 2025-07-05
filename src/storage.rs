@@ -181,7 +181,7 @@ pub mod sqlite {
             .bind(&msg_id)
             .bind(&headers)
             .bind(&article.body)
-            .bind(article.body.as_bytes().len() as i64)
+            .bind(article.body.len() as i64)
             .execute(&self.pool)
             .await?;
             let next: i64 = sqlx::query_scalar(

@@ -259,7 +259,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(name) = args.get(0) {
+    if let Some(name) = args.first() {
         let groups = storage.list_groups().await?;
         if !groups.contains(name) {
             writer.write_all(RESP_411_NO_GROUP.as_bytes()).await?;
@@ -288,7 +288,7 @@ async fn handle_article<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    match resolve_articles(storage, state, args.get(0).map(String::as_str)).await {
+    match resolve_articles(storage, state, args.first().map(String::as_str)).await {
         Ok(arts) => {
             for (num, article) in arts {
                 let id = extract_message_id(&article).unwrap_or("");
@@ -329,7 +329,7 @@ async fn handle_head<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    match resolve_articles(storage, state, args.get(0).map(String::as_str)).await {
+    match resolve_articles(storage, state, args.first().map(String::as_str)).await {
         Ok(arts) => {
             for (num, article) in arts {
                 let id = extract_message_id(&article).unwrap_or("");
@@ -372,7 +372,7 @@ async fn handle_body<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    match resolve_articles(storage, state, args.get(0).map(String::as_str)).await {
+    match resolve_articles(storage, state, args.first().map(String::as_str)).await {
         Ok(arts) => {
             for (num, article) in arts {
                 let id = extract_message_id(&article).unwrap_or("");
@@ -415,7 +415,7 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(arg) = args.get(0) {
+    if let Some(arg) = args.first() {
         if let Ok(num) = arg.parse::<u64>() {
             if let Some(group) = state.current_group.as_deref() {
                 if let Some(article) = storage.get_article_by_number(group, num).await? {
@@ -471,7 +471,7 @@ async fn handle_list<W: AsyncWrite + Unpin>(
     storage: &DynStorage,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(keyword) = args.get(0) {
+    if let Some(keyword) = args.first() {
         match keyword.to_ascii_uppercase().as_str() {
             "ACTIVE" => {
                 let pattern = args.get(1).map(|s| s.as_str());
@@ -575,7 +575,7 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let group = if let Some(name) = args.get(0) {
+    let group = if let Some(name) = args.first() {
         state.current_group = Some(name.clone());
         name.as_str()
     } else {
@@ -674,10 +674,10 @@ async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Opti
             if let Some(id) = extract_message_id(msg) {
                 match storage.get_message_size(id).await.ok()? {
                     Some(sz) => Some(sz.to_string()),
-                    None => Some(msg.body.as_bytes().len().to_string()),
+                    None => Some(msg.body.len().to_string()),
                 }
             } else {
-                Some(msg.body.as_bytes().len().to_string())
+                Some(msg.body.len().to_string())
             }
         }
         _ => None,
@@ -883,7 +883,7 @@ async fn handle_over<W: AsyncWrite + Unpin>(
     state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut articles: Vec<(u64, Message)> = Vec::new();
-    if let Some(arg) = args.get(0) {
+    if let Some(arg) = args.first() {
         if arg.starts_with('<') && arg.ends_with('>') {
             if let Some(article) = storage.get_article_by_id(arg).await? {
                 articles.push((0, article));
@@ -933,9 +933,9 @@ async fn handle_over<W: AsyncWrite + Unpin>(
             storage
                 .get_message_size(id)
                 .await?
-                .unwrap_or(article.body.as_bytes().len() as u64)
+                .unwrap_or(article.body.len() as u64)
         } else {
-            article.body.as_bytes().len() as u64
+            article.body.len() as u64
         };
         let lines = article.body.lines().count();
         writer
@@ -1102,7 +1102,7 @@ async fn handle_authinfo<W: AsyncWrite + Unpin>(
         writer.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
         return Ok(());
     }
-    let sub = match args.get(0) {
+    let sub = match args.first() {
         Some(s) => s.to_ascii_uppercase(),
         None => {
             writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
@@ -1152,7 +1152,7 @@ async fn handle_mode<W: AsyncWrite + Unpin>(
     args: &[String],
     state: &ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(arg) = args.get(0) {
+    if let Some(arg) = args.first() {
         if arg.eq_ignore_ascii_case("READER") {
             if state.is_tls {
                 writer
@@ -1225,7 +1225,7 @@ where
     ensure_message_id(&mut message);
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
-    let size = msg.as_bytes().len() as u64;
+    let size = msg.len() as u64;
     let newsgroups = match validate_article(storage, auth, cfg, &message, size).await {
         Ok(g) => g,
         Err(_) => {
@@ -1383,7 +1383,7 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    if let Some(id) = args.get(0) {
+    if let Some(id) = args.first() {
         if storage.get_article_by_id(id).await?.is_some() {
             writer.write_all(RESP_435_NOT_WANTED.as_bytes()).await?;
             return Ok(());
@@ -1404,7 +1404,7 @@ where
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
-        let size = msg.as_bytes().len() as u64;
+        let size = msg.len() as u64;
         let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
             Ok(g) => g,
             Err(_) => {
@@ -1429,7 +1429,7 @@ async fn handle_check<W: AsyncWrite + Unpin>(
     storage: &DynStorage,
     args: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(id) = args.get(0) {
+    if let Some(id) = args.first() {
         if storage.get_article_by_id(id).await?.is_some() {
             writer
                 .write_all(format!("438 {}\r\n", id).as_bytes())
@@ -1459,7 +1459,7 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    if let Some(id) = args.get(0) {
+    if let Some(id) = args.first() {
         if storage.get_article_by_id(id).await?.is_some() {
             let _ = read_message(reader).await?;
             writer
@@ -1486,7 +1486,7 @@ where
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
-        let size = msg.as_bytes().len() as u64;
+        let size = msg.len() as u64;
         let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
             Ok(g) => g,
             Err(_) => {
@@ -1529,8 +1529,7 @@ where
             .await?;
     }
     let mut line = String::new();
-    let mut state = ConnectionState::default();
-    state.is_tls = is_tls;
+    let mut state = ConnectionState { is_tls, ..Default::default() };
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
