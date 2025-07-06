@@ -39,6 +39,11 @@ pub fn capabilities_lines() -> Vec<String> {
     ]
 }
 
+/// Split a request string into individual lines.
+pub fn request_lines(text: &str) -> Vec<String> {
+    text.split("\r\n").map(|l| l.to_string()).collect()
+}
+
 /// Build a detached PGP signature for the provided data.
 pub fn build_sig(data: &str) -> (String, Vec<String>) {
     use pgp::composed::{Deserializable, SignedSecretKey, StandaloneSignature};
@@ -240,7 +245,7 @@ pub async fn start_server(
 
 /// Builder to mock a client connection using `tokio_test::io`.
 pub struct ClientMock {
-    steps: Vec<(String, Vec<String>)>,
+    steps: Vec<(Vec<String>, Vec<String>)>,
 }
 
 impl Default for ClientMock {
@@ -256,14 +261,30 @@ impl ClientMock {
 
     /// Expect a command with a single-line response.
     pub fn expect(mut self, cmd: &str, resp: &str) -> Self {
-        self.steps.push((cmd.to_string(), vec![resp.to_string()]));
+        self.steps
+            .push((vec![cmd.to_string()], vec![resp.to_string()]));
         self
     }
 
     /// Expect a command with a multi-line response.
     pub fn expect_multi<S: Into<String>>(mut self, cmd: &str, resp: Vec<S>) -> Self {
-        self.steps
-            .push((cmd.to_string(), resp.into_iter().map(Into::into).collect()));
+        self.steps.push((
+            vec![cmd.to_string()],
+            resp.into_iter().map(Into::into).collect(),
+        ));
+        self
+    }
+
+    /// Expect a multi-line request with optional multi-line response.
+    pub fn expect_request_multi<R, S>(mut self, cmds: Vec<R>, resp: Vec<S>) -> Self
+    where
+        R: Into<String>,
+        S: Into<String>,
+    {
+        self.steps.push((
+            cmds.into_iter().map(Into::into).collect(),
+            resp.into_iter().map(Into::into).collect(),
+        ));
         self
     }
 
@@ -317,11 +338,13 @@ impl ClientMock {
             };
         let mut line = String::new();
         reader.read_line(&mut line).await.unwrap();
-        for (cmd, resps) in self.steps {
-            writer
-                .write_all(format!("{cmd}\r\n").as_bytes())
-                .await
-                .unwrap();
+        for (cmds, resps) in self.steps {
+            for cmd in cmds {
+                writer
+                    .write_all(format!("{cmd}\r\n").as_bytes())
+                    .await
+                    .unwrap();
+            }
             for resp in resps {
                 line.clear();
                 reader.read_line(&mut line).await.unwrap();

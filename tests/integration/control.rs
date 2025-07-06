@@ -25,9 +25,7 @@ fn build_control_article(cmd: &str, body: &str) -> String {
     } else {
         "\r\n.\r\n"
     };
-    format!(
-        "{headers}Newsgroups: test.group\r\n{xhdr}\r\n\r\n{body}{term}"
-    )
+    format!("{headers}Newsgroups: test.group\r\n{xhdr}\r\n\r\n{body}{term}")
 }
 
 #[tokio::test]
@@ -41,9 +39,9 @@ async fn control_newgroup_and_rmgroup() {
     let article = build_control_article("newgroup test.group", "test group body\n");
     ClientMock::new()
         .expect("IHAVE <ctrl@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
-        .expect(
-            article.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .run(storage.clone(), auth.clone())
         .await;
@@ -61,9 +59,9 @@ async fn control_newgroup_and_rmgroup() {
             "IHAVE <ctrl2@test>",
             "335 Send it; end with <CR-LF>.<CR-LF>",
         )
-        .expect(
-            article.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .run(storage.clone(), auth.clone())
         .await;
@@ -92,9 +90,9 @@ async fn control_cancel_removes_article() {
     let article = build_control_article("cancel <a@test>", "cancel\n");
     ClientMock::new()
         .expect("IHAVE <c@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
-        .expect(
-            article.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .run(storage.clone(), auth)
         .await;
@@ -134,9 +132,9 @@ async fn admin_cancel_ignores_lock() {
     let article = build_control_article("cancel <al@test>", "cancel\n");
     ClientMock::new()
         .expect("IHAVE <c2@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
-        .expect(
-            article.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .run(storage.clone(), auth)
         .await;

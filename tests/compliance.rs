@@ -1,8 +1,8 @@
 use chrono::{Duration, Utc};
 #[path = "utils.rs"]
 mod utils;
-use utils::ClientMock;
 use renews::{parse_command, parse_message, parse_response};
+use utils::ClientMock;
 
 fn help_lines() -> Vec<String> {
     vec![
@@ -1128,9 +1128,9 @@ async fn ihave_example() {
             "IHAVE <i.am.an.article.you.will.want@example.com>",
             "335 Send it; end with <CR-LF>.<CR-LF>",
         )
-        .expect(
-            article.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .expect(
             "IHAVE <i.am.an.article.you.will.want@example.com>",
@@ -1178,13 +1178,13 @@ async fn takethis_example() {
         ".\r\n"
     );
     ClientMock::new()
-        .expect(
-            take_article.trim_end_matches("\r\n"),
-            "239 <i.am.an.article.new@example.com>",
+        .expect_request_multi(
+            utils::request_lines(take_article.trim_end_matches("\r\n")),
+            vec!["239 <i.am.an.article.new@example.com>"],
         )
-        .expect(
-            take_reject.trim_end_matches("\r\n"),
-            "439 <i.am.an.article.you.have@example.com>",
+        .expect_request_multi(
+            utils::request_lines(take_reject.trim_end_matches("\r\n")),
+            vec!["439 <i.am.an.article.you.have@example.com>"],
         )
         .run(storage, auth)
         .await;
@@ -1198,33 +1198,37 @@ async fn mode_stream_check_and_takethis() {
         .expect("MODE STREAM", "203 Streaming permitted")
         .expect("CHECK <stream1@test>", "238 <stream1@test>")
         .expect("CHECK <stream2@test>", "238 <stream2@test>")
-        .expect(
-            concat!(
-                "TAKETHIS <stream1@test>\r\n",
-                "Newsgroups: misc.test\r\n",
-                "From: a@test\r\n",
-                "Subject: one\r\n",
-                "Message-ID: <stream1@test>\r\n",
-                "\r\n",
-                "Body one\r\n",
-                ".\r\n"
-            )
-            .trim_end_matches("\r\n"),
-            "239 <stream1@test>",
+        .expect_request_multi(
+            utils::request_lines(
+                concat!(
+                    "TAKETHIS <stream1@test>\r\n",
+                    "Newsgroups: misc.test\r\n",
+                    "From: a@test\r\n",
+                    "Subject: one\r\n",
+                    "Message-ID: <stream1@test>\r\n",
+                    "\r\n",
+                    "Body one\r\n",
+                    ".\r\n"
+                )
+                .trim_end_matches("\r\n"),
+            ),
+            vec!["239 <stream1@test>"],
         )
-        .expect(
-            concat!(
-                "TAKETHIS <stream2@test>\r\n",
-                "Newsgroups: misc.test\r\n",
-                "From: b@test\r\n",
-                "Subject: two\r\n",
-                "Message-ID: <stream2@test>\r\n",
-                "\r\n",
-                "Body two\r\n",
-                ".\r\n"
-            )
-            .trim_end_matches("\r\n"),
-            "239 <stream2@test>",
+        .expect_request_multi(
+            utils::request_lines(
+                concat!(
+                    "TAKETHIS <stream2@test>\r\n",
+                    "Newsgroups: misc.test\r\n",
+                    "From: b@test\r\n",
+                    "Subject: two\r\n",
+                    "Message-ID: <stream2@test>\r\n",
+                    "\r\n",
+                    "Body two\r\n",
+                    ".\r\n"
+                )
+                .trim_end_matches("\r\n"),
+            ),
+            vec!["239 <stream2@test>"],
         )
         .expect("CHECK <stream1@test>", "438 <stream1@test>")
         .expect("CHECK <stream2@test>", "438 <stream2@test>")

@@ -60,7 +60,10 @@ async fn tls_authinfo_and_post() {
             "POST",
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
-        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
         .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
@@ -95,16 +98,17 @@ async fn post_without_msgid_generates_one() {
             "POST",
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
-        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
         .run_tls(storage.clone(), auth.clone())
         .await;
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
         "<{}>",
-        hash.iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
+        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
     );
     assert!(storage.get_article_by_id(&id).await.unwrap().is_some());
 }
@@ -131,16 +135,17 @@ async fn post_without_date_adds_header() {
             "POST",
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
-        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
         .run_tls(storage.clone(), auth.clone())
         .await;
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
         "<{}>",
-        hash.iter()
-            .map(|b| format!("{b:02x}"))
-            .collect::<String>()
+        hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
     );
     let msg = storage.get_article_by_id(&id).await.unwrap().unwrap();
     let date = msg

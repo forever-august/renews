@@ -24,9 +24,9 @@ async fn cancel_key_allows_cancel() {
     );
     ClientMock::new()
         .expect("IHAVE <c@test>", "335 Send it; end with <CR-LF>.<CR-LF>")
-        .expect(
-            cancel.trim_end_matches("\r\n"),
-            "235 Article transferred OK",
+        .expect_request_multi(
+            utils::request_lines(cancel.trim_end_matches("\r\n")),
+            vec!["235 Article transferred OK"],
         )
         .run(storage.clone(), auth)
         .await;
