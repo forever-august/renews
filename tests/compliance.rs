@@ -97,7 +97,7 @@ async fn listgroup_and_navigation_commands() {
             vec!["231 list of new newsgroups follows", "misc", "."],
         )
         .expect_multi(
-            &format!("NEWGROUPS {} {}", date, time),
+            &format!("NEWGROUPS {date} {time}"),
             vec!["231 list of new newsgroups follows", "."],
         )
         .expect_multi(
@@ -123,7 +123,7 @@ async fn capabilities_and_misc_commands() {
 
     ClientMock::new()
         .expect_multi("CAPABILITIES", utils::capabilities_lines())
-        .expect("DATE", &format!("111 {}", date))
+        .expect("DATE", &format!("111 {date}"))
         .expect_multi("HELP", help_lines())
         .expect_multi(
             "LIST NEWSGROUPS",
@@ -885,7 +885,7 @@ async fn newnews_no_matches_returns_empty() {
     let time = future.format("%H%M%S");
     ClientMock::new()
         .expect_multi(
-            &format!("NEWNEWS misc.test {} {}", date, time),
+            &format!("NEWNEWS misc.test {date} {time}"),
             vec!["230 list of new articles follows", "."],
         )
         .run(storage, auth)

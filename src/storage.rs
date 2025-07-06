@@ -98,7 +98,7 @@ pub trait Storage: Send + Sync {
 pub type DynStorage = Arc<dyn Storage>;
 
 pub mod sqlite {
-    use super::*;
+    use super::{Error, Message, Storage, async_trait};
     use serde::{Deserialize, Serialize};
     use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 
@@ -112,6 +112,11 @@ pub mod sqlite {
 
     impl SqliteStorage {
         #[tracing::instrument(skip_all)]
+        /// Create a new SQLite storage backend.
+        ///
+        /// # Errors
+        ///
+        /// Returns an error if the database connection fails or schema creation fails.
         pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
             let pool = SqlitePoolOptions::new()
                 .max_connections(5)
@@ -181,7 +186,7 @@ pub mod sqlite {
             .bind(&msg_id)
             .bind(&headers)
             .bind(&article.body)
-            .bind(article.body.len() as i64)
+            .bind(i64::try_from(article.body.len()).unwrap_or(i64::MAX))
             .execute(&self.pool)
             .await?;
             let next: i64 = sqlx::query_scalar(
@@ -200,7 +205,7 @@ pub mod sqlite {
             .bind(now)
             .execute(&self.pool)
             .await?;
-            Ok(next as u64)
+            Ok(u64::try_from(next).unwrap_or(0))
         }
 
         #[tracing::instrument(skip_all)]
@@ -215,7 +220,7 @@ pub mod sqlite {
                  WHERE g.group_name = ? AND g.number = ?",
             )
             .bind(group)
-            .bind(number as i64)
+            .bind(i64::try_from(number).unwrap_or(-1))
             .fetch_optional(&self.pool)
             .await?
             {
@@ -260,7 +265,7 @@ pub mod sqlite {
             )
             .bind(group)
             .bind(now)
-            .bind(if moderated { 1 } else { 0 })
+            .bind(i32::from(moderated))
             .execute(&self.pool)
             .await?;
             Ok(())
@@ -358,7 +363,7 @@ pub mod sqlite {
             .await?;
             Ok(rows
                 .into_iter()
-                .map(|r| r.try_get::<i64, _>("number").unwrap() as u64)
+                .map(|r| u64::try_from(r.try_get::<i64, _>("number").unwrap()).unwrap_or(0))
                 .collect())
         }
 
@@ -433,7 +438,7 @@ pub mod sqlite {
                 .await?
             {
                 let size: i64 = row.try_get("size")?;
-                Ok(Some(size as u64))
+                Ok(Some(u64::try_from(size).unwrap_or(0)))
             } else {
                 Ok(None)
             }

@@ -1,3 +1,4 @@
+use crate::storage::DynStorage;
 use chrono::TimeZone;
 use nom::IResult;
 use nom::{
@@ -7,6 +8,8 @@ use nom::{
     multi::separated_list1,
     sequence::{preceded, tuple},
 };
+use sha1::{Digest, Sha1};
+use std::fmt::Write;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Command {
@@ -16,6 +19,10 @@ pub struct Command {
 
 /// Parse a single NNTP command line as described in RFC 3977
 /// Section 3.1 "Commands and Responses".
+///
+/// # Errors
+///
+/// Returns a parsing error if the input is not a valid NNTP command.
 pub fn parse_command(input: &str) -> IResult<&str, Command> {
     let (input, name) = take_while1(|c: char| c.is_ascii_alphabetic())(input)?;
     let (input, args) = opt(preceded(space1, separated_list1(space1, is_not(" \r\n"))))(input)?;
@@ -42,6 +49,10 @@ pub struct Response {
 
 /// Parse an NNTP response line as specified in RFC 3977
 /// Section 9.4.2 "Initial Response Line Contents".
+///
+/// # Errors
+///
+/// Returns a parsing error if the input is not a valid NNTP response.
 pub fn parse_response(input: &str) -> IResult<&str, Response> {
     let parse_code = map_res(digit1, |d: &str| d.parse::<u16>());
     let (input, (code, text)) = tuple((
@@ -67,6 +78,7 @@ pub struct Message {
 /// Unescape a Message-ID according to RFC 2822 quoted-pair rules.
 /// This removes surrounding whitespace and comments, strips quote
 /// characters when present and processes backslash escapes.
+#[must_use]
 pub fn unescape_message_id(id: &str) -> String {
     let mut out = String::new();
     let trimmed = id.trim();
@@ -117,15 +129,15 @@ pub fn unescape_message_id(id: &str) -> String {
 
 /// Escape a Message-ID by quoting components when necessary and
 /// escaping special characters. The input should already be unescaped.
+#[must_use]
 pub fn escape_message_id(id: &str) -> String {
     let trimmed = id.trim();
     if !trimmed.starts_with('<') || !trimmed.ends_with('>') {
         return trimmed.to_string();
     }
     let inner = &trimmed[1..trimmed.len() - 1];
-    let (left, right) = match inner.split_once('@') {
-        Some(v) => v,
-        None => return trimmed.to_string(),
+    let Some((left, right)) = inner.split_once('@') else {
+        return trimmed.to_string();
     };
     let mut esc_left = String::new();
     let needs_quote = left.chars().any(|c| {
@@ -180,12 +192,12 @@ pub fn escape_message_id(id: &str) -> String {
     } else {
         esc_right.push_str(right);
     }
-    format!("<{}@{}>", esc_left, esc_right)
+    format!("<{esc_left}@{esc_right}>")
 }
 
 /// Replace the Message-ID header of `msg` with an escaped version.
 pub fn escape_message_id_header(msg: &mut Message) {
-    for (name, val) in msg.headers.iter_mut() {
+    for (name, val) in &mut msg.headers {
         if name.eq_ignore_ascii_case("Message-ID") {
             *val = escape_message_id(val);
         }
@@ -234,9 +246,13 @@ fn parse_headers(mut input: &str) -> IResult<&str, Vec<(String, String)>> {
 
 /// Parse an entire article consisting of headers and body
 /// following the rules in RFC 3977 Section 3.6.
+///
+/// # Errors
+///
+/// Returns a parsing error if the input is not a valid message format.
 pub fn parse_message(input: &str) -> IResult<&str, Message> {
     let (input, mut headers) = parse_headers(input)?;
-    for (name, val) in headers.iter_mut() {
+    for (name, val) in &mut headers {
         if name.eq_ignore_ascii_case("Message-ID") {
             *val = unescape_message_id(val);
         }
@@ -255,14 +271,12 @@ pub fn ensure_message_id(msg: &mut Message) {
     {
         return;
     }
-    use sha1::{Digest, Sha1};
     let hash = Sha1::digest(msg.body.as_bytes());
     let mut hex = String::new();
     for b in hash {
-        hex.push_str(&format!("{:02x}", b));
+        let _ = write!(hex, "{b:02x}");
     }
-    msg.headers
-        .push(("Message-ID".into(), format!("<{}>", hex)));
+    msg.headers.push(("Message-ID".into(), format!("<{hex}>")));
 }
 
 /// Ensure a Date header is present. When missing, one is set to the current
@@ -276,12 +290,15 @@ pub fn ensure_date(msg: &mut Message) {
         return;
     }
     let now = chrono::Utc::now();
-    msg.headers
-        .push(("Date".into(), now.to_rfc2822()));
+    msg.headers.push(("Date".into(), now.to_rfc2822()));
 }
 
 /// Parse the date and time arguments used by NEWGROUPS and NEWNEWS
 /// commands as described in RFC 3977 Sections 7.3.1 and 7.4.1.
+///
+/// # Errors
+///
+/// Returns an error if the date or time format is invalid.
 pub fn parse_datetime(
     date: &str,
     time: &str,
@@ -309,10 +326,12 @@ pub fn parse_datetime(
     })
 }
 
-use crate::storage::DynStorage;
-
 /// Parse the article number range format used by several commands
 /// such as LISTGROUP as defined in RFC 3977 Section 6.1.2.
+///
+/// # Errors
+///
+/// Returns an error if the range format is invalid or if there's a storage error.
 pub async fn parse_range(
     storage: &DynStorage,
     group: &str,
@@ -437,7 +456,11 @@ mod tests {
     fn test_ensure_date_adds_header() {
         let (_, mut msg) = parse_message("Newsgroups: misc\r\n\r\nBody").unwrap();
         ensure_date(&mut msg);
-        assert!(msg.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("Date")));
+        assert!(
+            msg.headers
+                .iter()
+                .any(|(k, _)| k.eq_ignore_ascii_case("Date"))
+        );
     }
 
     #[test]

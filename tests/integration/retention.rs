@@ -33,7 +33,7 @@ async fn cleanup_expires_header() {
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
     let past = (chrono::Utc::now() - ChronoDuration::days(1)).to_rfc2822();
-    let text = format!("Message-ID: <2@test>\r\nExpires: {}\r\n\r\nB", past);
+    let text = format!("Message-ID: <2@test>\r\nExpires: {past}\r\n\r\nB");
     let (_, msg) = parse_message(&text).unwrap();
     storage.store_article("misc", &msg).await.unwrap();
     cleanup_expired_articles(&*storage, &cfg).await.unwrap();

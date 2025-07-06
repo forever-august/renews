@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use renews::auth::AuthProvider;
 use renews::config::Config;
@@ -199,6 +201,12 @@ pub struct ClientMock {
     steps: Vec<(String, Vec<String>)>,
 }
 
+impl Default for ClientMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ClientMock {
     pub fn new() -> Self {
         Self { steps: Vec::new() }
@@ -218,13 +226,11 @@ impl ClientMock {
     }
 
     pub async fn run(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
-        use renews::config::Config;
         self.run_with(storage, auth, toml::from_str("port=119").unwrap(), false)
             .await;
     }
 
     pub async fn run_tls(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
-        use renews::config::Config;
         self.run_with(storage, auth, toml::from_str("port=119").unwrap(), true)
             .await;
     }
@@ -268,7 +274,7 @@ impl ClientMock {
             }
             builder.read(&cmd_bytes);
             for line in resps {
-                builder.write(format!("{}\r\n", line).as_bytes());
+                builder.write(format!("{line}\r\n").as_bytes());
             }
         }
         builder.read(b"");

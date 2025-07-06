@@ -103,7 +103,7 @@ async fn post_without_msgid_generates_one() {
     let id = format!(
         "<{}>",
         hash.iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect::<String>()
     );
     assert!(storage.get_article_by_id(&id).await.unwrap().is_some());
@@ -139,7 +139,7 @@ async fn post_without_date_adds_header() {
     let id = format!(
         "<{}>",
         hash.iter()
-            .map(|b| format!("{:02x}", b))
+            .map(|b| format!("{b:02x}"))
             .collect::<String>()
     );
     let msg = storage.get_article_by_id(&id).await.unwrap().unwrap();

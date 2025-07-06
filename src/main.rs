@@ -84,8 +84,8 @@ fn load_tls_config(
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     let db_conn = format!("sqlite:{}", cfg.db_path);
     let storage = SqliteStorage::new(&db_conn).await?;
-    let auth_path = cfg.auth_db_path.as_deref().unwrap_or(&cfg.db_path);
-    let auth_conn = format!("sqlite:{}", auth_path);
+    let auth_path = &cfg.auth_db_path;
+    let auth_conn = format!("sqlite:{auth_path}");
     let auth = SqliteAuth::new(&auth_conn).await?;
     match cmd {
         AdminCommand::AddGroup { group, moderated } => storage.add_group(&group, moderated).await?,
@@ -95,15 +95,16 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
         AdminCommand::AddAdmin { username, key } => auth.add_admin(&username, &key).await?,
         AdminCommand::RemoveAdmin { username } => auth.remove_admin(&username).await?,
         AdminCommand::AddModerator { username, pattern } => {
-            auth.add_moderator(&username, &pattern).await?
+            auth.add_moderator(&username, &pattern).await?;
         }
         AdminCommand::RemoveModerator { username, pattern } => {
-            auth.remove_moderator(&username, &pattern).await?
+            auth.remove_moderator(&username, &pattern).await?;
         }
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
@@ -124,13 +125,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&db_conn).await?);
     let auth_path = {
         let cfg_guard = cfg.read().await;
-        cfg_guard
-            .auth_db_path
-            .as_deref()
-            .unwrap_or(&cfg_guard.db_path)
-            .to_string()
+        cfg_guard.auth_db_path.clone()
     };
-    let auth_conn = format!("sqlite:{}", auth_path);
+    let auth_conn = format!("sqlite:{auth_path}");
     let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_conn).await?);
     let peer_db = {
         let cfg_guard = cfg.read().await;
@@ -147,7 +144,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     {
         let cfg_guard = cfg.read().await;
         let default_interval = cfg_guard.peer_sync_secs;
-        for peer in cfg_guard.peers.iter() {
+        for peer in &cfg_guard.peers {
             let pc = PeerConfig::from(peer);
             let name = pc.sitename.clone();
             let db_clone = peer_db.clone();
@@ -194,7 +191,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             cfg_guard.tls_cert.as_ref(),
             cfg_guard.tls_key.as_ref(),
         ) {
-            let tls_addr = format!("127.0.0.1:{}", tls_port);
+            let tls_addr = format!("127.0.0.1:{tls_port}");
             info!("listening TLS on {tls_addr}");
             let tls_listener = TcpListener::bind(&tls_addr).await?;
             let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
@@ -272,7 +269,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                                 }
                                 let mut tasks = peer_tasks_reload.write().await;
                                 let default_interval = new_cfg.peer_sync_secs;
-                                for peer in new_cfg.peers.iter() {
+                                for peer in &new_cfg.peers {
                                     if !tasks.contains_key(&peer.sitename) {
                                         let dbc = peer_db_reload.clone();
                                         let pc = PeerConfig::from(peer);

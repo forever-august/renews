@@ -1,9 +1,14 @@
+use crate::Message;
 use crate::config::Config;
 use crate::storage::Storage;
-use crate::Message;
 use chrono::{DateTime, Utc};
 use std::error::Error;
 
+/// Clean up expired articles based on retention policies.
+///
+/// # Errors
+///
+/// Returns an error if there are issues accessing the storage or configuration.
 pub async fn cleanup_expired_articles(
     storage: &dyn Storage,
     cfg: &Config,
@@ -39,6 +44,10 @@ fn expires_time(msg: &Message) -> Option<DateTime<Utc>> {
     msg.headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("Expires"))
-        .and_then(|(_, v)| chrono::DateTime::parse_from_rfc2822(v).or_else(|_| chrono::DateTime::parse_from_rfc3339(v)).ok())
+        .and_then(|(_, v)| {
+            chrono::DateTime::parse_from_rfc2822(v)
+                .or_else(|_| chrono::DateTime::parse_from_rfc3339(v))
+                .ok()
+        })
         .map(|dt| dt.with_timezone(&Utc))
 }
