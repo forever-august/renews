@@ -54,6 +54,11 @@ pub struct PeerDb {
 }
 
 impl PeerDb {
+    /// Create a new `SQLite` peers database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
@@ -67,6 +72,15 @@ impl PeerDb {
         Ok(Self { pool })
     }
 
+    /// List all configured peers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the sitename column cannot be retrieved from the database row.
     pub async fn list_peers(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
         let rows = sqlx::query("SELECT sitename FROM peers")
             .fetch_all(&self.pool)
@@ -77,6 +91,11 @@ impl PeerDb {
             .collect())
     }
 
+    /// Synchronize peer configuration with the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database operations fail.
     pub async fn sync_config(&self, names: &[String]) -> Result<(), Box<dyn Error + Send + Sync>> {
         let existing = self.list_peers().await?;
         for n in names {
@@ -98,6 +117,11 @@ impl PeerDb {
         Ok(())
     }
 
+    /// Update the last synchronization time for a peer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database update fails.
     pub async fn update_last_sync(
         &self,
         name: &str,
@@ -111,6 +135,11 @@ impl PeerDb {
         Ok(())
     }
 
+    /// Get the last synchronization time for a peer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
     pub async fn get_last_sync(
         &self,
         name: &str,
@@ -179,7 +208,7 @@ async fn send_article(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
     let (host_part, port) = parse_host_port(host, 563);
-    let addr = format!("{}:{}", host_part, port);
+    let addr = format!("{host_part}:{port}");
     let tcp = TcpStream::connect(addr).await?;
     let connector = tls_connector()?;
     let server_name = rustls::ServerName::try_from(host_part.as_str())?;
@@ -189,11 +218,11 @@ async fn send_article(
     let mut line = String::new();
     reader.read_line(&mut line).await?; // greeting
     if let Some((user, pass)) = creds {
-        write_simple(&mut write_half, &format!("AUTHINFO USER {}\r\n", user)).await?;
+        write_simple(&mut write_half, &format!("AUTHINFO USER {user}\r\n")).await?;
         line.clear();
         reader.read_line(&mut line).await?;
         if line.starts_with("381") {
-            write_simple(&mut write_half, &format!("AUTHINFO PASS {}\r\n", pass)).await?;
+            write_simple(&mut write_half, &format!("AUTHINFO PASS {pass}\r\n")).await?;
             line.clear();
             reader.read_line(&mut line).await?;
             if !line.starts_with("281") {
@@ -209,9 +238,9 @@ async fn send_article(
         write_simple(&mut write_half, "MODE STREAM\r\n").await?;
         line.clear();
         reader.read_line(&mut line).await?; // ignore
-        write_simple(&mut write_half, &format!("TAKETHIS {}\r\n", msg_id)).await?;
+        write_simple(&mut write_half, &format!("TAKETHIS {msg_id}\r\n")).await?;
     } else {
-        write_simple(&mut write_half, &format!("IHAVE {}\r\n", msg_id)).await?;
+        write_simple(&mut write_half, &format!("IHAVE {msg_id}\r\n")).await?;
         line.clear();
         reader.read_line(&mut line).await?;
         if !line.starts_with("335") {
@@ -254,13 +283,13 @@ async fn sync_peer_once(
                 };
                 let mut has_path = false;
                 let mut skip = false;
-                for (k, v) in article.headers.iter_mut() {
+                for (k, v) in &mut article.headers {
                     if k.eq_ignore_ascii_case("Path") {
                         if v.split('!').any(|s| s.trim() == peer.sitename) {
                             skip = true;
                             break;
                         }
-                        *v = format!("{}!{}", site_name, v);
+                        *v = format!("{site_name}!{v}");
                         has_path = true;
                     }
                 }

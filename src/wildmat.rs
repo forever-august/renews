@@ -1,3 +1,4 @@
+#[must_use]
 pub fn wildmat(pattern: &str, text: &str) -> bool {
     fn inner(p: &[u8], t: &[u8]) -> bool {
         if p.is_empty() {
@@ -40,7 +41,7 @@ pub fn wildmat(pattern: &str, text: &str) -> bool {
                 let mut has_prev = false;
                 while i < p.len() {
                     let pc = p[i];
-                    if pc == b']' && i != 1 + neg as usize {
+                    if pc == b']' && i != 1 + usize::from(neg) {
                         break;
                     }
                     if pc == b'-' && has_prev && i + 1 < p.len() && p[i + 1] != b']' {
@@ -113,4 +114,3 @@ mod tests {
         assert!(!wildmat("a\\*b", "axxb"));
     }
 }
-

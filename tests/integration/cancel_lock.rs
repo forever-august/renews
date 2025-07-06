@@ -14,15 +14,13 @@ async fn cancel_key_allows_cancel() {
     let lock_hash = Sha256::digest(key_b64.as_bytes());
     let lock_b64 = STANDARD.encode(lock_hash);
     let orig = format!(
-        "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{}\r\n\r\nBody",
-        lock_b64
+        "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
     let (_, msg) = parse_message(&orig).unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();
 
     let cancel = format!(
-        "Message-ID: <c@test>\r\nNewsgroups: misc.test\r\nControl: cancel <a@test>\r\nCancel-Key: sha256:{}\r\n\r\n.\r\n",
-        key_b64
+        "Message-ID: <c@test>\r\nNewsgroups: misc.test\r\nControl: cancel <a@test>\r\nCancel-Key: sha256:{key_b64}\r\n\r\n.\r\n"
     );
     ClientMock::new()
         .expect("IHAVE <c@test>", "335 Send it; end with <CR-LF>.<CR-LF>")

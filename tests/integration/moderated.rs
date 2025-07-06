@@ -15,17 +15,17 @@ fn build_article() -> String {
         "Date: Wed, 05 Oct 2022 00:00:00 GMT\r\n",
     );
     let body = "Body\n";
-    let article_text = format!("{}\r\n{}", headers, body);
+    let article_text = format!("{headers}\r\n{body}");
     let (_, msg) = parse_message(&article_text).unwrap();
     let signed = "Message-ID,Newsgroups,From,Subject,Approved,Date";
     let data = canonical_text(&msg, signed);
     let (ver, lines) = build_sig(&data);
-    let mut xhdr = format!("X-PGP-Sig: {} {}", ver, signed);
+    let mut xhdr = format!("X-PGP-Sig: {ver} {signed}");
     for l in &lines {
         xhdr.push_str("\r\n ");
         xhdr.push_str(l);
     }
-    format!("{}{}\r\n\r\nBody\r\n.\r\n", headers, xhdr)
+    format!("{headers}{xhdr}\r\n\r\nBody\r\n.\r\n")
 }
 
 fn build_cross_article() -> String {
@@ -37,29 +37,28 @@ fn build_cross_article() -> String {
         "Date: Wed, 05 Oct 2022 00:00:00 GMT\r\n",
     );
     // build first signature for mod1
-    let article1 = format!("{}Approved: mod1\r\n\r\nBody\n", base);
+    let article1 = format!("{base}Approved: mod1\r\n\r\nBody\n");
     let (_, msg1) = parse_message(&article1).unwrap();
     let signed = "Message-ID,Newsgroups,From,Subject,Approved,Date";
     let data1 = canonical_text(&msg1, signed);
     let (ver1, lines1) = build_sig(&data1);
-    let mut x1 = format!("X-PGP-Sig: {} {}", ver1, signed);
+    let mut x1 = format!("X-PGP-Sig: {ver1} {signed}");
     for l in &lines1 {
         x1.push_str("\r\n ");
         x1.push_str(l);
     }
     // build second signature for mod2
-    let article2 = format!("{}Approved: mod2\r\n\r\nBody\n", base);
+    let article2 = format!("{base}Approved: mod2\r\n\r\nBody\n");
     let (_, msg2) = parse_message(&article2).unwrap();
     let data2 = canonical_text(&msg2, signed);
     let (ver2, lines2) = build_sig(&data2);
-    let mut x2 = format!("X-PGP-Sig: {} {}", ver2, signed);
+    let mut x2 = format!("X-PGP-Sig: {ver2} {signed}");
     for l in &lines2 {
         x2.push_str("\r\n ");
         x2.push_str(l);
     }
     format!(
-        "{}Approved: mod1\r\nApproved: mod2\r\n{}\r\n{}\r\n\r\nBody\r\n.\r\n",
-        base, x1, x2
+        "{base}Approved: mod1\r\nApproved: mod2\r\n{x1}\r\n{x2}\r\n\r\nBody\r\n.\r\n"
     )
 }
 

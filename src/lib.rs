@@ -109,6 +109,7 @@ const RESP_100_HELP_FOLLOWS: &str = "100 help text follows\r\n";
 const RESP_203_STREAMING_PERMITTED: &str = "203 Streaming permitted\r\n";
 const DOT: &str = ".";
 
+#[must_use]
 pub fn extract_message_id(msg: &Message) -> Option<&str> {
     msg.headers.iter().find_map(|(k, v)| {
         if k.eq_ignore_ascii_case("Message-ID") {
@@ -119,6 +120,11 @@ pub fn extract_message_id(msg: &Message) -> Option<&str> {
     })
 }
 
+/// Send the body of a message, escaping dots as required by RFC 3977.
+///
+/// # Errors
+///
+/// Returns an error if writing to the output stream fails.
 pub async fn send_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     body: &str,
@@ -142,18 +148,26 @@ pub async fn send_body<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
+/// Send the headers of a message.
+///
+/// # Errors
+///
+/// Returns an error if writing to the output stream fails.
 pub async fn send_headers<W: AsyncWrite + Unpin>(
     writer: &mut W,
     article: &Message,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    for (k, v) in article.headers.iter() {
-        writer
-            .write_all(format!("{}: {}\r\n", k, v).as_bytes())
-            .await?;
+    for (k, v) in &article.headers {
+        writer.write_all(format!("{k}: {v}\r\n").as_bytes()).await?;
     }
     Ok(())
 }
 
+/// Write a simple string to the output stream.
+///
+/// # Errors
+///
+/// Returns an error if writing to the output stream fails.
 pub async fn write_simple<W: AsyncWrite + Unpin>(
     writer: &mut W,
     msg: &str,
@@ -184,9 +198,8 @@ async fn resolve_articles(
                 .map_err(|_| ArticleQueryError::MessageIdNotFound)?
             {
                 return Ok(vec![(0, article)]);
-            } else {
-                return Err(ArticleQueryError::MessageIdNotFound);
             }
+            return Err(ArticleQueryError::MessageIdNotFound);
         }
         let numeric_valid = if let Some((s, e)) = arg.split_once('-') {
             s.parse::<u64>().is_ok() && (e.is_empty() || e.parse::<u64>().is_ok())
@@ -194,15 +207,12 @@ async fn resolve_articles(
             arg.parse::<u64>().is_ok()
         };
 
-        let group = match state.current_group.as_deref() {
-            Some(g) => g,
-            None => {
-                return if numeric_valid {
-                    Err(ArticleQueryError::NoGroup)
-                } else {
-                    Err(ArticleQueryError::InvalidId)
-                };
-            }
+        let Some(group) = state.current_group.as_deref() else {
+            return if numeric_valid {
+                Err(ArticleQueryError::NoGroup)
+            } else {
+                Err(ArticleQueryError::InvalidId)
+            };
         };
         let nums = parse_range(storage, group, arg)
             .await
@@ -227,13 +237,11 @@ async fn resolve_articles(
             Ok(articles)
         }
     } else {
-        let group = match state.current_group.as_deref() {
-            Some(g) => g,
-            None => return Err(ArticleQueryError::NoGroup),
+        let Some(group) = state.current_group.as_deref() else {
+            return Err(ArticleQueryError::NoGroup);
         };
-        let num = match state.current_article {
-            Some(n) => n,
-            None => return Err(ArticleQueryError::NoCurrentArticle),
+        let Some(num) = state.current_article else {
+            return Err(ArticleQueryError::NoCurrentArticle);
         };
         match storage.get_article_by_number(group, num).await {
             Ok(Some(article)) => Ok(vec![(num, article)]),
@@ -272,7 +280,7 @@ async fn handle_group<W: AsyncWrite + Unpin>(
         state.current_group = Some(name.clone());
         state.current_article = None;
         writer
-            .write_all(format!("211 {} {} {} {}\r\n", count, low, high, name).as_bytes())
+            .write_all(format!("211 {count} {low} {high} {name}\r\n").as_bytes())
             .await?;
     } else {
         writer.write_all(RESP_501_MISSING_GROUP.as_bytes()).await?;
@@ -289,10 +297,10 @@ async fn handle_article<W: AsyncWrite + Unpin>(
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     match resolve_articles(storage, state, args.first().map(String::as_str)).await {
-        Ok(arts) => {
-            for (num, article) in arts {
+        Ok(articles) => {
+            for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or("");
-                write_simple(writer, &format!("220 {} {} article follows\r\n", num, id)).await?;
+                write_simple(writer, &format!("220 {num} {id} article follows\r\n")).await?;
                 send_headers(writer, &article).await?;
                 writer.write_all(RESP_CRLF.as_bytes()).await?;
                 send_body(writer, &article.body).await?;
@@ -330,12 +338,12 @@ async fn handle_head<W: AsyncWrite + Unpin>(
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     match resolve_articles(storage, state, args.first().map(String::as_str)).await {
-        Ok(arts) => {
-            for (num, article) in arts {
+        Ok(articles) => {
+            for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or("");
                 write_simple(
                     writer,
-                    &format!("221 {} {} article headers follow\r\n", num, id),
+                    &format!("221 {num} {id} article headers follow\r\n"),
                 )
                 .await?;
                 send_headers(writer, &article).await?;
@@ -373,14 +381,10 @@ async fn handle_body<W: AsyncWrite + Unpin>(
     state: &mut ConnectionState,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     match resolve_articles(storage, state, args.first().map(String::as_str)).await {
-        Ok(arts) => {
-            for (num, article) in arts {
+        Ok(articles) => {
+            for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or("");
-                write_simple(
-                    writer,
-                    &format!("222 {} {} article body follows\r\n", num, id),
-                )
-                .await?;
+                write_simple(writer, &format!("222 {num} {id} article body follows\r\n")).await?;
                 send_body(writer, &article.body).await?;
                 writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
             }
@@ -422,7 +426,7 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
                     state.current_article = Some(num);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
-                        .write_all(format!("223 {} {} article exists\r\n", num, id).as_bytes())
+                        .write_all(format!("223 {num} {id} article exists\r\n").as_bytes())
                         .await?;
                 } else {
                     writer
@@ -436,7 +440,7 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
             if let Some(article) = storage.get_article_by_id(arg).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
-                    .write_all(format!("223 0 {} article exists\r\n", id).as_bytes())
+                    .write_all(format!("223 0 {id} article exists\r\n").as_bytes())
                     .await?;
             } else {
                 writer.write_all(RESP_430_NO_ARTICLE.as_bytes()).await?;
@@ -449,7 +453,7 @@ async fn handle_stat<W: AsyncWrite + Unpin>(
             if let Some(article) = storage.get_article_by_number(group, num).await? {
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
-                    .write_all(format!("223 {} {} article exists\r\n", num, id).as_bytes())
+                    .write_all(format!("223 {num} {id} article exists\r\n").as_bytes())
                     .await?;
             } else {
                 writer.write_all(RESP_420_NO_CURRENT.as_bytes()).await?;
@@ -474,16 +478,16 @@ async fn handle_list<W: AsyncWrite + Unpin>(
     if let Some(keyword) = args.first() {
         match keyword.to_ascii_uppercase().as_str() {
             "ACTIVE" => {
-                let pattern = args.get(1).map(|s| s.as_str());
+                let pattern = args.get(1).map(std::string::String::as_str);
                 let groups = storage.list_groups().await?;
                 writer.write_all(RESP_215_LIST_FOLLOWS.as_bytes()).await?;
                 for g in groups {
-                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
+                    if pattern.is_none_or(|p| wildmat::wildmat(p, &g)) {
                         let nums = storage.list_article_numbers(&g).await?;
                         let high = nums.last().copied().unwrap_or(0);
                         let low = nums.first().copied().unwrap_or(0);
                         writer
-                            .write_all(format!("{} {} {} y\r\n", g, high, low).as_bytes())
+                            .write_all(format!("{g} {high} {low} y\r\n").as_bytes())
                             .await?;
                     }
                 }
@@ -491,13 +495,13 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 return Ok(());
             }
             "ACTIVE.TIMES" => {
-                let pattern = args.get(1).map(|s| s.as_str());
+                let pattern = args.get(1).map(std::string::String::as_str);
                 let groups = storage.list_groups_with_times().await?;
                 writer.write_all(RESP_215_INFO_FOLLOWS.as_bytes()).await?;
                 for (g, ts) in groups {
-                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
+                    if pattern.is_none_or(|p| wildmat::wildmat(p, &g)) {
                         writer
-                            .write_all(format!("{} {} -\r\n", g, ts).as_bytes())
+                            .write_all(format!("{g} {ts} -\r\n").as_bytes())
                             .await?;
                     }
                 }
@@ -505,14 +509,14 @@ async fn handle_list<W: AsyncWrite + Unpin>(
                 return Ok(());
             }
             "NEWSGROUPS" => {
-                let pattern = args.get(1).map(|s| s.as_str());
+                let pattern = args.get(1).map(std::string::String::as_str);
                 let groups = storage.list_groups().await?;
                 writer
                     .write_all(RESP_215_DESCRIPTIONS_FOLLOW.as_bytes())
                     .await?;
                 for g in groups {
-                    if pattern.map(|p| wildmat::wildmat(p, &g)).unwrap_or(true) {
-                        writer.write_all(format!("{} \r\n", g).as_bytes()).await?;
+                    if pattern.is_none_or(|p| wildmat::wildmat(p, &g)) {
+                        writer.write_all(format!("{g} \r\n").as_bytes()).await?;
                     }
                 }
                 writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -560,7 +564,7 @@ async fn handle_list<W: AsyncWrite + Unpin>(
         let high = nums.last().copied().unwrap_or(0);
         let low = nums.first().copied().unwrap_or(0);
         writer
-            .write_all(format!("{} {} {} y\r\n", g, high, low).as_bytes())
+            .write_all(format!("{g} {high} {low} y\r\n").as_bytes())
             .await?;
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -578,19 +582,16 @@ async fn handle_listgroup<W: AsyncWrite + Unpin>(
     let group = if let Some(name) = args.first() {
         state.current_group = Some(name.clone());
         name.as_str()
+    } else if let Some(g) = state.current_group.as_deref() {
+        g
     } else {
-        match state.current_group.as_deref() {
-            Some(g) => g,
-            None => {
-                writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
-                return Ok(());
-            }
-        }
+        writer.write_all(RESP_412_NO_GROUP.as_bytes()).await?;
+        return Ok(());
     };
     let nums = storage.list_article_numbers(group).await?;
     writer.write_all(RESP_211_NUMBERS_FOLLOW.as_bytes()).await?;
     for n in nums {
-        writer.write_all(format!("{}\r\n", n).as_bytes()).await?;
+        writer.write_all(format!("{n}\r\n").as_bytes()).await?;
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
     Ok(())
@@ -610,7 +611,7 @@ async fn handle_next<W: AsyncWrite + Unpin>(
                 state.current_article = Some(next);
                 let id = extract_message_id(&article).unwrap_or("");
                 writer
-                    .write_all(format!("223 {} {} article exists\r\n", next, id).as_bytes())
+                    .write_all(format!("223 {next} {id} article exists\r\n").as_bytes())
                     .await?;
             } else {
                 writer.write_all(RESP_421_NO_NEXT.as_bytes()).await?;
@@ -639,7 +640,7 @@ async fn handle_last<W: AsyncWrite + Unpin>(
                     state.current_article = Some(prev);
                     let id = extract_message_id(&article).unwrap_or("");
                     writer
-                        .write_all(format!("223 {} {} article exists\r\n", prev, id).as_bytes())
+                        .write_all(format!("223 {prev} {id} article exists\r\n").as_bytes())
                         .await?;
                 } else {
                     writer.write_all(RESP_422_NO_PREV.as_bytes()).await?;
@@ -685,6 +686,7 @@ async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Opti
 }
 
 /// Handle the HDR command as defined in RFC 3977 Section 8.5.
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(skip_all)]
 async fn handle_hdr<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -741,11 +743,11 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
 
         writer.write_all(RESP_225_HEADERS.as_bytes()).await?;
         for (n, article) in articles {
-            for (name, val) in article.headers.iter() {
+            for (name, val) in &article.headers {
                 let mut v = val.replace('\t', " ");
                 v.retain(|c| c != '\r' && c != '\n');
                 writer
-                    .write_all(format!("{} {}: {}\r\n", n, name, v).as_bytes())
+                    .write_all(format!("{n} {name}: {v}\r\n").as_bytes())
                     .await?;
             }
         }
@@ -810,11 +812,9 @@ async fn handle_hdr<W: AsyncWrite + Unpin>(
     writer.write_all(RESP_225_HEADERS.as_bytes()).await?;
     for (n, val) in values {
         if let Some(v) = val {
-            writer
-                .write_all(format!("{} {}\r\n", n, v).as_bytes())
-                .await?;
+            writer.write_all(format!("{n} {v}\r\n").as_bytes()).await?;
         } else {
-            writer.write_all(format!("{}\r\n", n).as_bytes()).await?;
+            writer.write_all(format!("{n}\r\n").as_bytes()).await?;
         }
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -867,7 +867,7 @@ async fn handle_xpat<W: AsyncWrite + Unpin>(
     writer.write_all(RESP_221_HEADER_FOLLOWS.as_bytes()).await?;
     for (n, val) in values {
         writer
-            .write_all(format!("{} {}\r\n", n, val).as_bytes())
+            .write_all(format!("{n} {val}\r\n").as_bytes())
             .await?;
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -940,11 +940,8 @@ async fn handle_over<W: AsyncWrite + Unpin>(
         let lines = article.body.lines().count();
         writer
             .write_all(
-                format!(
-                    "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\r\n",
-                    num, subject, from, date, msgid, refs, bytes, lines
-                )
-                .as_bytes(),
+                format!("{num}\t{subject}\t{from}\t{date}\t{msgid}\t{refs}\t{bytes}\t{lines}\r\n")
+                    .as_bytes(),
             )
             .await?;
     }
@@ -976,18 +973,15 @@ async fn handle_newgroups<W: AsyncWrite + Unpin>(
         }
         None => false,
     };
-    let since = match parse_datetime(date, time, gmt) {
-        Ok(s) => s,
-        Err(_) => {
-            writer.write_all(RESP_501_INVALID_DATE.as_bytes()).await?;
-            return Ok(());
-        }
+    let Ok(since) = parse_datetime(date, time, gmt) else {
+        writer.write_all(RESP_501_INVALID_DATE.as_bytes()).await?;
+        return Ok(());
     };
 
     let groups = storage.list_groups_since(since).await?;
     writer.write_all(RESP_231_NEW_GROUPS.as_bytes()).await?;
     for g in groups {
-        writer.write_all(format!("{}\r\n", g).as_bytes()).await?;
+        writer.write_all(format!("{g}\r\n").as_bytes()).await?;
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
     Ok(())
@@ -1019,12 +1013,9 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
         }
         None => false,
     };
-    let since = match parse_datetime(date, time, gmt) {
-        Ok(s) => s,
-        Err(_) => {
-            writer.write_all(RESP_501_INVALID_DATE.as_bytes()).await?;
-            return Ok(());
-        }
+    let Ok(since) = parse_datetime(date, time, gmt) else {
+        writer.write_all(RESP_501_INVALID_DATE.as_bytes()).await?;
+        return Ok(());
     };
 
     let groups = storage.list_groups().await?;
@@ -1037,7 +1028,7 @@ async fn handle_newnews<W: AsyncWrite + Unpin>(
 
     writer.write_all(RESP_230_NEW_ARTICLES.as_bytes()).await?;
     for id in ids {
-        writer.write_all(format!("{}\r\n", id).as_bytes()).await?;
+        writer.write_all(format!("{id}\r\n").as_bytes()).await?;
     }
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
     Ok(())
@@ -1074,7 +1065,7 @@ async fn handle_date<W: AsyncWrite + Unpin>(
     use chrono::Utc;
     let now = Utc::now().format("%Y%m%d%H%M%S").to_string();
     writer
-        .write_all(format!("111 {}\r\n", now).as_bytes())
+        .write_all(format!("111 {now}\r\n").as_bytes())
         .await?;
     Ok(())
 }
@@ -1102,12 +1093,11 @@ async fn handle_authinfo<W: AsyncWrite + Unpin>(
         writer.write_all(RESP_483_SECURE_REQ.as_bytes()).await?;
         return Ok(());
     }
-    let sub = match args.first() {
-        Some(s) => s.to_ascii_uppercase(),
-        None => {
-            writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
-            return Ok(());
-        }
+    let sub = if let Some(s) = args.first() {
+        s.to_ascii_uppercase()
+    } else {
+        writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
+        return Ok(());
     };
     match sub.as_str() {
         "USER" => {
@@ -1119,12 +1109,9 @@ async fn handle_authinfo<W: AsyncWrite + Unpin>(
             writer.write_all(RESP_381_PASSWORD_REQ.as_bytes()).await?;
         }
         "PASS" => {
-            let username = match state.pending_user.take() {
-                Some(u) => u,
-                None => {
-                    writer.write_all(RESP_482_BAD_SEQUENCE.as_bytes()).await?;
-                    return Ok(());
-                }
+            let Some(username) = state.pending_user.take() else {
+                writer.write_all(RESP_482_BAD_SEQUENCE.as_bytes()).await?;
+                return Ok(());
             };
             if args.len() < 2 {
                 writer.write_all(RESP_501_NOT_ENOUGH.as_bytes()).await?;
@@ -1209,12 +1196,9 @@ where
             msg.push_str(&line);
         }
     }
-    let (_, mut message) = match parse_message(&msg) {
-        Ok(m) => m,
-        Err(_) => {
-            writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
-            return Ok(());
-        }
+    let Ok((_, mut message)) = parse_message(&msg) else {
+        writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
+        return Ok(());
     };
     if control::handle_control(&message, storage, auth).await? {
         writer
@@ -1226,12 +1210,9 @@ where
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
     let size = msg.len() as u64;
-    let newsgroups = match validate_article(storage, auth, cfg, &message, size).await {
-        Ok(g) => g,
-        Err(_) => {
-            writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
-            return Ok(());
-        }
+    let Ok(newsgroups) = validate_article(storage, auth, cfg, &message, size).await else {
+        writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
+        return Ok(());
     };
     for g in newsgroups {
         let _ = storage.store_article(&g, &message).await?;
@@ -1283,9 +1264,9 @@ async fn validate_article(
         .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
         .map(|(_, v)| {
             v.split(',')
-                .map(|s| s.trim())
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -1390,12 +1371,9 @@ where
         }
         writer.write_all(RESP_335_SEND_IT.as_bytes()).await?;
         let msg = read_message(reader).await?;
-        let (_, mut article) = match parse_message(&msg) {
-            Ok(m) => m,
-            Err(_) => {
-                writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
-                return Ok(());
-            }
+        let Ok((_, mut article)) = parse_message(&msg) else {
+            writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
+            return Ok(());
         };
         if control::handle_control(&article, storage, auth).await? {
             writer.write_all(RESP_235_TRANSFER_OK.as_bytes()).await?;
@@ -1405,12 +1383,9 @@ where
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.len() as u64;
-        let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
-            Ok(g) => g,
-            Err(_) => {
-                writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
-                return Ok(());
-            }
+        let Ok(newsgroups) = validate_article(storage, auth, cfg, &article, size).await else {
+            writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
+            return Ok(());
         };
         for g in newsgroups {
             let _ = storage.store_article(&g, &article).await?;
@@ -1431,13 +1406,9 @@ async fn handle_check<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(id) = args.first() {
         if storage.get_article_by_id(id).await?.is_some() {
-            writer
-                .write_all(format!("438 {}\r\n", id).as_bytes())
-                .await?;
+            writer.write_all(format!("438 {id}\r\n").as_bytes()).await?;
         } else {
-            writer
-                .write_all(format!("238 {}\r\n", id).as_bytes())
-                .await?;
+            writer.write_all(format!("238 {id}\r\n").as_bytes()).await?;
         }
     } else {
         writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;
@@ -1462,52 +1433,43 @@ where
     if let Some(id) = args.first() {
         if storage.get_article_by_id(id).await?.is_some() {
             let _ = read_message(reader).await?;
-            writer
-                .write_all(format!("439 {}\r\n", id).as_bytes())
-                .await?;
+            writer.write_all(format!("439 {id}\r\n").as_bytes()).await?;
             return Ok(());
         }
         let msg = read_message(reader).await?;
-        let (_, mut article) = match parse_message(&msg) {
-            Ok(m) => m,
-            Err(_) => {
-                writer
-                    .write_all(format!("439 {}\r\n", id).as_bytes())
-                    .await?;
-                return Ok(());
-            }
+        let Ok((_, mut article)) = parse_message(&msg) else {
+            writer.write_all(format!("439 {id}\r\n").as_bytes()).await?;
+            return Ok(());
         };
         if control::handle_control(&article, storage, auth).await? {
-            writer
-                .write_all(format!("239 {}\r\n", id).as_bytes())
-                .await?;
+            writer.write_all(format!("239 {id}\r\n").as_bytes()).await?;
             return Ok(());
         }
         ensure_message_id(&mut article);
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.len() as u64;
-        let newsgroups = match validate_article(storage, auth, cfg, &article, size).await {
-            Ok(g) => g,
-            Err(_) => {
-                writer
-                    .write_all(format!("439 {}\r\n", id).as_bytes())
-                    .await?;
-                return Ok(());
-            }
+        let Ok(newsgroups) = validate_article(storage, auth, cfg, &article, size).await else {
+            writer.write_all(format!("439 {id}\r\n").as_bytes()).await?;
+            return Ok(());
         };
         for g in newsgroups {
             let _ = storage.store_article(&g, &article).await?;
         }
-        writer
-            .write_all(format!("239 {}\r\n", id).as_bytes())
-            .await?;
+        writer.write_all(format!("239 {id}\r\n").as_bytes()).await?;
     } else {
         writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;
     }
     Ok(())
 }
 
+/// Handle a client connection.
+///
+/// # Errors
+///
+/// Returns an error if there's a problem handling the client connection,
+/// such as network I/O errors or protocol violations.
+#[allow(clippy::too_many_lines)]
 #[tracing::instrument(skip(socket, storage, auth, cfg))]
 pub async fn handle_client<S>(
     socket: S,
@@ -1529,7 +1491,10 @@ where
             .await?;
     }
     let mut line = String::new();
-    let mut state = ConnectionState { is_tls, ..Default::default() };
+    let mut state = ConnectionState {
+        is_tls,
+        ..Default::default()
+    };
     loop {
         line.clear();
         let n = reader.read_line(&mut line).await?;
@@ -1537,12 +1502,9 @@ where
             break;
         }
         let trimmed = line.trim_end_matches(['\r', '\n']);
-        let (_, cmd) = match parse_command(trimmed) {
-            Ok(c) => c,
-            Err(_) => {
-                write_half.write_all(RESP_500_SYNTAX.as_bytes()).await?;
-                continue;
-            }
+        let Ok((_, cmd)) = parse_command(trimmed) else {
+            write_half.write_all(RESP_500_SYNTAX.as_bytes()).await?;
+            continue;
         };
         debug!("command" = %cmd.name);
         match cmd.name.as_str() {

@@ -7,16 +7,15 @@ const ADMIN_PUB: &str = include_str!("../data/admin.pub.asc");
 
 fn build_control_article(cmd: &str, body: &str) -> String {
     let headers = format!(
-        "From: admin@example.org\r\nSubject: cmsg {c}\r\nControl: {c}\r\nMessage-ID: <ctrl@test>\r\nDate: Wed, 05 Oct 2022 00:00:00 GMT\r\n",
-        c = cmd
+        "From: admin@example.org\r\nSubject: cmsg {cmd}\r\nControl: {cmd}\r\nMessage-ID: <ctrl@test>\r\nDate: Wed, 05 Oct 2022 00:00:00 GMT\r\n"
     );
     let body = body.replace('\n', "\r\n");
-    let article_text = format!("{}\r\n{}", headers, body);
+    let article_text = format!("{headers}\r\n{body}");
     let (_, msg) = parse_message(&article_text).unwrap();
     let signed = "Subject,Control,Message-ID,Date,From,Sender";
     let data = canonical_text(&msg, signed);
     let (ver, lines) = build_sig(&data);
-    let mut xhdr = format!("X-PGP-Sig: {} {}", ver, signed);
+    let mut xhdr = format!("X-PGP-Sig: {ver} {signed}");
     for l in &lines {
         xhdr.push_str("\r\n ");
         xhdr.push_str(l);
@@ -27,8 +26,7 @@ fn build_control_article(cmd: &str, body: &str) -> String {
         "\r\n.\r\n"
     };
     format!(
-        "{}Newsgroups: test.group\r\n{}\r\n\r\n{}{}",
-        headers, xhdr, body, term
+        "{headers}Newsgroups: test.group\r\n{xhdr}\r\n\r\n{body}{term}"
     )
 }
 
@@ -122,8 +120,7 @@ async fn admin_cancel_ignores_lock() {
     let lock_hash = Sha256::digest(key_b64.as_bytes());
     let lock_b64 = STANDARD.encode(lock_hash);
     let orig = format!(
-        "Message-ID: <al@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{}\r\n\r\nBody",
-        lock_b64
+        "Message-ID: <al@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
     let (_, msg) = parse_message(&orig).unwrap();
     storage.store_article("misc.test", &msg).await.unwrap();

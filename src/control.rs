@@ -21,8 +21,7 @@ fn parse_command(val: &str) -> Option<ControlCommand> {
             let group = parts.next()?;
             let moderated = parts
                 .next()
-                .map(|w| w.eq_ignore_ascii_case("moderated"))
-                .unwrap_or(false);
+                .is_some_and(|w| w.eq_ignore_ascii_case("moderated"));
             Some(ControlCommand::NewGroup {
                 group: group.to_string(),
                 moderated,
@@ -68,6 +67,7 @@ fn verify_cancel(keys: &[(String, String)], locks: &[(String, String)]) -> bool 
 }
 
 /// Build the canonical text that was signed according to the pgpcontrol format.
+#[must_use]
 pub fn canonical_text(msg: &Message, signed_headers: &str) -> String {
     let mut out = String::new();
     out.push_str("X-Signed-Headers: ");
@@ -80,8 +80,7 @@ pub fn canonical_text(msg: &Message, signed_headers: &str) -> String {
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("");
+            .map_or("", |(_, v)| v.as_str());
         out.push_str(val);
         out.push('\n');
     }
@@ -98,6 +97,12 @@ pub fn canonical_text(msg: &Message, signed_headers: &str) -> String {
     out
 }
 
+/// Verify a PGP signature on a message.
+///
+/// # Errors
+///
+/// Returns an error if the signature verification fails or if there are issues
+/// with key retrieval or parsing.
 pub async fn verify_pgp(
     msg: &Message,
     auth: &DynAuth,
@@ -109,8 +114,7 @@ pub async fn verify_pgp(
     let key_text = auth.get_pgp_key(user).await?.ok_or("no key")?;
     let (key, _) = SignedPublicKey::from_string(&key_text)?;
     let armor = format!(
-        "-----BEGIN PGP SIGNATURE-----\nVersion: {}\n\n{}\n-----END PGP SIGNATURE-----\n",
-        version, sig_data
+        "-----BEGIN PGP SIGNATURE-----\nVersion: {version}\n\n{sig_data}\n-----END PGP SIGNATURE-----\n"
     );
     let (sig, _) = StandaloneSignature::from_armor_single(armor.as_bytes())?;
     let data = canonical_text(msg, signed_headers);
@@ -118,6 +122,12 @@ pub async fn verify_pgp(
     Ok(())
 }
 
+/// Handle control messages for newsgroup management.
+///
+/// # Errors
+///
+/// Returns an error if there's a problem processing the control message,
+/// such as database errors or authentication failures.
 pub async fn handle_control(
     msg: &Message,
     storage: &DynStorage,
@@ -163,8 +173,7 @@ pub async fn handle_control(
         .headers
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("From"))
-        .map(|(_, v)| v.as_str())
-        .unwrap_or("");
+        .map_or("", |(_, v)| v.as_str());
     let sig_header = msg
         .headers
         .iter()

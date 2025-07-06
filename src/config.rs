@@ -9,8 +9,8 @@ fn default_db_path() -> String {
     "/var/renews/news.db".into()
 }
 
-fn default_auth_db_path() -> Option<String> {
-    Some("/var/renews/auth.db".into())
+fn default_auth_db_path() -> String {
+    "/var/renews/auth.db".into()
 }
 
 fn default_peer_db_path() -> String {
@@ -50,7 +50,7 @@ where
 {
     struct SizeVisitor;
 
-    impl<'de> Visitor<'de> for SizeVisitor {
+    impl Visitor<'_> for SizeVisitor {
         type Value = Option<u64>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -68,7 +68,7 @@ where
             if v < 0 {
                 Err(de::Error::custom("size must be positive"))
             } else {
-                Ok(Some(v as u64))
+                Ok(Some(u64::try_from(v).map_err(de::Error::custom)?))
             }
         }
 
@@ -78,7 +78,7 @@ where
         {
             parse_size(v)
                 .map(Some)
-                .ok_or_else(|| de::Error::custom(format!("invalid size: {}", v)))
+                .ok_or_else(|| de::Error::custom(format!("invalid size: {v}")))
         }
 
         fn visit_none<E>(self) -> Result<Self::Value, E> {
@@ -101,7 +101,7 @@ pub struct Config {
     #[serde(default = "default_db_path")]
     pub db_path: String,
     #[serde(default = "default_auth_db_path")]
-    pub auth_db_path: Option<String>,
+    pub auth_db_path: String,
     #[serde(default = "default_peer_db_path")]
     pub peer_db_path: String,
     #[serde(default = "default_peer_sync_secs")]
@@ -148,6 +148,11 @@ pub struct PeerRule {
 }
 
 impl Config {
+    /// Load configuration from a TOML file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed.
     pub fn from_file(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let text = std::fs::read_to_string(path)?;
         let cfg: Config = toml::from_str(&text)?;
@@ -165,28 +170,24 @@ impl Config {
         self.group_settings
             .iter()
             .filter(|r| r.group.is_none())
-            .find(|r| {
-                r.pattern
-                    .as_deref()
-                    .map(|p| wildmat(p, group))
-                    .unwrap_or(false)
-            })
+            .find(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
     }
 
+    #[must_use]
     pub fn retention_for_group(&self, group: &str) -> Option<Duration> {
         if let Some(rule) = self.rule_for_group(group) {
             if let Some(days) = rule.retention_days {
                 if days > 0 {
                     return Some(Duration::days(days));
-                } else {
-                    return None;
                 }
+                return None;
             }
         }
         self.default_retention_days
             .and_then(|d| if d > 0 { Some(Duration::days(d)) } else { None })
     }
 
+    #[must_use]
     pub fn max_size_for_group(&self, group: &str) -> Option<u64> {
         self.rule_for_group(group)
             .and_then(|r| r.max_article_bytes)
