@@ -6,7 +6,6 @@ use std::fs;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use tokio::sync::RwLock;
 
 use crate::utils as common;
 
@@ -58,18 +57,17 @@ async fn peer_transfer_helper(interval: u64) {
             .unwrap(),
     );
 
-    let cfg_a: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(
-        toml::from_str("port=119\nsite_name='A'").unwrap(),
-    ));
-    let (cert, key, pem) = common::generate_self_signed_cert();
-    let (addr_b, handle_b) =
-        common::setup_tls_server_with_cert(storage_b.clone(), auth.clone(), cert.clone(), key)
-            .await;
+    let cfg_a = toml::from_str("port=119\nsite_name='A'").unwrap();
+    let cfg_b = toml::from_str("port=119").unwrap();
+    let (addr_b, cert_b, handle_b) =
+        common::start_server(storage_b.clone(), auth.clone(), cfg_b, true).await;
     let ca_file = NamedTempFile::new().unwrap();
-    fs::write(ca_file.path(), pem).unwrap();
-    unsafe { std::env::set_var("SSL_CERT_FILE", ca_file.path()) };
-    let (addr_a, handle_a) =
-        common::setup_server_with_cfg(storage_a.clone(), auth.clone(), cfg_a).await;
+    if let Some((_, pem)) = &cert_b {
+        fs::write(ca_file.path(), pem).unwrap();
+        unsafe { std::env::set_var("SSL_CERT_FILE", ca_file.path()) };
+    }
+    let (addr_a, _, handle_a) =
+        common::start_server(storage_a.clone(), auth.clone(), cfg_a, false).await;
 
     let (mut reader, mut writer) = common::connect(addr_a).await;
     let mut line = String::new();
