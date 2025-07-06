@@ -57,9 +57,7 @@ fn build_cross_article() -> String {
         x2.push_str("\r\n ");
         x2.push_str(l);
     }
-    format!(
-        "{base}Approved: mod1\r\nApproved: mod2\r\n{x1}\r\n{x2}\r\n\r\nBody\r\n.\r\n"
-    )
+    format!("{base}Approved: mod1\r\nApproved: mod2\r\n{x1}\r\n{x2}\r\n\r\nBody\r\n.\r\n")
 }
 
 #[tokio::test]
@@ -116,7 +114,10 @@ async fn post_with_approval_succeeds() {
             "POST",
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
-        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
         .run_tls(storage.clone(), auth)
         .await;
     assert!(
@@ -150,7 +151,10 @@ async fn cross_post_different_moderators() {
             "POST",
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
-        .expect(article.trim_end_matches("\r\n"), "240 article received")
+        .expect_request_multi(
+            utils::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
         .run_tls(storage.clone(), auth)
         .await;
     assert_eq!(
