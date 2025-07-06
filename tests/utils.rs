@@ -11,7 +11,6 @@ use tokio::io::{self, ReadHalf, WriteHalf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::RwLock;
 use tokio_rustls::{TlsAcceptor, TlsConnector, rustls};
-use tokio_test::io::Builder as IoBuilder;
 
 /// Create an in-memory storage and auth provider pair for tests.
 pub async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
@@ -196,6 +195,49 @@ pub async fn connect_tls(
     (BufReader::new(r), w)
 }
 
+/// Start a new NNTP server for testing.
+pub async fn start_server(
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+    cfg: Config,
+    tls: bool,
+) -> (
+    std::net::SocketAddr,
+    Option<(rustls::Certificate, String)>,
+    tokio::task::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let cfg = Arc::new(RwLock::new(cfg));
+    let store_clone = storage.clone();
+    let auth_clone = auth.clone();
+    if tls {
+        let (cert, key, pem) = generate_self_signed_cert();
+        let tls_config = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert.clone()], key)
+            .unwrap();
+        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+        let handle = tokio::spawn(async move {
+            let (sock, _) = listener.accept().await.unwrap();
+            let stream = acceptor.accept(sock).await.unwrap();
+            handle_client(stream, store_clone, auth_clone, cfg, true)
+                .await
+                .unwrap();
+        });
+        (addr, Some((cert, pem)), handle)
+    } else {
+        let handle = tokio::spawn(async move {
+            let (sock, _) = listener.accept().await.unwrap();
+            handle_client(sock, store_clone, auth_clone, cfg, false)
+                .await
+                .unwrap();
+        });
+        (addr, None, handle)
+    }
+}
+
 /// Builder to mock a client connection using `tokio_test::io`.
 pub struct ClientMock {
     steps: Vec<(String, Vec<String>)>,
@@ -260,28 +302,33 @@ impl ClientMock {
         cfg: renews::config::Config,
         tls: bool,
     ) {
-        use tokio::sync::RwLock;
-        let mut builder = IoBuilder::new();
-        if tls {
-            builder.write(b"200 NNTP Service Ready\r\n");
-        } else {
-            builder.write(b"201 NNTP Service Ready - no posting allowed\r\n");
-        }
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+
+        use tokio::io::{AsyncBufRead, AsyncWrite};
+
+        let (addr, cert, handle) = start_server(storage, auth, cfg, tls).await;
+        let (mut reader, mut writer): (Box<dyn AsyncBufRead + Unpin>, Box<dyn AsyncWrite + Unpin>) =
+            if let Some((c, _)) = cert {
+                let (r, w) = connect_tls(addr, c).await;
+                (Box::new(r), Box::new(w))
+            } else {
+                let (r, w) = connect(addr).await;
+                (Box::new(r), Box::new(w))
+            };
+        let mut line = String::new();
+        reader.read_line(&mut line).await.unwrap();
         for (cmd, resps) in self.steps {
-            let mut cmd_bytes = cmd.into_bytes();
-            if !cmd_bytes.ends_with(b"\n") {
-                cmd_bytes.extend_from_slice(b"\r\n");
-            }
-            builder.read(&cmd_bytes);
-            for line in resps {
-                builder.write(format!("{line}\r\n").as_bytes());
+            writer
+                .write_all(format!("{cmd}\r\n").as_bytes())
+                .await
+                .unwrap();
+            for resp in resps {
+                line.clear();
+                reader.read_line(&mut line).await.unwrap();
+                assert_eq!(line.trim_end_matches(['\r', '\n']), resp);
             }
         }
-        builder.read(b"");
-        let mock = builder.build();
-        let cfg: Arc<RwLock<renews::config::Config>> = Arc::new(RwLock::new(cfg));
-        renews::handle_client(mock, storage, auth, cfg, tls)
-            .await
-            .unwrap();
+        let _ = writer.shutdown().await;
+        handle.await.unwrap();
     }
 }
