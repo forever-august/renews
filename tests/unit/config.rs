@@ -59,7 +59,7 @@ retention_days = 1
 
     assert_eq!(cfg.port, 119);
     assert_eq!(cfg.db_path, "/tmp/db1");
-    assert_eq!(cfg.auth_db_path.as_deref(), Some("/tmp/auth1"));
+    assert_eq!(cfg.auth_db_path, "/tmp/auth1");
     assert_eq!(cfg.peer_db_path, "/tmp/peer1");
     assert_eq!(cfg.peer_sync_secs, 3600);
     assert_eq!(cfg.tls_port, Some(563));
@@ -74,7 +74,7 @@ retention_days = 1
 fn default_paths() {
     let cfg: Config = toml::from_str("port=119").unwrap();
     assert_eq!(cfg.db_path, "/var/renews/news.db");
-    assert_eq!(cfg.auth_db_path.as_deref(), Some("/var/renews/auth.db"));
+    assert_eq!(cfg.auth_db_path, "/var/renews/auth.db");
     assert_eq!(cfg.peer_db_path, "/var/renews/peers.db");
     assert_eq!(cfg.peer_sync_secs, 3600);
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use renews::auth::AuthProvider;
 use renews::config::Config;
