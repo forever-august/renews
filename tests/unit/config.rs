@@ -89,3 +89,32 @@ sitename = "u:p@news.example.com:563"
     assert_eq!(cfg.peers.len(), 1);
     assert_eq!(cfg.peers[0].sitename, "u:p@news.example.com:563");
 }
+
+#[test]
+fn env_substitution() {
+    use std::fs::write;
+    use tempfile::tempdir;
+
+    unsafe { std::env::set_var("TEST_ADDR", ":4242") };
+    let dir = tempdir().unwrap();
+    let cfg_path = dir.path().join("cfg.toml");
+    write(&cfg_path, "addr = \"$ENV{TEST_ADDR}\"").unwrap();
+    let cfg = Config::from_file(cfg_path.to_str().unwrap()).unwrap();
+    assert_eq!(cfg.addr, ":4242");
+}
+
+#[test]
+fn file_substitution() {
+    use std::fs::{write, File};
+    use std::io::Write as _;
+    use tempfile::tempdir;
+
+    let dir = tempdir().unwrap();
+    let val_path = dir.path().join("val");
+    write(&val_path, ":5050").unwrap();
+    let cfg_path = dir.path().join("cfg.toml");
+    let mut f = File::create(&cfg_path).unwrap();
+    write!(f, "addr = \"$FILE{{{}}}\"", val_path.display()).unwrap();
+    let cfg = Config::from_file(cfg_path.to_str().unwrap()).unwrap();
+    assert_eq!(cfg.addr, ":5050");
+}

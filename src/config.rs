@@ -4,6 +4,7 @@ use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
 use std::error::Error;
 use std::fmt;
+use regex::Regex;
 
 fn default_db_path() -> String {
     "sqlite:///var/renews/news.db".into()
@@ -23,6 +24,33 @@ fn default_peer_sync_secs() -> u64 {
 
 fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
+}
+
+fn expand_placeholders(text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let env_re = Regex::new(r"\$ENV\{([^}]+)\}")?;
+    let file_re = Regex::new(r"\$FILE\{([^}]+)\}")?;
+    let mut out = String::new();
+    let mut last = 0;
+    for caps in env_re.captures_iter(text) {
+        let m = caps.get(0).unwrap();
+        out.push_str(&text[last..m.start()]);
+        let var = std::env::var(&caps[1])?;
+        out.push_str(&var);
+        last = m.end();
+    }
+    out.push_str(&text[last..]);
+    let text = out;
+    let mut out = String::new();
+    let mut last = 0;
+    for caps in file_re.captures_iter(&text) {
+        let m = caps.get(0).unwrap();
+        out.push_str(&text[last..m.start()]);
+        let contents = std::fs::read_to_string(&caps[1])?;
+        out.push_str(&contents);
+        last = m.end();
+    }
+    out.push_str(&text[last..]);
+    Ok(out)
 }
 
 fn parse_size(input: &str) -> Option<u64> {
@@ -153,6 +181,7 @@ impl Config {
     /// Returns an error if the file cannot be read or parsed.
     pub fn from_file(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let text = std::fs::read_to_string(path)?;
+        let text = expand_placeholders(&text)?;
         let cfg: Config = toml::from_str(&text)?;
         Ok(cfg)
     }

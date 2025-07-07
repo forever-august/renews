@@ -45,6 +45,11 @@ following keys are recognised:
 - `group_settings` - list of per-group rules which can match a `group` exactly or a
   `pattern` using wildmat syntax to override retention and size defaults.
 
+Values inside the configuration may reference environment variables or other files.
+The pattern `$ENV{VAR}` is replaced by the value of the `VAR` environment variable
+and `$FILE{path}` is replaced with the contents of the file at `path` before the
+file is parsed.
+
 An example configuration is provided in the repository:
 
 ```toml
