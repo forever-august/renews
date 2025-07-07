@@ -18,7 +18,8 @@ Configuration is loaded from the file specified with `--config`. When the
 otherwise `/etc/renews.toml` is assumed. The
 following keys are recognised:
 
-- `port` - TCP port for plain NNTP connections.
+- `addr` - listen address for plain NNTP connections. If the host portion is
+  omitted the server listens on all interfaces.
 - `site_name` - hostname advertised by the server. Defaults to the `HOSTNAME`
   environment variable or `localhost` when unset.
 - `db_path` - database connection string for storing articles. Defaults to
@@ -29,10 +30,12 @@ following keys are recognised:
   `sqlite:///var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
 - `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. Each peer may also specify optional `username` and `password` used for `AUTHINFO` when sending articles.
-- `tls_port` - optional port for NNTP over TLS.
+- `tls_addr` - optional listen address for NNTP over TLS. Omitting the host
+  portion listens on all interfaces.
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
-- `ws_port` - optional port for the WebSocket bridge (requires the `websocket` feature).
+- `ws_addr` - optional listen address for the WebSocket bridge (requires the
+  `websocket` feature). Omitting the host portion listens on all interfaces.
 - `default_retention_days` - default number of days to keep articles.
 - `default_max_article_bytes` - default maximum article size in bytes. A `K`,
   `M` or `G` suffix may be used to specify kilobytes, megabytes or gigabytes.
@@ -42,16 +45,16 @@ following keys are recognised:
 An example configuration is provided in the repository:
 
 ```toml
-port = 119
+addr = ":119"
 site_name = "example.com"
 db_path = "sqlite:///var/renews/news.db"
 auth_db_path = "sqlite:///var/renews/auth.db"
 peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
-tls_port = 563
+tls_addr = ":563"
 tls_cert = "cert.pem"
 tls_key = "key.pem"
-ws_port = 8080
+ws_addr = ":8080"
 default_retention_days = 30
 default_max_article_bytes = "1M"
 
@@ -72,8 +75,8 @@ username = "peeruser"
 password = "peerpass"
 ```
 
-`tls_port`, `tls_cert` and `tls_key` must all be set for TLS support to be
-enabled. The WebSocket bridge is started when `ws_port` is set and the crate is
+`tls_addr`, `tls_cert` and `tls_key` must all be set for TLS support to be
+enabled. The WebSocket bridge is started when `ws_addr` is set and the crate is
 compiled with the `websocket` feature.
 
 ## Deployment with systemd

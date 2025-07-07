@@ -5,19 +5,50 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info};
 
 use crate::config::Config;
+use std::net::SocketAddr;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+fn listen_addr(raw: &str) -> String {
+    if raw.parse::<SocketAddr>().is_ok() {
+        raw.to_string()
+    } else if let Some(port) = raw.strip_prefix(':') {
+        format!("0.0.0.0:{port}")
+    } else {
+        format!("0.0.0.0:{raw}")
+    }
+}
+
+fn port_from_addr(addr: &str, default_port: u16) -> u16 {
+    if let Some(stripped) = addr.strip_prefix('[') {
+        if let Some(end) = stripped.find(']') {
+            if let Some(p) = stripped[end + 1..].strip_prefix(':') {
+                if let Ok(port) = p.parse() {
+                    return port;
+                }
+            }
+            return default_port;
+        }
+    }
+    if let Some(idx) = addr.rfind(':') {
+        if addr[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(port) = addr[idx + 1..].parse() {
+                return port;
+            }
+        }
+    }
+    default_port
+}
 pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let (ws_port, nntp_port) = {
+    let (ws_addr_raw, nntp_port) = {
         let cfg_guard = cfg.read().await;
-        match cfg_guard.ws_port {
-            Some(p) => (p, cfg_guard.port),
+        match cfg_guard.ws_addr.as_deref() {
+            Some(a) => (a.to_string(), port_from_addr(&cfg_guard.addr, 119)),
             None => return Ok(()),
         }
     };
-    let addr = format!("127.0.0.1:{ws_port}");
+    let addr = listen_addr(&ws_addr_raw);
     info!("listening WebSocket on {addr}");
     let listener = TcpListener::bind(&addr).await?;
     let nntp_addr = format!("127.0.0.1:{nntp_port}");
