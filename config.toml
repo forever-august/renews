@@ -21,8 +21,6 @@ retention_days = 60
 max_article_bytes = "2M"
 
 [[peers]]
-sitename = "peer.example.com"
+sitename = "peeruser:peerpass@peer.example.com"
 patterns = ["*"]
 sync_interval_secs = 3600
-username = "peeruser"
-password = "peerpass"

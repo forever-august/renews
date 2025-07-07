@@ -80,15 +80,12 @@ fn default_paths() {
 }
 
 #[test]
-fn peer_auth_fields() {
+fn peer_connection_string_allows_credentials() {
     let toml = r#"addr = ":119"
 [[peers]]
-sitename = "news.example.com"
-username = "u"
-password = "p"
+sitename = "u:p@news.example.com:563"
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
     assert_eq!(cfg.peers.len(), 1);
-    assert_eq!(cfg.peers[0].username.as_deref(), Some("u"));
-    assert_eq!(cfg.peers[0].password.as_deref(), Some("p"));
+    assert_eq!(cfg.peers[0].sitename, "u:p@news.example.com:563");
 }
