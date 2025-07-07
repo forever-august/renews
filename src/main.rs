@@ -5,15 +5,18 @@ use clap::{Parser, Subcommand};
 use renews::auth::sqlite::SqliteAuth;
 use renews::auth::AuthProvider;
 use renews::config::Config;
+use renews::server;
 use renews::storage::sqlite::SqliteStorage;
 use renews::storage::Storage;
-use renews::server;
 
 #[derive(Parser)]
 struct Args {
     /// Path to the configuration file
     #[arg(long, env = "RENEWS_CONFIG", default_value = "/etc/renews.toml")]
     config: String,
+    /// Initialize databases and exit
+    #[arg(long)]
+    init: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -72,6 +75,18 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
     Ok(())
 }
 
+async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let db_conn = format!("sqlite:{}", cfg.db_path);
+    SqliteStorage::new(&db_conn).await?;
+    let auth_conn = format!("sqlite:{}", cfg.auth_db_path);
+    SqliteAuth::new(&auth_conn).await?;
+    let peer_conn = format!("sqlite:{}", cfg.peer_db_path);
+    let peer_db = renews::peers::PeerDb::new(&peer_conn).await?;
+    let names: Vec<String> = cfg.peers.iter().map(|p| p.sitename.clone()).collect();
+    peer_db.sync_config(&names).await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_lines)]
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -80,9 +95,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let cfg_path = args.config.clone();
     let cfg_initial = Config::from_file(&cfg_path)?;
 
-    if let Some(Command::Admin(cmd)) = args.command {
-        run_admin(cmd, &cfg_initial).await?;
+    if args.init {
+        run_init(&cfg_initial).await?;
         return Ok(());
+    }
+
+    if let Some(cmd) = args.command {
+        match cmd {
+            Command::Admin(c) => {
+                run_admin(c, &cfg_initial).await?;
+                return Ok(());
+            }
+        }
     }
 
     server::run(cfg_initial, cfg_path).await
