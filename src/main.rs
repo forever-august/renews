@@ -2,8 +2,7 @@ use std::error::Error;
 
 use clap::{Parser, Subcommand};
 
-use renews::auth::AuthProvider;
-use renews::auth::sqlite::SqliteAuth;
+use renews::auth::{self, AuthProvider};
 use renews::config::Config;
 use renews::server;
 use renews::storage;
@@ -53,7 +52,7 @@ enum AdminCommand {
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     let storage = storage::open(&cfg.db_path).await?;
-    let auth = SqliteAuth::new(&cfg.auth_db_path).await?;
+    let auth = auth::open(&cfg.auth_db_path).await?;
     match cmd {
         AdminCommand::AddGroup { group, moderated } => storage.add_group(&group, moderated).await?,
         AdminCommand::RemoveGroup { group } => storage.remove_group(&group).await?,
@@ -73,7 +72,7 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
 
 async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     storage::open(&cfg.db_path).await?;
-    SqliteAuth::new(&cfg.auth_db_path).await?;
+    auth::open(&cfg.auth_db_path).await?;
     let peer_db = renews::peers::PeerDb::new(&cfg.peer_db_path).await?;
     let names: Vec<String> = cfg.peers.iter().map(|p| p.sitename.clone()).collect();
     peer_db.sync_config(&names).await?;
