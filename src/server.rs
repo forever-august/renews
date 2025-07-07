@@ -7,11 +7,12 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
 use tracing::{error, info};
+use std::net::SocketAddr;
 
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 
-use crate::auth::{AuthProvider, sqlite::SqliteAuth};
+use crate::auth::{self, AuthProvider};
 use crate::config::Config;
 use crate::peers::{PeerConfig, PeerDb, peer_task};
 use crate::retention::cleanup_expired_articles;
@@ -42,6 +43,17 @@ fn load_tls_config(
     Ok(config)
 }
 
+fn listen_addr(raw: &str) -> String {
+    if raw.parse::<SocketAddr>().is_ok() {
+        raw.to_string()
+    } else if let Some(port) = raw.strip_prefix(':') {
+        format!("0.0.0.0:{port}")
+    } else {
+        format!("0.0.0.0:{raw}")
+    }
+}
+
+
 #[allow(clippy::too_many_lines)]
 pub async fn run(
     cfg_initial: Config,
@@ -57,7 +69,7 @@ pub async fn run(
         let cfg_guard = cfg.read().await;
         cfg_guard.auth_db_path.clone()
     };
-    let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_path).await?);
+    let auth: Arc<dyn AuthProvider> = auth::open(&auth_path).await?;
     let peer_db = {
         let cfg_guard = cfg.read().await;
         PeerDb::new(&cfg_guard.peer_db_path).await?
@@ -90,7 +102,7 @@ pub async fn run(
     }
     let addr = {
         let cfg_guard = cfg.read().await;
-        format!("127.0.0.1:{}", cfg_guard.port)
+        listen_addr(&cfg_guard.addr)
     };
     info!("listening on {addr}");
     let listener = TcpListener::bind(&addr).await?;
@@ -114,12 +126,12 @@ pub async fn run(
 
     {
         let cfg_guard = cfg.read().await;
-        if let (Some(tls_port), Some(cert), Some(key)) = (
-            cfg_guard.tls_port,
+        if let (Some(tls_addr_raw), Some(cert), Some(key)) = (
+            cfg_guard.tls_addr.as_deref(),
             cfg_guard.tls_cert.as_ref(),
             cfg_guard.tls_key.as_ref(),
         ) {
-            let tls_addr = format!("127.0.0.1:{tls_port}");
+            let tls_addr = listen_addr(tls_addr_raw);
             info!("listening TLS on {tls_addr}");
             let tls_listener = TcpListener::bind(&tls_addr).await?;
             let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
@@ -157,8 +169,8 @@ pub async fn run(
         #[cfg(feature = "websocket")]
         {
             let cfg_ws = cfg.clone();
-            if let Some(port) = cfg.read().await.ws_port {
-                info!("websocket bridge on 127.0.0.1:{port}");
+            if let Some(addr_raw) = cfg.read().await.ws_addr.as_deref() {
+                info!("websocket bridge on {addr_raw}");
                 tokio::spawn(async move {
                     if let Err(e) = ws::run_ws_bridge(cfg_ws).await {
                         error!("websocket error: {e}");

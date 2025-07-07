@@ -57,8 +57,8 @@ async fn peer_transfer_helper(interval: u64) {
     );
     auth.add_user("user", "pass").await.unwrap();
 
-    let cfg_a: renews::config::Config = toml::from_str("port=119\nsite_name='A'").unwrap();
-    let cfg_b: renews::config::Config = toml::from_str("port=119").unwrap();
+    let cfg_a: renews::config::Config = toml::from_str("addr=\":119\"\nsite_name='A'").unwrap();
+    let cfg_b: renews::config::Config = toml::from_str("addr=\":119\"").unwrap();
     let (addr_b, cert_b, handle_b) =
         common::start_server(storage_b.clone(), auth.clone(), cfg_b.clone(), true).await;
     let ca_file = NamedTempFile::new().unwrap();

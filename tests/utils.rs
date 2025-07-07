@@ -99,7 +99,7 @@ pub async fn setup_server(
     let addr = listener.local_addr().unwrap();
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
-    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         handle_client(sock, store_clone, auth_clone, cfg, false)
@@ -154,7 +154,7 @@ pub async fn setup_tls_server_with_cert(
     let addr = listener.local_addr().unwrap();
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
-    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("port=119").unwrap()));
+    let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
@@ -250,7 +250,7 @@ pub async fn run_client(
 ) {
     run_client_with_cfg(
         client,
-        toml::from_str("port=119").unwrap(),
+        toml::from_str("addr=\":119\"").unwrap(),
         storage,
         auth,
         false,
@@ -265,7 +265,7 @@ pub async fn run_client_tls(
 ) {
     run_client_with_cfg(
         client,
-        toml::from_str("port=119").unwrap(),
+        toml::from_str("addr=\":119\"").unwrap(),
         storage,
         auth,
         true,
