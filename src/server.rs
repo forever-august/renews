@@ -17,6 +17,8 @@ use crate::peers::{peer_task, PeerConfig, PeerDb};
 use crate::retention::cleanup_expired_articles;
 use crate::storage::sqlite::SqliteStorage;
 use crate::storage::Storage;
+#[cfg(feature = "websocket")]
+use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
 
@@ -152,6 +154,19 @@ pub async fn run(cfg_initial: Config, cfg_path: String) -> Result<(), Box<dyn Er
                     });
                 }
             });
+        }
+
+        #[cfg(feature = "websocket")]
+        {
+            let cfg_ws = cfg.clone();
+            if let Some(port) = cfg.read().await.ws_port {
+                info!("websocket bridge on 127.0.0.1:{port}");
+                tokio::spawn(async move {
+                    if let Err(e) = ws::run_ws_bridge(cfg_ws).await {
+                        error!("websocket error: {e}");
+                    }
+                });
+            }
         }
 
         let storage_clone = storage.clone();

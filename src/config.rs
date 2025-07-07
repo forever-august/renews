@@ -115,6 +115,8 @@ pub struct Config {
     #[serde(default)]
     pub tls_key: Option<String>,
     #[serde(default)]
+    pub ws_port: Option<u16>,
+    #[serde(default)]
     pub default_retention_days: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_size")]
     pub default_max_article_bytes: Option<u64>,
@@ -204,5 +206,6 @@ impl Config {
         self.peers = other.peers;
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
+        self.ws_port = other.ws_port;
     }
 }
