@@ -9,8 +9,8 @@ pub mod config;
 pub mod control;
 pub mod peers;
 pub mod retention;
-pub mod storage;
 pub mod server;
+pub mod storage;
 pub mod wildmat;
 #[cfg(feature = "websocket")]
 pub mod ws;

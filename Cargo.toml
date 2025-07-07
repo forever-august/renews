@@ -7,7 +7,7 @@ edition = "2024"
 nom = "7"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls"] }
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls"], default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -31,6 +31,7 @@ futures-util = { version = "0.3", optional = true }
 
 [features]
 websocket = ["tokio-tungstenite", "futures-util"]
+postgres = ["sqlx/postgres"]
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,13 +1,13 @@
-use futures_util::{StreamExt, SinkExt};
-use tokio::net::{TcpListener, TcpStream};
+use futures_util::{SinkExt, StreamExt};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info};
 
 use crate::config::Config;
+use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::error::Error;
 
 pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let (ws_port, nntp_port) = {
@@ -32,7 +32,10 @@ pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<(), Box<dyn Error
     }
 }
 
-async fn handle_client(stream: TcpStream, nntp_addr: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn handle_client(
+    stream: TcpStream,
+    nntp_addr: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let ws_stream = accept_async(stream).await?;
     let (mut ws_write, mut ws_read) = ws_stream.split();
     let tcp = TcpStream::connect(nntp_addr).await?;
@@ -58,7 +61,9 @@ async fn handle_client(stream: TcpStream, nntp_addr: &str) -> Result<(), Box<dyn
     let mut buf = [0u8; 1024];
     loop {
         let n = nntp_read.read(&mut buf).await?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         ws_write.send(Message::Binary(buf[..n].to_vec())).await?;
     }
     ws_write.close().await?;
