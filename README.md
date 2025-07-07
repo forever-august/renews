@@ -131,3 +131,10 @@ renews admin add-moderator alice 'rust.*'
 # remove moderator permissions
 renews admin remove-moderator alice 'rust.*'
 ```
+
+Use `--init` to create the article, authentication and peer state databases
+without starting the server:
+
+```bash
+renews --init --config /opt/renews/config.toml
+```
