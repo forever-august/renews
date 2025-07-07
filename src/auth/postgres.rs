@@ -1,7 +1,11 @@
 use super::{AuthProvider, Error, async_trait};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{
+    PgPool, Row,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct PostgresAuth {
@@ -11,7 +15,11 @@ pub struct PostgresAuth {
 impl PostgresAuth {
     /// Create a new Postgres authentication provider.
     pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let pool = PgPoolOptions::new().max_connections(5).connect(uri).await?;
+        let opts = PgConnectOptions::from_str(uri)?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect_with(opts)
+            .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS users (\
                 username TEXT PRIMARY KEY,\
@@ -43,8 +51,11 @@ impl PostgresAuth {
 
 #[async_trait]
 impl AuthProvider for PostgresAuth {
-    async fn add_user(&self, username: &str, password: &str)
-        -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn add_user(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)?
@@ -76,17 +87,21 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn verify_user(&self, username: &str, password: &str)
-        -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn verify_user(
+        &self,
+        username: &str,
+        password: &str,
+    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
         if let Some(row) = sqlx::query("SELECT password_hash FROM users WHERE username = $1")
             .bind(username)
             .fetch_optional(&self.pool)
-            .await? {
-                let stored: String = row.get(0);
-                let parsed = PasswordHash::new(&stored)?;
-                Ok(Argon2::default()
-                    .verify_password(password.as_bytes(), &parsed)
-                    .is_ok())
+            .await?
+        {
+            let stored: String = row.get(0);
+            let parsed = PasswordHash::new(&stored)?;
+            Ok(Argon2::default()
+                .verify_password(password.as_bytes(), &parsed)
+                .is_ok())
         } else {
             Ok(false)
         }
@@ -100,14 +115,15 @@ impl AuthProvider for PostgresAuth {
         Ok(row.is_some())
     }
 
-    async fn add_admin(&self, username: &str, key: &str)
-        -> Result<(), Box<dyn Error + Send + Sync>> {
-        sqlx::query(
-            "INSERT INTO admins (username) VALUES ($1) ON CONFLICT (username) DO NOTHING",
-        )
-        .bind(username)
-        .execute(&self.pool)
-        .await?;
+    async fn add_admin(
+        &self,
+        username: &str,
+        key: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        sqlx::query("INSERT INTO admins (username) VALUES ($1) ON CONFLICT (username) DO NOTHING")
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
         sqlx::query("UPDATE users SET key = $1 WHERE username = $2")
             .bind(key)
             .bind(username)
@@ -124,8 +140,11 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn update_pgp_key(&self, username: &str, key: &str)
-        -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn update_pgp_key(
+        &self,
+        username: &str,
+        key: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         sqlx::query("UPDATE users SET key = $1 WHERE username = $2")
             .bind(key)
             .bind(username)
@@ -134,12 +153,15 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn get_pgp_key(&self, username: &str)
-        -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    async fn get_pgp_key(
+        &self,
+        username: &str,
+    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
         if let Some(row) = sqlx::query("SELECT key FROM users WHERE username = $1")
             .bind(username)
             .fetch_optional(&self.pool)
-            .await? {
+            .await?
+        {
             let k: Option<String> = row.try_get("key")?;
             Ok(k)
         } else {
@@ -147,8 +169,11 @@ impl AuthProvider for PostgresAuth {
         }
     }
 
-    async fn add_moderator(&self, username: &str, pattern: &str)
-        -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn add_moderator(
+        &self,
+        username: &str,
+        pattern: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         sqlx::query(
             "INSERT INTO moderators (username, pattern) VALUES ($1, $2)\
             ON CONFLICT (username, pattern) DO UPDATE SET pattern = EXCLUDED.pattern",
@@ -160,8 +185,11 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn remove_moderator(&self, username: &str, pattern: &str)
-        -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_moderator(
+        &self,
+        username: &str,
+        pattern: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         sqlx::query("DELETE FROM moderators WHERE username = $1 AND pattern = $2")
             .bind(username)
             .bind(pattern)
@@ -170,8 +198,11 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn is_moderator(&self, username: &str, group: &str)
-        -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn is_moderator(
+        &self,
+        username: &str,
+        group: &str,
+    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
         let rows = sqlx::query("SELECT pattern FROM moderators WHERE username = $1")
             .bind(username)
             .fetch_all(&self.pool)

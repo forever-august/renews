@@ -1,8 +1,12 @@
 use super::{Message, Storage};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{
+    PgPool, Row,
+    postgres::{PgConnectOptions, PgPoolOptions},
+};
 use std::error::Error;
+use std::str::FromStr;
 
 #[derive(Clone)]
 pub struct PostgresStorage {
@@ -16,7 +20,11 @@ impl PostgresStorage {
     #[tracing::instrument(skip_all)]
     /// Create a new Postgres storage backend.
     pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let pool = PgPoolOptions::new().max_connections(5).connect(uri).await?;
+        let opts = PgConnectOptions::from_str(uri)?;
+        let pool = PgPoolOptions::new()
+            .max_connections(5)
+            .connect_with(opts)
+            .await?;
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS messages (\
                 message_id TEXT PRIMARY KEY,\
