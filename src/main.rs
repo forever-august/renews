@@ -2,12 +2,11 @@ use std::error::Error;
 
 use clap::{Parser, Subcommand};
 
-use renews::auth::sqlite::SqliteAuth;
 use renews::auth::AuthProvider;
+use renews::auth::sqlite::SqliteAuth;
 use renews::config::Config;
 use renews::server;
-use renews::storage::sqlite::SqliteStorage;
-use renews::storage::Storage;
+use renews::storage;
 
 #[derive(Parser)]
 struct Args {
@@ -53,11 +52,8 @@ enum AdminCommand {
 }
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let db_conn = format!("sqlite:{}", cfg.db_path);
-    let storage = SqliteStorage::new(&db_conn).await?;
-    let auth_path = &cfg.auth_db_path;
-    let auth_conn = format!("sqlite:{auth_path}");
-    let auth = SqliteAuth::new(&auth_conn).await?;
+    let storage = storage::open(&cfg.db_path).await?;
+    let auth = SqliteAuth::new(&cfg.auth_db_path).await?;
     match cmd {
         AdminCommand::AddGroup { group, moderated } => storage.add_group(&group, moderated).await?,
         AdminCommand::RemoveGroup { group } => storage.remove_group(&group).await?,
@@ -76,12 +72,9 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
 }
 
 async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let db_conn = format!("sqlite:{}", cfg.db_path);
-    SqliteStorage::new(&db_conn).await?;
-    let auth_conn = format!("sqlite:{}", cfg.auth_db_path);
-    SqliteAuth::new(&auth_conn).await?;
-    let peer_conn = format!("sqlite:{}", cfg.peer_db_path);
-    let peer_db = renews::peers::PeerDb::new(&peer_conn).await?;
+    storage::open(&cfg.db_path).await?;
+    SqliteAuth::new(&cfg.auth_db_path).await?;
+    let peer_db = renews::peers::PeerDb::new(&cfg.peer_db_path).await?;
     let names: Vec<String> = cfg.peers.iter().map(|p| p.sitename.clone()).collect();
     peer_db.sync_config(&names).await?;
     Ok(())

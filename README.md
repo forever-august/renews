@@ -1,7 +1,7 @@
 # Renews
 
-Renews is a minimal NNTP server implemented in Rust.  It stores articles in an
-SQLite database and supports a configurable set of newsgroups.  The server can
+Renews is a minimal NNTP server implemented in Rust.  It stores articles in a
+database and supports a configurable set of newsgroups.  The server can
 optionally accept NNTP over TLS when the TLS parameters are provided.
 
 ## Building
@@ -21,9 +21,12 @@ following keys are recognised:
 - `port` - TCP port for plain NNTP connections.
 - `site_name` - hostname advertised by the server. Defaults to the `HOSTNAME`
   environment variable or `localhost` when unset.
-- `db_path` - path to the SQLite database file. Defaults to `/var/renews/news.db`.
-- `auth_db_path` - optional path to the authentication database. Defaults to `/var/renews/auth.db` when unset.
-- `peer_db_path` - path to the peer state database. Defaults to `/var/renews/peers.db`.
+- `db_path` - database connection string for storing articles. Defaults to
+  `sqlite:///var/renews/news.db`.
+- `auth_db_path` - optional authentication database connection. Defaults to
+  `sqlite:///var/renews/auth.db` when unset.
+- `peer_db_path` - connection string for the peer state database. Defaults to
+  `sqlite:///var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
 - `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. Each peer may also specify optional `username` and `password` used for `AUTHINFO` when sending articles.
 - `tls_port` - optional port for NNTP over TLS.
@@ -41,9 +44,9 @@ An example configuration is provided in the repository:
 ```toml
 port = 119
 site_name = "example.com"
-db_path = "/var/renews/news.db"
-auth_db_path = "/var/renews/auth.db"
-peer_db_path = "/var/renews/peers.db"
+db_path = "sqlite:///var/renews/news.db"
+auth_db_path = "sqlite:///var/renews/auth.db"
+peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
 tls_port = 563
 tls_cert = "cert.pem"

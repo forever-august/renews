@@ -5,22 +5,20 @@ use std::io::BufReader;
 use std::sync::Arc;
 
 use tokio::net::TcpListener;
-use tokio_rustls::{rustls, TlsAcceptor};
+use tokio_rustls::{TlsAcceptor, rustls};
 use tracing::{error, info};
 
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 
 use crate::auth::{AuthProvider, sqlite::SqliteAuth};
 use crate::config::Config;
-use crate::peers::{peer_task, PeerConfig, PeerDb};
+use crate::peers::{PeerConfig, PeerDb, peer_task};
 use crate::retention::cleanup_expired_articles;
-use crate::storage::sqlite::SqliteStorage;
-use crate::storage::Storage;
+use crate::storage::{self, Storage};
 #[cfg(feature = "websocket")]
 use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
-
 
 fn load_tls_config(
     cert_path: &str,
@@ -45,24 +43,24 @@ fn load_tls_config(
 }
 
 #[allow(clippy::too_many_lines)]
-pub async fn run(cfg_initial: Config, cfg_path: String) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn run(
+    cfg_initial: Config,
+    cfg_path: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let cfg = Arc::new(RwLock::new(cfg_initial));
     let tls_acceptor: Arc<RwLock<Option<TlsAcceptor>>> = Arc::new(RwLock::new(None));
-    let db_conn = {
+    let storage: Arc<dyn Storage> = {
         let cfg_guard = cfg.read().await;
-        format!("sqlite:{}", cfg_guard.db_path)
+        storage::open(&cfg_guard.db_path).await?
     };
-    let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&db_conn).await?);
     let auth_path = {
         let cfg_guard = cfg.read().await;
         cfg_guard.auth_db_path.clone()
     };
-    let auth_conn = format!("sqlite:{auth_path}");
-    let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_conn).await?);
+    let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_path).await?);
     let peer_db = {
         let cfg_guard = cfg.read().await;
-        let conn = format!("sqlite:{}", cfg_guard.peer_db_path);
-        PeerDb::new(&conn).await?
+        PeerDb::new(&cfg_guard.peer_db_path).await?
     };
     {
         let cfg_guard = cfg.read().await;
@@ -255,4 +253,3 @@ pub async fn run(cfg_initial: Config, cfg_path: String) -> Result<(), Box<dyn Er
         Ok(())
     }
 }
-

@@ -1,8 +1,8 @@
 port = 119
 site_name = "example.com"
-db_path = "/var/renews/news.db"
-auth_db_path = "/var/renews/auth.db"
-peer_db_path = "/var/renews/peers.db"
+db_path = "sqlite:///var/renews/news.db"
+auth_db_path = "sqlite:///var/renews/auth.db"
+peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
 tls_port = 563
 tls_cert = "cert.pem"

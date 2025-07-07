@@ -1,13 +1,12 @@
-use renews::peers::{PeerConfig, PeerDb, peer_task};
+use crate::utils::{self as common, ClientMock};
 use renews::auth::AuthProvider;
+use renews::peers::{PeerConfig, PeerDb, peer_task};
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
 use serial_test::serial;
 use std::fs;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
-use crate::utils::{self as common, ClientMock};
-
 
 #[tokio::test]
 async fn add_and_remove_peers() {

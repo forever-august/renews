@@ -73,9 +73,9 @@ retention_days = 1
 #[test]
 fn default_paths() {
     let cfg: Config = toml::from_str("port=119").unwrap();
-    assert_eq!(cfg.db_path, "/var/renews/news.db");
-    assert_eq!(cfg.auth_db_path, "/var/renews/auth.db");
-    assert_eq!(cfg.peer_db_path, "/var/renews/peers.db");
+    assert_eq!(cfg.db_path, "sqlite:///var/renews/news.db");
+    assert_eq!(cfg.auth_db_path, "sqlite:///var/renews/auth.db");
+    assert_eq!(cfg.peer_db_path, "sqlite:///var/renews/peers.db");
     assert_eq!(cfg.peer_sync_secs, 3600);
 }
 

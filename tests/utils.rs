@@ -248,7 +248,14 @@ pub async fn run_client(
     storage: Arc<dyn Storage>,
     auth: Arc<dyn AuthProvider>,
 ) {
-    run_client_with_cfg(client, toml::from_str("port=119").unwrap(), storage, auth, false).await;
+    run_client_with_cfg(
+        client,
+        toml::from_str("port=119").unwrap(),
+        storage,
+        auth,
+        false,
+    )
+    .await;
 }
 
 pub async fn run_client_tls(
@@ -256,7 +263,14 @@ pub async fn run_client_tls(
     storage: Arc<dyn Storage>,
     auth: Arc<dyn AuthProvider>,
 ) {
-    run_client_with_cfg(client, toml::from_str("port=119").unwrap(), storage, auth, true).await;
+    run_client_with_cfg(
+        client,
+        toml::from_str("port=119").unwrap(),
+        storage,
+        auth,
+        true,
+    )
+    .await;
 }
 
 pub async fn run_client_with_cfg(
@@ -285,19 +299,11 @@ pub async fn run_client_with_cfg_tls(
 }
 
 impl ClientMock {
-    pub async fn run(
-        self,
-        storage: Arc<dyn Storage>,
-        auth: Arc<dyn AuthProvider>,
-    ) {
+    pub async fn run(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
         run_client(self, storage, auth).await;
     }
 
-    pub async fn run_tls(
-        self,
-        storage: Arc<dyn Storage>,
-        auth: Arc<dyn AuthProvider>,
-    ) {
+    pub async fn run_tls(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
         run_client_tls(self, storage, auth).await;
     }
 
