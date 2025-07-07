@@ -26,6 +26,11 @@ rand = "0.8"
 base64 = "0.21"
 sha2 = "0.10"
 regex = "1"
+tokio-tungstenite = { version = "0.21", optional = true }
+futures-util = { version = "0.3", optional = true }
+
+[features]
+websocket = ["tokio-tungstenite", "futures-util"]
 
 [dev-dependencies]
 tempfile = "3"

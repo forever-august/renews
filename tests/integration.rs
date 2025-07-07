@@ -18,3 +18,6 @@ mod storage;
 mod tls;
 #[path = "utils.rs"]
 mod utils;
+#[cfg(feature = "websocket")]
+#[path = "integration/ws.rs"]
+mod ws;
