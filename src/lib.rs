@@ -12,6 +12,8 @@ pub mod retention;
 pub mod storage;
 pub mod server;
 pub mod wildmat;
+#[cfg(feature = "websocket")]
+pub mod ws;
 
 #[derive(Default)]
 pub struct ConnectionState {

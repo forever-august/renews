@@ -29,6 +29,7 @@ following keys are recognised:
 - `tls_port` - optional port for NNTP over TLS.
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
+- `ws_port` - optional port for the WebSocket bridge (requires the `websocket` feature).
 - `default_retention_days` - default number of days to keep articles.
 - `default_max_article_bytes` - default maximum article size in bytes. A `K`,
   `M` or `G` suffix may be used to specify kilobytes, megabytes or gigabytes.
@@ -47,6 +48,7 @@ peer_sync_secs = 3600
 tls_port = 563
 tls_cert = "cert.pem"
 tls_key = "key.pem"
+ws_port = 8080
 default_retention_days = 30
 default_max_article_bytes = "1M"
 
@@ -68,7 +70,8 @@ password = "peerpass"
 ```
 
 `tls_port`, `tls_cert` and `tls_key` must all be set for TLS support to be
-enabled.
+enabled. The WebSocket bridge is started when `ws_port` is set and the crate is
+compiled with the `websocket` feature.
 
 ## Deployment with systemd
 
