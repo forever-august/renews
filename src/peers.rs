@@ -14,26 +14,36 @@ use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
 use crate::{Message, extract_message_id, send_body, send_headers, write_simple};
 
-fn parse_host_port(addr: &str, default_port: u16) -> (String, u16) {
-    if let Some(stripped) = addr.strip_prefix('[') {
+fn parse_host_port(addr: &str, default_port: u16) -> (String, u16, Option<(String, String)>) {
+    let (creds, host_port) = if let Some((c, rest)) = addr.rsplit_once('@') {
+        if let Some((u, p)) = c.split_once(':') {
+            (Some((u.to_string(), p.to_string())), rest)
+        } else {
+            (None, addr)
+        }
+    } else {
+        (None, addr)
+    };
+
+    if let Some(stripped) = host_port.strip_prefix('[') {
         if let Some(end) = stripped.find(']') {
             let host = stripped[..end].to_string();
             if let Some(p) = stripped[end + 1..].strip_prefix(':') {
                 if let Ok(port) = p.parse() {
-                    return (host, port);
+                    return (host, port, creds);
                 }
             }
-            return (host, default_port);
+            return (host, default_port, creds);
         }
     }
-    if let Some(idx) = addr.rfind(':') {
-        if addr[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(port) = addr[idx + 1..].parse() {
-                return (addr[..idx].to_string(), port);
+    if let Some(idx) = host_port.rfind(':') {
+        if host_port[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
+            if let Ok(port) = host_port[idx + 1..].parse() {
+                return (host_port[..idx].to_string(), port, creds);
             }
         }
     }
-    (addr.to_string(), default_port)
+    (host_port.to_string(), default_port, creds)
 }
 
 fn tls_connector() -> Result<TlsConnector, Box<dyn Error + Send + Sync>> {
@@ -165,8 +175,6 @@ pub struct PeerConfig {
     pub sitename: String,
     pub patterns: Vec<String>,
     pub sync_interval_secs: Option<u64>,
-    pub username: Option<String>,
-    pub password: Option<String>,
 }
 
 impl From<&crate::config::PeerRule> for PeerConfig {
@@ -175,8 +183,6 @@ impl From<&crate::config::PeerRule> for PeerConfig {
             sitename: r.sitename.clone(),
             patterns: r.patterns.clone(),
             sync_interval_secs: r.sync_interval_secs,
-            username: r.username.clone(),
-            password: r.password.clone(),
         }
     }
 }
@@ -204,10 +210,9 @@ async fn send_article(
     host: &str,
     article: &Message,
     use_takethis: bool,
-    creds: Option<(&str, &str)>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
-    let (host_part, port) = parse_host_port(host, 563);
+    let (host_part, port, creds) = parse_host_port(host, 563);
     let addr = format!("{host_part}:{port}");
     let tcp = TcpStream::connect(addr).await?;
     let connector = tls_connector()?;
@@ -217,7 +222,7 @@ async fn send_article(
     let mut reader = BufReader::new(read_half);
     let mut line = String::new();
     reader.read_line(&mut line).await?; // greeting
-    if let Some((user, pass)) = creds {
+    if let Some((user, pass)) = creds.as_ref() {
         write_simple(&mut write_half, &format!("AUTHINFO USER {user}\r\n")).await?;
         line.clear();
         reader.read_line(&mut line).await?;
@@ -299,8 +304,7 @@ async fn sync_peer_once(
                 if !has_path {
                     article.headers.push(("Path".into(), site_name.to_string()));
                 }
-                let creds = peer.username.as_deref().zip(peer.password.as_deref());
-                let _ = send_article(&peer.sitename, &article, use_takethis, creds).await;
+                let _ = send_article(&peer.sitename, &article, use_takethis).await;
             }
         }
     }

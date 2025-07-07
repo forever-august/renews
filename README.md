@@ -32,7 +32,7 @@ following keys are recognised:
 - `peer_db_path` - connection string for the peer state database. Defaults to
   `sqlite:///var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
-- `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. Each peer may also specify optional `username` and `password` used for `AUTHINFO` when sending articles.
+- `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. The `sitename` may include credentials in the form `user:pass@host:port` which are used for `AUTHINFO` when connecting.
 - `tls_addr` - optional listen address for NNTP over TLS. Omitting the host
   portion listens on all interfaces.
 - `tls_cert` - path to the TLS certificate in PEM format.
@@ -71,11 +71,9 @@ retention_days = 60
 max_article_bytes = "2M"
 
 [[peers]]
-sitename = "peer.example.com"
+sitename = "peeruser:peerpass@peer.example.com"
 patterns = ["*"]
 sync_interval_secs = 3600
-username = "peeruser"
-password = "peerpass"
 ```
 
 `tls_addr`, `tls_cert` and `tls_key` must all be set for TLS support to be

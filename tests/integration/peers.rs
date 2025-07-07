@@ -30,8 +30,6 @@ async fn peer_task_updates_last_sync() {
         sitename: "127.0.0.1:9".into(),
         patterns: vec![],
         sync_interval_secs: Some(1),
-        username: None,
-        password: None,
     };
     let db_clone = db.clone();
     let storage_clone = storage.clone();
@@ -102,8 +100,6 @@ async fn peer_transfer_helper(interval: u64) {
         sitename: peer_name.clone(),
         patterns: vec!["*".into()],
         sync_interval_secs: Some(interval),
-        username: None,
-        password: None,
     };
     let db_clone = db.clone();
     let storage_clone = storage_a.clone();
