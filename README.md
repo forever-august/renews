@@ -23,8 +23,9 @@ following keys are recognised:
   environment variable or `localhost` when unset.
 - `db_path` - database connection string for storing articles. Defaults to
   `sqlite:///var/renews/news.db`.
-- `auth_db_path` - optional authentication database connection. Defaults to
-  `sqlite:///var/renews/auth.db` when unset.
+- `auth_db_path` - authentication backend connection URI. Defaults to
+  `sqlite:///var/renews/auth.db` when unset. The scheme selects the backend,
+  for example `sqlite:///path/to/db` or `postgres://host:port`.
 - `peer_db_path` - connection string for the peer state database. Defaults to
   `sqlite:///var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.

@@ -25,9 +25,9 @@ max_article_bytes = "20K"
 #[test]
 fn runtime_update_preserves_immutable_fields() {
     let initial = r#"port = 119
-db_path = "/tmp/db1"
-auth_db_path = "/tmp/auth1"
-peer_db_path = "/tmp/peer1"
+db_path = "sqlite:///tmp/db1"
+auth_db_path = "sqlite:///tmp/auth1"
+peer_db_path = "sqlite:///tmp/peer1"
 peer_sync_secs = 1800
 tls_port = 563
 tls_cert = "old.pem"
@@ -41,9 +41,9 @@ retention_days = 5
     let mut cfg: Config = toml::from_str(initial).unwrap();
 
     let updated = r#"port = 42
-db_path = "/tmp/db2"
-auth_db_path = "/tmp/auth2"
-peer_db_path = "/tmp/peer2"
+db_path = "sqlite:///tmp/db2"
+auth_db_path = "sqlite:///tmp/auth2"
+peer_db_path = "sqlite:///tmp/peer2"
 peer_sync_secs = 3600
 tls_port = 9999
 tls_cert = "new.pem"
@@ -58,9 +58,9 @@ retention_days = 1
     cfg.update_runtime(new_cfg);
 
     assert_eq!(cfg.port, 119);
-    assert_eq!(cfg.db_path, "/tmp/db1");
-    assert_eq!(cfg.auth_db_path, "/tmp/auth1");
-    assert_eq!(cfg.peer_db_path, "/tmp/peer1");
+    assert_eq!(cfg.db_path, "sqlite:///tmp/db1");
+    assert_eq!(cfg.auth_db_path, "sqlite:///tmp/auth1");
+    assert_eq!(cfg.peer_db_path, "sqlite:///tmp/peer1");
     assert_eq!(cfg.peer_sync_secs, 3600);
     assert_eq!(cfg.tls_port, Some(563));
     assert_eq!(cfg.tls_cert.as_deref(), Some("new.pem"));
