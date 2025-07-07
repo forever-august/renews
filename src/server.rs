@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 
-use crate::auth::{AuthProvider, sqlite::SqliteAuth};
+use crate::auth::{self, AuthProvider};
 use crate::config::Config;
 use crate::peers::{PeerConfig, PeerDb, peer_task};
 use crate::retention::cleanup_expired_articles;
@@ -69,7 +69,7 @@ pub async fn run(
         let cfg_guard = cfg.read().await;
         cfg_guard.auth_db_path.clone()
     };
-    let auth: Arc<dyn AuthProvider> = Arc::new(SqliteAuth::new(&auth_path).await?);
+    let auth: Arc<dyn AuthProvider> = auth::open(&auth_path).await?;
     let peer_db = {
         let cfg_guard = cfg.read().await;
         PeerDb::new(&cfg_guard.peer_db_path).await?
