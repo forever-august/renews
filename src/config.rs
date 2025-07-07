@@ -95,7 +95,7 @@ where
 
 #[derive(Deserialize, Clone)]
 pub struct Config {
-    pub port: u16,
+    pub addr: String,
     #[serde(default = "default_site_name")]
     pub site_name: String,
     #[serde(default = "default_db_path")]
@@ -109,13 +109,13 @@ pub struct Config {
     #[serde(default)]
     pub peers: Vec<PeerRule>,
     #[serde(default)]
-    pub tls_port: Option<u16>,
+    pub tls_addr: Option<String>,
     #[serde(default)]
     pub tls_cert: Option<String>,
     #[serde(default)]
     pub tls_key: Option<String>,
     #[serde(default)]
-    pub ws_port: Option<u16>,
+    pub ws_addr: Option<String>,
     #[serde(default)]
     pub default_retention_days: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_size")]
@@ -206,6 +206,6 @@ impl Config {
         self.peers = other.peers;
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
-        self.ws_port = other.ws_port;
+        self.ws_addr = other.ws_addr;
     }
 }
