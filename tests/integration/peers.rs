@@ -1,13 +1,13 @@
 use renews::peers::{PeerConfig, PeerDb, peer_task};
+use renews::auth::AuthProvider;
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
 use serial_test::serial;
 use std::fs;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use crate::utils::{self as common, ClientMock};
 
-use crate::utils as common;
 
 #[tokio::test]
 async fn add_and_remove_peers() {
@@ -56,32 +56,44 @@ async fn peer_transfer_helper(interval: u64) {
             .await
             .unwrap(),
     );
+    auth.add_user("user", "pass").await.unwrap();
 
-    let cfg_a = toml::from_str("port=119\nsite_name='A'").unwrap();
-    let cfg_b = toml::from_str("port=119").unwrap();
+    let cfg_a: renews::config::Config = toml::from_str("port=119\nsite_name='A'").unwrap();
+    let cfg_b: renews::config::Config = toml::from_str("port=119").unwrap();
     let (addr_b, cert_b, handle_b) =
-        common::start_server(storage_b.clone(), auth.clone(), cfg_b, true).await;
+        common::start_server(storage_b.clone(), auth.clone(), cfg_b.clone(), true).await;
     let ca_file = NamedTempFile::new().unwrap();
     if let Some((_, pem)) = &cert_b {
         fs::write(ca_file.path(), pem).unwrap();
         unsafe { std::env::set_var("SSL_CERT_FILE", ca_file.path()) };
     }
-    let (addr_a, _, handle_a) =
-        common::start_server(storage_a.clone(), auth.clone(), cfg_a, false).await;
+    let (addr_a, cert_a, handle_a) =
+        common::start_server(storage_a.clone(), auth.clone(), cfg_a, true).await;
 
-    let (mut reader, mut writer) = common::connect(addr_a).await;
-    let mut line = String::new();
-    reader.read_line(&mut line).await.unwrap();
-    writer.write_all(b"IHAVE <1@test>\r\n").await.unwrap();
-    line.clear();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("335"));
-    let article = "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nFrom: a@test\r\nSubject: hello\r\n\r\nbody\r\n.\r\n";
-    line.clear();
-    writer.write_all(article.as_bytes()).await.unwrap();
-    reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("235"));
-    let _ = writer.shutdown().await;
+    let article = concat!(
+        "Message-ID: <1@test>\r\n",
+        "Newsgroups: misc.test\r\n",
+        "From: a@test\r\n",
+        "Subject: hello\r\n",
+        "Date: Wed, 05 Oct 2022 00:00:00 GMT\r\n",
+        "\r\n",
+        "body\r\n",
+        ".\r\n",
+    );
+    let cert_a = cert_a.unwrap().0;
+    ClientMock::new()
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
+        .expect(
+            "POST",
+            "340 send article to be posted. End with <CR-LF>.<CR-LF>",
+        )
+        .expect_request_multi(
+            common::request_lines(article.trim_end_matches("\r\n")),
+            vec!["240 article received"],
+        )
+        .run_tls_at(addr_a, cert_a)
+        .await;
     handle_a.await.unwrap();
 
     let db = PeerDb::new("sqlite::memory:").await.unwrap();
@@ -104,13 +116,29 @@ async fn peer_transfer_helper(interval: u64) {
     peer_handle.abort();
     handle_b.await.unwrap();
 
-    assert!(
-        storage_b
-            .get_article_by_id("<1@test>")
-            .await
-            .unwrap()
-            .is_some()
-    );
+    let (check_addr, check_cert, check_handle) =
+        common::start_server(storage_b.clone(), auth.clone(), cfg_b.clone(), true).await;
+    let check_cert = check_cert.unwrap().0;
+    ClientMock::new()
+        .expect_multi(
+            "ARTICLE <1@test>",
+            vec![
+                "220 0 <1@test> article follows",
+                "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
+                "From: a@test",
+                "Subject: hello",
+                "Date: Wed, 05 Oct 2022 00:00:00 GMT",
+                "Path: A",
+                "",
+                "body",
+                ".",
+            ],
+        )
+        .run_tls_at(check_addr, check_cert)
+        .await;
+
+    check_handle.await.unwrap();
 }
 
 #[tokio::test]
