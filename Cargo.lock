@@ -2109,6 +2109,7 @@ dependencies = [
  "rand",
  "rand_core",
  "rcgen",
+ "regex",
  "rustls-native-certs",
  "rustls-pemfile",
  "serde",

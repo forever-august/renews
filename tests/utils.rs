@@ -243,6 +243,83 @@ pub async fn start_server(
     }
 }
 
+pub async fn run_client(
+    client: ClientMock,
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+) {
+    run_client_with_cfg(client, toml::from_str("port=119").unwrap(), storage, auth, false).await;
+}
+
+pub async fn run_client_tls(
+    client: ClientMock,
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+) {
+    run_client_with_cfg(client, toml::from_str("port=119").unwrap(), storage, auth, true).await;
+}
+
+pub async fn run_client_with_cfg(
+    client: ClientMock,
+    cfg: Config,
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+    tls: bool,
+) {
+    let (addr, cert, handle) = start_server(storage, auth, cfg, tls).await;
+    if let Some((c, _)) = cert {
+        client.run_tls_at(addr, c).await;
+    } else {
+        client.run_tcp_at(addr).await;
+    }
+    handle.await.unwrap();
+}
+
+pub async fn run_client_with_cfg_tls(
+    client: ClientMock,
+    cfg: Config,
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+) {
+    run_client_with_cfg(client, cfg, storage, auth, true).await;
+}
+
+impl ClientMock {
+    pub async fn run(
+        self,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        run_client(self, storage, auth).await;
+    }
+
+    pub async fn run_tls(
+        self,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        run_client_tls(self, storage, auth).await;
+    }
+
+    pub async fn run_with_cfg(
+        self,
+        cfg: Config,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        run_client_with_cfg(self, cfg, storage, auth, false).await;
+    }
+
+    pub async fn run_with_cfg_tls(
+        self,
+        cfg: Config,
+        storage: Arc<dyn Storage>,
+        auth: Arc<dyn AuthProvider>,
+    ) {
+        run_client_with_cfg_tls(self, cfg, storage, auth).await;
+    }
+}
+
 /// Builder to mock a client connection using `tokio_test::io`.
 pub struct ClientMock {
     steps: Vec<(Vec<String>, Vec<String>)>,
@@ -288,54 +365,13 @@ impl ClientMock {
         self
     }
 
-    pub async fn run(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
-        self.run_with(storage, auth, toml::from_str("port=119").unwrap(), false)
-            .await;
-    }
-
-    pub async fn run_tls(self, storage: Arc<dyn Storage>, auth: Arc<dyn AuthProvider>) {
-        self.run_with(storage, auth, toml::from_str("port=119").unwrap(), true)
-            .await;
-    }
-
-    pub async fn run_with_cfg(
-        self,
-        cfg: renews::config::Config,
-        storage: Arc<dyn Storage>,
-        auth: Arc<dyn AuthProvider>,
-    ) {
-        self.run_with(storage, auth, cfg, false).await;
-    }
-
-    pub async fn run_with_cfg_tls(
-        self,
-        cfg: renews::config::Config,
-        storage: Arc<dyn Storage>,
-        auth: Arc<dyn AuthProvider>,
-    ) {
-        self.run_with(storage, auth, cfg, true).await;
-    }
-
-    async fn run_with(
-        self,
-        storage: Arc<dyn Storage>,
-        auth: Arc<dyn AuthProvider>,
-        cfg: renews::config::Config,
-        tls: bool,
-    ) {
+    pub async fn drive<R, W>(self, mut reader: R, mut writer: W)
+    where
+        R: tokio::io::AsyncBufRead + Unpin,
+        W: tokio::io::AsyncWrite + Unpin,
+    {
         use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 
-        use tokio::io::{AsyncBufRead, AsyncWrite};
-
-        let (addr, cert, handle) = start_server(storage, auth, cfg, tls).await;
-        let (mut reader, mut writer): (Box<dyn AsyncBufRead + Unpin>, Box<dyn AsyncWrite + Unpin>) =
-            if let Some((c, _)) = cert {
-                let (r, w) = connect_tls(addr, c).await;
-                (Box::new(r), Box::new(w))
-            } else {
-                let (r, w) = connect(addr).await;
-                (Box::new(r), Box::new(w))
-            };
         let mut line = String::new();
         reader.read_line(&mut line).await.unwrap();
         for (cmds, resps) in self.steps {
@@ -352,6 +388,15 @@ impl ClientMock {
             }
         }
         let _ = writer.shutdown().await;
-        handle.await.unwrap();
+    }
+
+    pub async fn run_tcp_at(self, addr: std::net::SocketAddr) {
+        let (reader, writer) = connect(addr).await;
+        self.drive(reader, writer).await;
+    }
+
+    pub async fn run_tls_at(self, addr: std::net::SocketAddr, cert: rustls::Certificate) {
+        let (reader, writer) = connect_tls(addr, cert).await;
+        self.drive(reader, writer).await;
     }
 }
