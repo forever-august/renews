@@ -144,7 +144,7 @@ async fn process_article(
     // Perform comprehensive validation only if not already done
     if !queued_article.already_validated {
         let cfg_guard = config.read().await;
-        crate::handlers::post::comprehensive_validate_article(storage, auth, &cfg_guard, article, queued_article.size).await?;
+        crate::handlers::utils::comprehensive_validate_article(storage, auth, &cfg_guard, article, queued_article.size).await?;
         drop(cfg_guard);
     }
 
@@ -162,51 +162,5 @@ async fn process_article(
     storage.store_article(article).await?;
     debug!("Article stored successfully");
     
-    Ok(())
-}
-
-/// Perform basic validation on an article before queuing
-///
-/// This checks only what can be validated without database access:
-/// - Required headers (From, Subject, Newsgroups)
-/// - Size limits
-pub async fn basic_validate_article(
-    cfg: &Config,
-    article: &Message,
-    size: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Check required headers
-    let has_from = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("From"));
-    let has_subject = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("Subject"));
-    let newsgroups: Vec<String> = article
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-        .map(|(_, v)| {
-            v.split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if !has_from || !has_subject || newsgroups.is_empty() {
-        return Err("missing required headers".into());
-    }
-
-    // Check size limit
-    if let Some(max_size) = cfg.default_max_article_bytes {
-        if size > max_size {
-            return Err("article too large".into());
-        }
-    }
-
     Ok(())
 }

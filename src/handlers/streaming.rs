@@ -1,6 +1,6 @@
 //! Streaming command handlers (IHAVE, CHECK, TAKETHIS).
 
-use super::utils::{read_message, write_simple};
+use super::utils::{read_message, write_simple, comprehensive_validate_article};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
@@ -38,7 +38,7 @@ impl CommandHandler for IHaveHandler {
             // Comprehensive validation before queuing for IHAVE
             let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
-            if super::post::comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
+            if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
             {
@@ -124,7 +124,7 @@ impl CommandHandler for TakeThisHandler {
             // Comprehensive validation before queuing for TAKETHIS
             let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
-            if super::post::comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
+            if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
             {

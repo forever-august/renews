@@ -1,6 +1,6 @@
 //! Posting command handlers.
 
-use super::utils::{read_message, write_simple};
+use super::utils::{read_message, write_simple, basic_validate_article, comprehensive_validate_article};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::queue::QueuedArticle;
 use crate::responses::*;
@@ -46,7 +46,7 @@ impl CommandHandler for PostHandler {
         // Basic validation before queuing
         let cfg_guard = ctx.config.read().await;
         let size = msg.len() as u64;
-        if crate::queue::basic_validate_article(&cfg_guard, &message, size).await.is_err() {
+        if basic_validate_article(&cfg_guard, &message, size).await.is_err() {
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
         }
@@ -68,106 +68,6 @@ impl CommandHandler for PostHandler {
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
         Ok(())
     }
-}
-
-/// Validate an article for posting (comprehensive validation).
-/// This performs database-dependent validation and should be used by workers.
-pub async fn comprehensive_validate_article(
-    storage: &crate::storage::DynStorage,
-    auth: &crate::auth::DynAuth,
-    cfg: &crate::config::Config,
-    article: &crate::Message,
-    size: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // First run basic validation
-    crate::queue::basic_validate_article(cfg, article, size).await?;
-
-    // Get newsgroups for comprehensive checks
-    let newsgroups: Vec<String> = article
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-        .map(|(_, v)| {
-            v.split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    // Check moderated groups
-    let all_groups = storage.list_groups().await?;
-
-    // Get all approved values and signatures
-    let approved_values: Vec<String> = article
-        .headers
-        .iter()
-        .filter(|(k, _)| k.eq_ignore_ascii_case("Approved"))
-        .map(|(_, v)| v.trim().to_string())
-        .collect();
-
-    let sig_headers: Vec<String> = article
-        .headers
-        .iter()
-        .filter(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
-        .map(|(_, v)| v.clone())
-        .collect();
-
-    for group in &newsgroups {
-        if !all_groups.contains(group) {
-            return Err("group does not exist".into());
-        }
-
-        if storage.is_group_moderated(group).await? {
-            // Find moderators for this specific group
-            let mut group_moderators = Vec::new();
-            let mut group_signatures = Vec::new();
-
-            for (i, approved) in approved_values.iter().enumerate() {
-                if auth.is_moderator(approved, group).await? {
-                    group_moderators.push(approved.clone());
-                    if let Some(sig) = sig_headers.get(i) {
-                        group_signatures.push(sig.clone());
-                    }
-                }
-            }
-
-            if group_moderators.is_empty() {
-                return Err("missing approval for moderated group".into());
-            }
-
-            if group_signatures.len() < group_moderators.len() {
-                return Err("missing signature for moderator".into());
-            }
-
-            // Verify signatures for this group's moderators
-            for (i, approved) in group_moderators.iter().enumerate() {
-                let sig_header = group_signatures.get(i).ok_or("missing signature")?.clone();
-                let mut words = sig_header.split_whitespace();
-                let version = words.next().ok_or("bad signature")?;
-                let signed = words.next().ok_or("bad signature")?;
-                let sig_rest = words.collect::<Vec<_>>().join("\n");
-
-                let mut tmp_headers: Vec<(String, String)> = article
-                    .headers
-                    .iter()
-                    .filter(|(k, _)| !k.eq_ignore_ascii_case("Approved"))
-                    .cloned()
-                    .collect();
-                tmp_headers.push(("Approved".to_string(), approved.clone()));
-
-                let tmp_msg = crate::Message {
-                    headers: tmp_headers,
-                    body: article.body.clone(),
-                };
-
-                control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest).await?;
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Validate an article for posting (legacy function, now uses comprehensive validation).

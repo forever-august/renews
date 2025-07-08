@@ -120,6 +120,10 @@ async fn post_with_approval_succeeds() {
         )
         .run_tls(storage.clone(), auth)
         .await;
+    
+    // Wait for queue processing
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    
     assert!(
         storage
             .get_article_by_id("<pa@test>")
@@ -157,6 +161,10 @@ async fn cross_post_different_moderators() {
         )
         .run_tls(storage.clone(), auth)
         .await;
+    
+    // Wait for queue processing
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    
     assert_eq!(
         storage.list_article_numbers("mod.one").await.unwrap(),
         vec![1]
