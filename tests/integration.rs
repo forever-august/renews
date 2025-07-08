@@ -4,6 +4,8 @@ mod auth;
 mod cancel_lock;
 #[path = "integration/control.rs"]
 mod control;
+#[path = "integration/idle_timeout.rs"]
+mod idle_timeout;
 #[path = "integration/max_size.rs"]
 mod max_size;
 #[path = "integration/moderated.rs"]
