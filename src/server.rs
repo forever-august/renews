@@ -38,6 +38,7 @@ use tokio::sync::RwLock;
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
 use crate::peers::{PeerConfig, PeerDb, peer_task};
+use crate::queue::{ArticleQueue, WorkerPool};
 use crate::retention::cleanup_expired_articles;
 use crate::storage::{self, Storage};
 #[cfg(feature = "websocket")]
@@ -52,6 +53,7 @@ struct ServerComponents {
     storage: Arc<dyn Storage>,
     auth: Arc<dyn AuthProvider>,
     config: Arc<RwLock<Config>>,
+    queue: ArticleQueue,
 }
 
 /// Server handles all lifecycle management
@@ -59,6 +61,7 @@ pub struct Server {
     components: ServerComponents,
     config_manager: ConfigManager,
     peer_manager: PeerManager,
+    worker_pool: WorkerPool,
 }
 
 impl Server {
@@ -68,11 +71,21 @@ impl Server {
         let peer_db = Self::initialize_peer_db(&cfg).await?;
         let config_manager = ConfigManager::new(components.config.clone());
         let peer_manager = PeerManager::new(peer_db);
+        
+        // Create worker pool
+        let worker_pool = WorkerPool::new(
+            components.queue.clone(),
+            components.storage.clone(),
+            components.auth.clone(),
+            components.config.clone(),
+            cfg.article_worker_count.unwrap_or(4), // Default to 4 workers
+        );
 
         Ok(Self {
             components,
             config_manager,
             peer_manager,
+            worker_pool,
         })
     }
 
@@ -82,11 +95,16 @@ impl Server {
 
         let storage: Arc<dyn Storage> = storage::open(&cfg.db_path).await?;
         let auth: Arc<dyn AuthProvider> = auth::open(&cfg.auth_db_path).await?;
+        
+        // Create article queue with configurable capacity
+        let queue_capacity = cfg.article_queue_capacity.unwrap_or(1000); // Default to 1000
+        let queue = ArticleQueue::new(queue_capacity);
 
         Ok(ServerComponents {
             storage,
             auth,
             config,
+            queue,
         })
     }
 
@@ -119,6 +137,7 @@ impl Server {
         let storage = self.components.storage.clone();
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
+        let queue = Some(self.components.queue.clone());
 
         let handle = tokio::spawn(async move {
             loop {
@@ -131,6 +150,7 @@ impl Server {
                             auth.clone(),
                             config.clone(),
                             false,
+                            queue.clone(),
                         )
                         .await;
                     }
@@ -166,6 +186,7 @@ impl Server {
         let storage = self.components.storage.clone();
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
+        let queue = Some(self.components.queue.clone());
 
         let handle = tokio::spawn(async move {
             loop {
@@ -176,6 +197,7 @@ impl Server {
                         let auth_clone = auth.clone();
                         let config_clone = config.clone();
                         let acceptor_clone = acceptor.clone();
+                        let queue_clone = queue.clone();
 
                         tokio::spawn(async move {
                             match acceptor_clone.accept(socket).await {
@@ -186,6 +208,7 @@ impl Server {
                                         auth_clone,
                                         config_clone,
                                         true,
+                                        queue_clone,
                                     )
                                     .await;
                                 }
@@ -278,6 +301,9 @@ impl Server {
 
     /// Start all server services
     pub async fn run(self, cfg_path: String) -> ServerResult<()> {
+        // Start worker pool first
+        let _worker_handles = self.worker_pool.start().await;
+        
         self.start_peer_tasks().await?;
 
         // Start all listeners and background tasks
@@ -466,11 +492,12 @@ async fn handle_connection<S>(
     auth: Arc<dyn AuthProvider>,
     config: Arc<RwLock<Config>>,
     is_tls: bool,
+    queue: Option<ArticleQueue>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        if let Err(e) = crate::handle_client(socket, storage, auth, config, is_tls).await {
+        if let Err(e) = crate::handle_client(socket, storage, auth, config, is_tls, queue).await {
             error!("client error: {e}");
         }
     });

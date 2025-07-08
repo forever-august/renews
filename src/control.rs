@@ -97,6 +97,13 @@ pub fn canonical_text(msg: &Message, signed_headers: &str) -> String {
     out
 }
 
+/// Check if a message is a control message.
+pub fn is_control_message(msg: &Message) -> bool {
+    msg.headers
+        .iter()
+        .any(|(k, v)| k.eq_ignore_ascii_case("Control") && !v.trim().is_empty())
+}
+
 /// Verify a PGP signature on a message.
 ///
 /// # Errors

@@ -102,7 +102,7 @@ pub async fn setup_server(
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false)
+        handle_client(sock, store_clone, auth_clone, cfg, false, None)
             .await
             .unwrap();
     });
@@ -120,7 +120,7 @@ pub async fn setup_server_with_cfg(
     let auth_clone = auth.clone();
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false)
+        handle_client(sock, store_clone, auth_clone, cfg, false, None)
             .await
             .unwrap();
     });
@@ -158,7 +158,7 @@ pub async fn setup_tls_server_with_cert(
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
-        handle_client(stream, store_clone, auth_clone, cfg, true)
+        handle_client(stream, store_clone, auth_clone, cfg, true, None)
             .await
             .unwrap();
     });
@@ -227,7 +227,7 @@ pub async fn start_server(
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let stream = acceptor.accept(sock).await.unwrap();
-            handle_client(stream, store_clone, auth_clone, cfg, true)
+            handle_client(stream, store_clone, auth_clone, cfg, true, None)
                 .await
                 .unwrap();
         });
@@ -235,7 +235,7 @@ pub async fn start_server(
     } else {
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
-            handle_client(sock, store_clone, auth_clone, cfg, false)
+            handle_client(sock, store_clone, auth_clone, cfg, false, None)
                 .await
                 .unwrap();
         });

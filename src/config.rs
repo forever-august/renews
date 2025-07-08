@@ -26,6 +26,14 @@ fn default_idle_timeout_secs() -> u64 {
     600
 }
 
+fn default_article_queue_capacity() -> usize {
+    1000
+}
+
+fn default_article_worker_count() -> usize {
+    4
+}
+
 fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
@@ -154,6 +162,10 @@ pub struct Config {
     pub default_retention_days: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_size")]
     pub default_max_article_bytes: Option<u64>,
+    #[serde(default)]
+    pub article_queue_capacity: Option<usize>,
+    #[serde(default)]
+    pub article_worker_count: Option<usize>,
     #[serde(default)]
     pub group_settings: Vec<GroupRule>,
 }

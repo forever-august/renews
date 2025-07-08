@@ -2,6 +2,7 @@
 
 use super::utils::{read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::queue::QueuedArticle;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use std::error::Error;
@@ -34,52 +35,76 @@ impl CommandHandler for PostHandler {
             return Ok(());
         };
 
-        // Handle control messages
-        if control::handle_control(&message, &ctx.storage, &ctx.auth).await? {
-            write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
-            return Ok(());
-        }
+        // Check if this is a control message first
+        let is_control = control::is_control_message(&message);
 
         // Ensure required headers
         ensure_message_id(&mut message);
         parse::ensure_date(&mut message);
         parse::escape_message_id_header(&mut message);
 
-        // Validate article
+        // Basic validation before queuing
         let cfg_guard = ctx.config.read().await;
         let size = msg.len() as u64;
-        if validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
-            .await
-            .is_err()
-        {
+        if crate::queue::basic_validate_article(&cfg_guard, &message, size).await.is_err() {
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
         }
+        drop(cfg_guard);
 
-        // Store article
-        ctx.storage.store_article(&message).await?;
+        // If queue is available, submit to queue; otherwise handle directly (legacy mode)
+        if let Some(ref queue) = ctx.queue {
+            let queued_article = QueuedArticle {
+                message,
+                size,
+                is_control,
+            };
+            
+            if queue.submit(queued_article).await.is_err() {
+                write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
+                return Ok(());
+            }
+        } else {
+            // Legacy mode: handle directly
+            // Handle control messages
+            if control::handle_control(&message, &ctx.storage, &ctx.auth).await? {
+                write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
+                return Ok(());
+            }
+
+            // Comprehensive validation
+            let cfg_guard = ctx.config.read().await;
+            if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
+                .await
+                .is_err()
+            {
+                write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
+                return Ok(());
+            }
+            drop(cfg_guard);
+
+            // Store article
+            ctx.storage.store_article(&message).await?;
+        }
+
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
         Ok(())
     }
 }
 
-/// Validate an article for posting.
-pub async fn validate_article(
+/// Validate an article for posting (comprehensive validation).
+/// This performs database-dependent validation and should be used by workers.
+pub async fn comprehensive_validate_article(
     storage: &crate::storage::DynStorage,
     auth: &crate::auth::DynAuth,
     cfg: &crate::config::Config,
     article: &crate::Message,
     size: u64,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Check required headers
-    let has_from = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("From"));
-    let has_subject = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("Subject"));
+    // First run basic validation
+    crate::queue::basic_validate_article(cfg, article, size).await?;
+
+    // Get newsgroups for comprehensive checks
     let newsgroups: Vec<String> = article
         .headers
         .iter()
@@ -92,17 +117,6 @@ pub async fn validate_article(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-
-    if !has_from || !has_subject || newsgroups.is_empty() {
-        return Err("missing required headers".into());
-    }
-
-    // Check size limit
-    if let Some(max_size) = cfg.default_max_article_bytes {
-        if size > max_size {
-            return Err("article too large".into());
-        }
-    }
 
     // Check moderated groups
     let all_groups = storage.list_groups().await?;
@@ -176,4 +190,15 @@ pub async fn validate_article(
     }
 
     Ok(())
+}
+
+/// Validate an article for posting (legacy function, now uses comprehensive validation).
+pub async fn validate_article(
+    storage: &crate::storage::DynStorage,
+    auth: &crate::auth::DynAuth,
+    cfg: &crate::config::Config,
+    article: &crate::Message,
+    size: u64,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    comprehensive_validate_article(storage, auth, cfg, article, size).await
 }
