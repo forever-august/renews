@@ -26,6 +26,14 @@ fn default_idle_timeout_secs() -> u64 {
     600
 }
 
+fn default_article_queue_capacity() -> usize {
+    1000
+}
+
+fn default_article_worker_count() -> usize {
+    4
+}
+
 fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
@@ -154,6 +162,10 @@ pub struct Config {
     pub default_retention_days: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_size")]
     pub default_max_article_bytes: Option<u64>,
+    #[serde(default = "default_article_queue_capacity")]
+    pub article_queue_capacity: usize,
+    #[serde(default = "default_article_worker_count")]
+    pub article_worker_count: usize,
     #[serde(default)]
     pub group_settings: Vec<GroupRule>,
 }
@@ -188,7 +200,12 @@ impl Config {
     pub fn from_file(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let text = std::fs::read_to_string(path)?;
         let text = expand_placeholders(&text)?;
-        let cfg: Config = toml::from_str(&text)?;
+        let mut cfg: Config = toml::from_str(&text)?;
+        
+        // Enforce minimum values for queue configuration
+        cfg.article_queue_capacity = cfg.article_queue_capacity.max(1);
+        cfg.article_worker_count = cfg.article_worker_count.max(1);
+        
         Ok(cfg)
     }
 

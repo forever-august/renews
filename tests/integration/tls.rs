@@ -67,6 +67,10 @@ async fn tls_authinfo_and_post() {
         .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
+    
+    // Wait for queue processing
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    
     assert!(
         storage
             .get_article_by_id("<post@test>")
@@ -104,6 +108,10 @@ async fn post_without_msgid_generates_one() {
         )
         .run_tls(storage.clone(), auth.clone())
         .await;
+    
+    // Wait for queue processing
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
@@ -141,6 +149,10 @@ async fn post_without_date_adds_header() {
         )
         .run_tls(storage.clone(), auth.clone())
         .await;
+    
+    // Wait for queue processing
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(

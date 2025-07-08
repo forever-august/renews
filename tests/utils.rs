@@ -4,6 +4,7 @@ use rcgen::{CertifiedKey, generate_simple_self_signed};
 use renews::auth::AuthProvider;
 use renews::config::Config;
 use renews::handle_client;
+use renews::queue::ArticleQueue;
 use renews::storage::Storage;
 use std::sync::Arc;
 use tokio::io::BufReader;
@@ -20,6 +21,33 @@ pub async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
     (storage as _, auth as _)
+}
+
+/// Create a test article queue with workers
+pub async fn create_test_queue_with_workers(
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>, 
+    config: Arc<RwLock<Config>>
+) -> ArticleQueue {
+    let queue = ArticleQueue::new(10); // Small capacity for tests
+    
+    // Start worker pool
+    let worker_pool = renews::queue::WorkerPool::new(
+        queue.clone(),
+        storage,
+        auth,
+        config,
+        2, // Use 2 workers for tests
+    );
+    
+    let _worker_handles = worker_pool.start().await;
+    
+    queue
+}
+
+/// Create a test article queue (legacy function - does not start workers)
+pub fn create_test_queue() -> ArticleQueue {
+    ArticleQueue::new(10) // Small capacity for tests
 }
 
 /// Lines returned by the CAPABILITIES command.
@@ -100,9 +128,21 @@ pub async fn setup_server(
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
+    let queue = create_test_queue();
+    
+    // Start worker pool for queue processing
+    let worker_pool = renews::queue::WorkerPool::new(
+        queue.clone(),
+        storage.clone(),
+        auth.clone(),
+        cfg.clone(),
+        2, // Use 2 workers for tests
+    );
+    let _worker_handles = worker_pool.start().await;
+    
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false)
+        handle_client(sock, store_clone, auth_clone, cfg, false, queue)
             .await
             .unwrap();
     });
@@ -118,9 +158,21 @@ pub async fn setup_server_with_cfg(
     let addr = listener.local_addr().unwrap();
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
+    let queue = create_test_queue();
+    
+    // Start worker pool for queue processing
+    let worker_pool = renews::queue::WorkerPool::new(
+        queue.clone(),
+        storage.clone(),
+        auth.clone(),
+        cfg.clone(),
+        2, // Use 2 workers for tests
+    );
+    let _worker_handles = worker_pool.start().await;
+    
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false)
+        handle_client(sock, store_clone, auth_clone, cfg, false, queue)
             .await
             .unwrap();
     });
@@ -155,10 +207,22 @@ pub async fn setup_tls_server_with_cert(
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
+    let queue = create_test_queue();
+    
+    // Start worker pool for queue processing
+    let worker_pool = renews::queue::WorkerPool::new(
+        queue.clone(),
+        storage.clone(),
+        auth.clone(),
+        cfg.clone(),
+        2, // Use 2 workers for tests
+    );
+    let _worker_handles = worker_pool.start().await;
+    
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
-        handle_client(stream, store_clone, auth_clone, cfg, true)
+        handle_client(stream, store_clone, auth_clone, cfg, true, queue)
             .await
             .unwrap();
     });
@@ -224,18 +288,42 @@ pub async fn start_server(
             .with_single_cert(vec![cert.clone()], key)
             .unwrap();
         let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+        let queue = create_test_queue();
+        
+        // Start worker pool for queue processing
+        let worker_pool = renews::queue::WorkerPool::new(
+            queue.clone(),
+            storage.clone(),
+            auth.clone(),
+            cfg.clone(),
+            2, // Use 2 workers for tests
+        );
+        let _worker_handles = worker_pool.start().await;
+        
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let stream = acceptor.accept(sock).await.unwrap();
-            handle_client(stream, store_clone, auth_clone, cfg, true)
+            handle_client(stream, store_clone, auth_clone, cfg, true, queue)
                 .await
                 .unwrap();
         });
         (addr, Some((cert, pem)), handle)
     } else {
+        let queue = create_test_queue();
+        
+        // Start worker pool for queue processing
+        let worker_pool = renews::queue::WorkerPool::new(
+            queue.clone(),
+            storage.clone(),
+            auth.clone(),
+            cfg.clone(),
+            2, // Use 2 workers for tests
+        );
+        let _worker_handles = worker_pool.start().await;
+        
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
-            handle_client(sock, store_clone, auth_clone, cfg, false)
+            handle_client(sock, store_clone, auth_clone, cfg, false, queue)
                 .await
                 .unwrap();
         });

@@ -9,6 +9,7 @@ pub mod config;
 pub mod control;
 pub mod handlers;
 pub mod peers;
+pub mod queue;
 pub mod responses;
 pub mod retention;
 pub mod server;
@@ -30,6 +31,7 @@ pub struct ConnectionState {
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::{HandlerContext, dispatch_command};
+use crate::queue::ArticleQueue;
 use crate::storage::DynStorage;
 use std::error::Error;
 use std::sync::Arc;
@@ -44,13 +46,14 @@ use tracing::debug;
 ///
 /// Returns an error if there's a problem handling the client connection,
 /// such as network I/O errors or protocol violations.
-#[tracing::instrument(skip(socket, storage, auth, cfg))]
+#[tracing::instrument(skip(socket, storage, auth, cfg, queue))]
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
     auth: DynAuth,
     cfg: Arc<RwLock<Config>>,
     is_tls: bool,
+    queue: ArticleQueue,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -70,6 +73,7 @@ where
             is_tls,
             ..Default::default()
         },
+        queue,
     };
 
     // Send greeting

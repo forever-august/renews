@@ -12,6 +12,7 @@ pub mod utils;
 
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::queue::ArticleQueue;
 use crate::storage::DynStorage;
 use crate::{Command, ConnectionState};
 use std::error::Error;
@@ -30,6 +31,7 @@ pub struct HandlerContext<R, W> {
     pub auth: DynAuth,
     pub config: Arc<RwLock<Config>>,
     pub state: ConnectionState,
+    pub queue: ArticleQueue,
 }
 
 /// Trait for command handlers.
