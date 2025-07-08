@@ -38,8 +38,8 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         ws_addr: None,
         default_retention_days: None,
         default_max_article_bytes: None,
-        article_queue_capacity: Some(100),
-        article_worker_count: Some(2),
+        article_queue_capacity: 100,
+        article_worker_count: 2,
         group_settings: vec![],
     };
     
@@ -66,7 +66,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
     let storage_clone = storage.clone();
     let auth_clone = auth.clone();
     let config_clone = config_arc.clone();
-    let queue_clone = Some(queue);
+    let queue_clone = queue;
     
     tokio::spawn(async move {
         if let Ok((socket, _)) = listener.accept().await {

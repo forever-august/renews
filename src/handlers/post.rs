@@ -52,39 +52,17 @@ impl CommandHandler for PostHandler {
         }
         drop(cfg_guard);
 
-        // If queue is available, submit to queue; otherwise handle directly (legacy mode)
-        if let Some(ref queue) = ctx.queue {
-            let queued_article = QueuedArticle {
-                message,
-                size,
-                is_control,
-            };
-            
-            if queue.submit(queued_article).await.is_err() {
-                write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
-                return Ok(());
-            }
-        } else {
-            // Legacy mode: handle directly
-            // Handle control messages
-            if control::handle_control(&message, &ctx.storage, &ctx.auth).await? {
-                write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
-                return Ok(());
-            }
-
-            // Comprehensive validation
-            let cfg_guard = ctx.config.read().await;
-            if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
-                .await
-                .is_err()
-            {
-                write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
-                return Ok(());
-            }
-            drop(cfg_guard);
-
-            // Store article
-            ctx.storage.store_article(&message).await?;
+        // Submit to queue for background processing
+        let queued_article = QueuedArticle {
+            message,
+            size,
+            is_control,
+            already_validated: false, // POST uses basic validation and queues for comprehensive validation
+        };
+        
+        if ctx.queue.submit(queued_article).await.is_err() {
+            write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
+            return Ok(());
         }
 
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;

@@ -53,7 +53,7 @@ pub async fn handle_client<S>(
     auth: DynAuth,
     cfg: Arc<RwLock<Config>>,
     is_tls: bool,
-    queue: Option<ArticleQueue>,
+    queue: ArticleQueue,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
     S: AsyncRead + AsyncWrite + Unpin,

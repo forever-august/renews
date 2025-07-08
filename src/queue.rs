@@ -23,6 +23,8 @@ pub struct QueuedArticle {
     pub size: u64,
     /// Whether this is a control message
     pub is_control: bool,
+    /// Whether comprehensive validation has already been done
+    pub already_validated: bool,
 }
 
 /// Article processing queue using flume MPMC
@@ -139,12 +141,24 @@ async fn process_article(
         return Ok(());
     }
 
-    // Perform comprehensive validation
-    let cfg_guard = config.read().await;
-    crate::handlers::post::comprehensive_validate_article(storage, auth, &cfg_guard, article, queued_article.size).await?;
-    drop(cfg_guard);
+    // Perform comprehensive validation only if not already done
+    if !queued_article.already_validated {
+        let cfg_guard = config.read().await;
+        crate::handlers::post::comprehensive_validate_article(storage, auth, &cfg_guard, article, queued_article.size).await?;
+        drop(cfg_guard);
+    }
 
-    // Store the article
+    // Store the article (check if it already exists to avoid duplicates)
+    let message_id = article.headers.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    
+    if !message_id.is_empty() && storage.get_article_by_id(message_id).await?.is_some() {
+        debug!("Article already exists, skipping storage");
+        return Ok(());
+    }
+    
     storage.store_article(article).await?;
     debug!("Article stored successfully");
     

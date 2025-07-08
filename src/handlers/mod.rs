@@ -31,7 +31,7 @@ pub struct HandlerContext<R, W> {
     pub auth: DynAuth,
     pub config: Arc<RwLock<Config>>,
     pub state: ConnectionState,
-    pub queue: Option<ArticleQueue>,
+    pub queue: ArticleQueue,
 }
 
 /// Trait for command handlers.

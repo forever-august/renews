@@ -28,26 +28,41 @@ impl CommandHandler for IHaveHandler {
                 return Ok(());
             };
 
-            if control::handle_control(&article, &ctx.storage, &ctx.auth).await? {
-                write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
-                return Ok(());
-            }
+            // Check if this is a control message first
+            let is_control = control::is_control_message(&article);
 
             ensure_message_id(&mut article);
             parse::ensure_date(&mut article);
             parse::escape_message_id_header(&mut article);
 
+            // Comprehensive validation before queuing for IHAVE
             let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
-            if super::post::validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
+            if super::post::comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
             {
                 write_simple(&mut ctx.writer, RESP_437_REJECTED).await?;
                 return Ok(());
             }
+            drop(cfg_guard);
 
-            ctx.storage.store_article(&article).await?;
+            // Submit to queue for background storage and immediate storage for protocol compliance
+            let queued_article = crate::queue::QueuedArticle {
+                message: article.clone(),
+                size,
+                is_control,
+                already_validated: true, // IHAVE does comprehensive validation before queuing
+            };
+            
+            // Store immediately for protocol compliance (second IHAVE should know article exists)
+            if let Err(_) = ctx.storage.store_article(&article).await {
+                write_simple(&mut ctx.writer, RESP_437_REJECTED).await?;
+                return Ok(());
+            }
+            
+            // Also queue for background processing consistency
+            let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
             write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
         } else {
             write_simple(&mut ctx.writer, RESP_501_MSGID_REQUIRED).await?;
@@ -99,26 +114,41 @@ impl CommandHandler for TakeThisHandler {
                 return Ok(());
             }
 
-            if control::handle_control(&article, &ctx.storage, &ctx.auth).await? {
-                write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
-                return Ok(());
-            }
+            // Check if this is a control message first
+            let is_control = control::is_control_message(&article);
 
             ensure_message_id(&mut article);
             parse::ensure_date(&mut article);
             parse::escape_message_id_header(&mut article);
 
+            // Comprehensive validation before queuing for TAKETHIS
             let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
-            if super::post::validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
+            if super::post::comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
             {
                 write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
                 return Ok(());
             }
+            drop(cfg_guard);
 
-            ctx.storage.store_article(&article).await?;
+            // Submit to queue for background storage and immediate storage for protocol compliance
+            let queued_article = crate::queue::QueuedArticle {
+                message: article.clone(),
+                size,
+                is_control,
+                already_validated: true, // TAKETHIS does comprehensive validation before queuing
+            };
+            
+            // Store immediately for protocol compliance (duplicate TAKETHIS should be detected)
+            if let Err(_) = ctx.storage.store_article(&article).await {
+                write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                return Ok(());
+            }
+            
+            // Also queue for background processing consistency
+            let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
             write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
         } else {
             write_simple(&mut ctx.writer, RESP_501_MSGID_REQUIRED).await?;

@@ -78,7 +78,7 @@ impl Server {
             components.storage.clone(),
             components.auth.clone(),
             components.config.clone(),
-            cfg.article_worker_count.unwrap_or(4), // Default to 4 workers
+            cfg.article_worker_count,
         );
 
         Ok(Self {
@@ -97,8 +97,7 @@ impl Server {
         let auth: Arc<dyn AuthProvider> = auth::open(&cfg.auth_db_path).await?;
         
         // Create article queue with configurable capacity
-        let queue_capacity = cfg.article_queue_capacity.unwrap_or(1000); // Default to 1000
-        let queue = ArticleQueue::new(queue_capacity);
+        let queue = ArticleQueue::new(cfg.article_queue_capacity);
 
         Ok(ServerComponents {
             storage,
@@ -137,7 +136,7 @@ impl Server {
         let storage = self.components.storage.clone();
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
-        let queue = Some(self.components.queue.clone());
+        let queue = self.components.queue.clone();
 
         let handle = tokio::spawn(async move {
             loop {
@@ -186,7 +185,7 @@ impl Server {
         let storage = self.components.storage.clone();
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
-        let queue = Some(self.components.queue.clone());
+        let queue = self.components.queue.clone();
 
         let handle = tokio::spawn(async move {
             loop {
@@ -492,7 +491,7 @@ async fn handle_connection<S>(
     auth: Arc<dyn AuthProvider>,
     config: Arc<RwLock<Config>>,
     is_tls: bool,
-    queue: Option<ArticleQueue>,
+    queue: ArticleQueue,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {

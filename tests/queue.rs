@@ -49,6 +49,7 @@ async fn test_queue_functionality() {
         message: message.clone(),
         size: 100,
         is_control: false,
+        already_validated: false,
     };
     
     queue.submit(queued_article).await.unwrap();
