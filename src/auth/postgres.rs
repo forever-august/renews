@@ -7,6 +7,26 @@ use sqlx::{
 };
 use std::str::FromStr;
 
+// SQL schemas for PostgreSQL authentication
+const USERS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        key TEXT
+    )";
+
+const ADMINS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS admins (
+        username TEXT PRIMARY KEY REFERENCES users(username)
+    )";
+
+const MODERATORS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS moderators (
+        username TEXT REFERENCES users(username),
+        pattern TEXT,
+        PRIMARY KEY(username, pattern)
+    )";
+
 #[derive(Clone)]
 pub struct PostgresAuth {
     pool: PgPool,
@@ -20,31 +40,12 @@ impl PostgresAuth {
             .max_connections(5)
             .connect_with(opts)
             .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS users (\
-                username TEXT PRIMARY KEY,\
-                password_hash TEXT NOT NULL,\
-                key TEXT\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS admins (\
-                username TEXT PRIMARY KEY REFERENCES users(username)\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS moderators (\
-                username TEXT REFERENCES users(username),\
-                pattern TEXT,\
-                PRIMARY KEY(username, pattern)\
-            )",
-        )
-        .execute(&pool)
-        .await?;
+        
+        // Create authentication schema
+        sqlx::query(USERS_TABLE).execute(&pool).await?;
+        sqlx::query(ADMINS_TABLE).execute(&pool).await?;
+        sqlx::query(MODERATORS_TABLE).execute(&pool).await?;
+        
         Ok(Self { pool })
     }
 }

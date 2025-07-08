@@ -239,7 +239,7 @@ async fn store_article_multiple_groups_comma_separated() {
             .get_article_by_number(group, 1)
             .await
             .unwrap()
-            .expect(&format!("article in {}", group));
+            .unwrap_or_else(|| panic!("article in {group}"));
         assert_eq!(article.body, "Body content");
 
         // Verify the Message-ID is consistent
