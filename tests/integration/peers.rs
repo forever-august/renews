@@ -29,19 +29,19 @@ async fn peer_task_updates_last_sync() {
     let peer = PeerConfig {
         sitename: "127.0.0.1:9".into(),
         patterns: vec![],
-        sync_interval_secs: Some(1),
+        sync_schedule: Some("* * * * * *".into()), // Every second for testing
     };
     let db_clone = db.clone();
     let storage_clone = storage.clone();
     tokio::spawn(async move {
-        peer_task(peer, 1, db_clone, storage_clone, "local".into()).await;
+        peer_task(peer, "* * * * * *".to_string(), db_clone, storage_clone, "local".into()).await;
     });
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     let last = db.get_last_sync("127.0.0.1:9").await.unwrap();
     assert!(last.is_some());
 }
 
-async fn peer_transfer_helper(interval: u64) {
+async fn peer_transfer_helper(schedule: &str) {
     let storage_a: Arc<dyn Storage> =
         Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let storage_b: Arc<dyn Storage> =
@@ -99,12 +99,12 @@ async fn peer_transfer_helper(interval: u64) {
     let peer = PeerConfig {
         sitename: peer_name.clone(),
         patterns: vec!["*".into()],
-        sync_interval_secs: Some(interval),
+        sync_schedule: Some(schedule.to_string()),
     };
     let db_clone = db.clone();
     let storage_clone = storage_a.clone();
     let peer_handle = tokio::spawn(async move {
-        peer_task(peer, 1, db_clone, storage_clone, "A".into()).await;
+        peer_task(peer, "* * * * * *".to_string(), db_clone, storage_clone, "A".into()).await;
     });
 
     tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
@@ -138,12 +138,12 @@ async fn peer_transfer_helper(interval: u64) {
 
 #[tokio::test]
 #[serial]
-async fn peer_transfer_interval_zero() {
-    peer_transfer_helper(0).await;
+async fn peer_transfer_fast_schedule() {
+    peer_transfer_helper("* * * * * *").await; // Every second
 }
 
 #[tokio::test]
 #[serial]
-async fn peer_transfer_interval_one() {
-    peer_transfer_helper(1).await;
+async fn peer_transfer_hourly_schedule() {
+    peer_transfer_helper("0 0 * * * *").await; // Every hour
 }

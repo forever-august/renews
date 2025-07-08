@@ -22,6 +22,10 @@ fn default_peer_sync_secs() -> u64 {
     3600
 }
 
+fn default_peer_sync_schedule() -> String {
+    "0 0 * * * *".to_string() // Every hour
+}
+
 fn default_idle_timeout_secs() -> u64 {
     600
 }
@@ -138,6 +142,8 @@ pub struct Config {
     pub peer_db_path: String,
     #[serde(default = "default_peer_sync_secs")]
     pub peer_sync_secs: u64,
+    #[serde(default = "default_peer_sync_schedule")]
+    pub peer_sync_schedule: String,
     #[serde(default = "default_idle_timeout_secs")]
     pub idle_timeout_secs: u64,
     #[serde(default)]
@@ -176,7 +182,7 @@ pub struct PeerRule {
     #[serde(default)]
     pub patterns: Vec<String>,
     #[serde(default)]
-    pub sync_interval_secs: Option<u64>,
+    pub sync_schedule: Option<String>,
 }
 
 impl Config {
@@ -234,6 +240,7 @@ impl Config {
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
         self.peer_sync_secs = other.peer_sync_secs;
+        self.peer_sync_schedule = other.peer_sync_schedule;
         self.idle_timeout_secs = other.idle_timeout_secs;
         self.peers = other.peers;
         self.tls_cert = other.tls_cert;

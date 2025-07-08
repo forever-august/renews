@@ -11,6 +11,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_cron_scheduler::{JobScheduler, Job};
 use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
@@ -36,12 +37,8 @@ enum TransferMode {
 }
 
 impl TransferMode {
-    fn from_interval(interval: Option<u64>) -> Self {
-        if interval == Some(0) {
-            Self::TakeThis
-        } else {
-            Self::IHave
-        }
+    fn default() -> Self {
+        Self::IHave
     }
 }
 
@@ -411,7 +408,7 @@ impl PeerDb {
 pub struct PeerConfig {
     pub sitename: String,
     pub patterns: Vec<String>,
-    pub sync_interval_secs: Option<u64>,
+    pub sync_schedule: Option<String>,
 }
 
 impl From<&crate::config::PeerRule> for PeerConfig {
@@ -419,56 +416,95 @@ impl From<&crate::config::PeerRule> for PeerConfig {
         Self {
             sitename: r.sitename.clone(),
             patterns: r.patterns.clone(),
-            sync_interval_secs: r.sync_interval_secs,
+            sync_schedule: r.sync_schedule.clone(),
         }
     }
 }
 
 pub async fn peer_task(
     peer: PeerConfig,
-    default_interval: u64,
+    default_schedule: String,
     db: PeerDb,
     storage: DynStorage,
     site_name: String,
 ) {
-    let interval = peer.sync_interval_secs.unwrap_or(default_interval);
-    let delay = tokio::time::Duration::from_secs(interval.max(1));
-    let transfer_mode = TransferMode::from_interval(peer.sync_interval_secs);
+    let schedule = peer.sync_schedule.as_deref().unwrap_or(&default_schedule);
+    let transfer_mode = TransferMode::default();
 
     tracing::info!(
-        "Starting peer sync task for {} with interval {}s (mode: {:?})",
+        "Starting peer sync task for {} with schedule '{}' (mode: {:?})",
         peer.sitename,
-        interval,
+        schedule,
         transfer_mode
     );
 
-    loop {
-        let sync_start = std::time::Instant::now();
+    let scheduler = match JobScheduler::new().await {
+        Ok(scheduler) => scheduler,
+        Err(e) => {
+            tracing::error!("Failed to create job scheduler for {}: {}", peer.sitename, e);
+            return;
+        }
+    };
 
-        match sync_peer_once(&peer, &db, &storage, &site_name, transfer_mode).await {
-            Ok(()) => {
-                let duration = sync_start.elapsed();
-                tracing::debug!(
-                    "Peer sync completed successfully for {} in {:?}",
+    let peer_clone = peer.clone();
+    let db_clone = db.clone();
+    let storage_clone = storage.clone();
+    let site_name_clone = site_name.clone();
+
+    let job = Job::new_async(schedule, move |_uuid, _l| {
+        let peer = peer_clone.clone();
+        let db = db_clone.clone();
+        let storage = storage_clone.clone();
+        let site_name = site_name_clone.clone();
+
+        Box::pin(async move {
+            let sync_start = std::time::Instant::now();
+
+            match sync_peer_once(&peer, &db, &storage, &site_name, transfer_mode).await {
+                Ok(()) => {
+                    let duration = sync_start.elapsed();
+                    tracing::debug!(
+                        "Peer sync completed successfully for {} in {:?}",
+                        peer.sitename,
+                        duration
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
+                }
+            }
+
+            // Update last sync time regardless of success/failure
+            if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
+                tracing::error!(
+                    "Failed to update last sync time for {}: {}",
                     peer.sitename,
-                    duration
+                    e
                 );
             }
-            Err(e) => {
-                tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
+        })
+    });
+
+    match job {
+        Ok(job) => {
+            if let Err(e) = scheduler.add(job).await {
+                tracing::error!("Failed to add job to scheduler for {}: {}", peer.sitename, e);
+                return;
+            }
+
+            if let Err(e) = scheduler.start().await {
+                tracing::error!("Failed to start scheduler for {}: {}", peer.sitename, e);
+                return;
+            }
+
+            // Keep the task running with shorter sleeps for responsiveness
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
-
-        // Update last sync time regardless of success/failure
-        if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
-            tracing::error!(
-                "Failed to update last sync time for {}: {}",
-                peer.sitename,
-                e
-            );
+        Err(e) => {
+            tracing::error!("Failed to create cron job for {}: {}", peer.sitename, e);
         }
-
-        tokio::time::sleep(delay).await;
     }
 }
 

@@ -28,6 +28,7 @@ sha2 = "0.10"
 regex = "1"
 tokio-tungstenite = { version = "0.21", optional = true }
 futures-util = { version = "0.3", optional = true }
+tokio-cron-scheduler = "0.13"
 
 [features]
 websocket = ["tokio-tungstenite", "futures-util"]
