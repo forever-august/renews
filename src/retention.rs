@@ -71,7 +71,7 @@ async fn cleanup_group_by_retention(
                 .purge_group_before(group, cutoff)
                 .await
                 .map_err(|e| {
-                    format!("Failed to purge old articles from group '{}': {}", group, e)
+                    format!("Failed to purge old articles from group '{group}': {e}")
                 })?;
         } else {
             debug!(
@@ -95,7 +95,7 @@ async fn cleanup_group_by_expires_header(
     let article_ids = storage
         .list_article_ids(group)
         .await
-        .map_err(|e| format!("Failed to list article IDs for group '{}': {}", group, e))?;
+        .map_err(|e| format!("Failed to list article IDs for group '{group}': {e}"))?;
 
     let mut expired_count = 0;
 
