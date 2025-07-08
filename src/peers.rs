@@ -1,3 +1,9 @@
+//! Peer synchronization module for NNTP server federation.
+//!
+//! This module handles the synchronization of articles between NNTP servers
+//! using peer relationships. It supports both IHAVE and TAKETHIS transfer modes
+//! for efficient article distribution.
+
 use chrono::{DateTime, Utc};
 use rustls_native_certs::load_native_certs;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
@@ -12,41 +18,131 @@ use tokio_rustls::{
 
 use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
-use crate::{Message, extract_message_id, send_body, send_headers, write_simple};
+use crate::{
+    Message,
+    handlers::utils::{extract_message_id, send_body, send_headers, write_simple},
+};
 
-fn parse_host_port(addr: &str, default_port: u16) -> (String, u16, Option<(String, String)>) {
-    let (creds, host_port) = if let Some((c, rest)) = addr.rsplit_once('@') {
-        if let Some((u, p)) = c.split_once(':') {
-            (Some((u.to_string(), p.to_string())), rest)
-        } else {
-            (None, addr)
-        }
-    } else {
-        (None, addr)
-    };
+/// Result type for peer operations.
+type PeerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-    if let Some(stripped) = host_port.strip_prefix('[') {
-        if let Some(end) = stripped.find(']') {
-            let host = stripped[..end].to_string();
-            if let Some(p) = stripped[end + 1..].strip_prefix(':') {
-                if let Ok(port) = p.parse() {
-                    return (host, port, creds);
-                }
-            }
-            return (host, default_port, creds);
-        }
-    }
-    if let Some(idx) = host_port.rfind(':') {
-        if host_port[idx + 1..].chars().all(|c| c.is_ascii_digit()) {
-            if let Ok(port) = host_port[idx + 1..].parse() {
-                return (host_port[..idx].to_string(), port, creds);
-            }
-        }
-    }
-    (host_port.to_string(), default_port, creds)
+/// Represents different methods for transferring articles to peers.
+#[derive(Debug, Clone, Copy)]
+enum TransferMode {
+    /// Use IHAVE command for article transfer
+    IHave,
+    /// Use TAKETHIS command for streaming mode
+    TakeThis,
 }
 
-fn tls_connector() -> Result<TlsConnector, Box<dyn Error + Send + Sync>> {
+impl TransferMode {
+    fn from_interval(interval: Option<u64>) -> Self {
+        if interval == Some(0) {
+            Self::TakeThis
+        } else {
+            Self::IHave
+        }
+    }
+}
+
+/// Connection credentials for peer authentication.
+#[derive(Debug, Clone)]
+struct PeerCredentials {
+    username: String,
+    password: String,
+}
+
+/// Parsed peer connection information.
+#[derive(Debug, Clone)]
+struct PeerConnectionInfo {
+    host: String,
+    port: u16,
+    credentials: Option<PeerCredentials>,
+}
+
+/// Parse peer address string into connection components.
+///
+/// Supports formats like:
+/// - `host:port`
+/// - `user:pass@host:port`  
+/// - `[ipv6]:port`
+/// - `user:pass@[ipv6]:port`
+fn parse_peer_address(addr: &str, default_port: u16) -> PeerConnectionInfo {
+    let (credentials, host_port) = extract_credentials(addr);
+    let (host, port) = parse_host_and_port(host_port, default_port);
+
+    PeerConnectionInfo {
+        host,
+        port,
+        credentials,
+    }
+}
+
+/// Extract username:password credentials from address string.
+fn extract_credentials(addr: &str) -> (Option<PeerCredentials>, &str) {
+    let Some((creds_part, rest)) = addr.rsplit_once('@') else {
+        return (None, addr);
+    };
+
+    let Some((username, password)) = creds_part.split_once(':') else {
+        return (None, addr);
+    };
+
+    let credentials = PeerCredentials {
+        username: username.to_string(),
+        password: password.to_string(),
+    };
+    (Some(credentials), rest)
+}
+
+/// Parse host and port from address string, handling IPv6 addresses.
+fn parse_host_and_port(host_port: &str, default_port: u16) -> (String, u16) {
+    // Handle IPv6 addresses wrapped in brackets
+    if let Some(ipv6_content) = host_port.strip_prefix('[') {
+        return parse_ipv6_address(ipv6_content, default_port);
+    }
+
+    // Handle regular host:port format
+    parse_regular_address(host_port, default_port)
+}
+
+/// Parse IPv6 address format [host]:port
+fn parse_ipv6_address(content: &str, default_port: u16) -> (String, u16) {
+    let Some(end) = content.find(']') else {
+        return (content.to_string(), default_port);
+    };
+
+    let host = content[..end].to_string();
+    let port_part = &content[end + 1..];
+
+    let port = port_part
+        .strip_prefix(':')
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default_port);
+
+    (host, port)
+}
+
+/// Parse regular host:port format
+fn parse_regular_address(host_port: &str, default_port: u16) -> (String, u16) {
+    let Some(colon_pos) = host_port.rfind(':') else {
+        return (host_port.to_string(), default_port);
+    };
+
+    let port_str = &host_port[colon_pos + 1..];
+    if !port_str.chars().all(|c| c.is_ascii_digit()) {
+        return (host_port.to_string(), default_port);
+    }
+
+    let Ok(port) = port_str.parse() else {
+        return (host_port.to_string(), default_port);
+    };
+
+    (host_port[..colon_pos].to_string(), port)
+}
+
+/// Creates a TLS connector for secure peer connections.
+fn create_tls_connector() -> PeerResult<TlsConnector> {
     let mut roots = RootCertStore::empty();
     for cert in load_native_certs()? {
         roots.add(&rustls::Certificate(cert.0))?;
@@ -56,6 +152,140 @@ fn tls_connector() -> Result<TlsConnector, Box<dyn Error + Send + Sync>> {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(TlsConnector::from(Arc::new(config)))
+}
+
+/// Manages a connection to a peer NNTP server.
+struct PeerConnection {
+    reader: BufReader<tokio::io::ReadHalf<tokio_rustls::client::TlsStream<TcpStream>>>,
+    writer: tokio::io::WriteHalf<tokio_rustls::client::TlsStream<TcpStream>>,
+    line_buffer: String,
+}
+
+impl PeerConnection {
+    /// Establish a connection to a peer server.
+    async fn connect(connection_info: &PeerConnectionInfo) -> PeerResult<Self> {
+        let addr = format!("{}:{}", connection_info.host, connection_info.port);
+        let tcp = TcpStream::connect(&addr)
+            .await
+            .map_err(|e| format!("Failed to connect to {}: {}", addr, e))?;
+
+        let connector =
+            create_tls_connector().map_err(|e| format!("Failed to create TLS connector: {}", e))?;
+
+        let server_name = rustls::ServerName::try_from(connection_info.host.as_str())
+            .map_err(|e| format!("Invalid server name '{}': {}", connection_info.host, e))?;
+
+        let tls_stream = connector
+            .connect(server_name, tcp)
+            .await
+            .map_err(|e| format!("TLS handshake failed for {}: {}", addr, e))?;
+
+        let (read_half, write_half) = tokio::io::split(tls_stream);
+
+        let mut connection = Self {
+            reader: BufReader::new(read_half),
+            writer: write_half,
+            line_buffer: String::new(),
+        };
+
+        // Read and validate greeting
+        let greeting = connection.read_response().await?;
+        if !greeting.starts_with("200") && !greeting.starts_with("201") {
+            return Err(format!("Unexpected greeting from {}: {}", addr, greeting.trim()).into());
+        }
+
+        // Authenticate if credentials are provided
+        if let Some(creds) = &connection_info.credentials {
+            connection
+                .authenticate(creds)
+                .await
+                .map_err(|e| format!("Authentication failed for {}: {}", addr, e))?;
+        }
+
+        Ok(connection)
+    }
+
+    /// Read a response line from the server.
+    async fn read_response(&mut self) -> PeerResult<&str> {
+        self.line_buffer.clear();
+        self.reader.read_line(&mut self.line_buffer).await?;
+        Ok(&self.line_buffer)
+    }
+
+    /// Send a command to the server.
+    async fn send_command(&mut self, command: &str) -> PeerResult<()> {
+        write_simple(&mut self.writer, command).await
+    }
+
+    /// Authenticate with the server using provided credentials.
+    async fn authenticate(&mut self, creds: &PeerCredentials) -> PeerResult<()> {
+        self.send_command(&format!("AUTHINFO USER {}\r\n", creds.username))
+            .await?;
+        let response = self.read_response().await?;
+
+        if response.starts_with("381") {
+            self.send_command(&format!("AUTHINFO PASS {}\r\n", creds.password))
+                .await?;
+            let response = self.read_response().await?;
+            if !response.starts_with("281") {
+                return Err("Authentication failed".into());
+            }
+        } else if !response.starts_with("281") {
+            return Err("Authentication failed".into());
+        }
+
+        Ok(())
+    }
+
+    /// Transfer an article using the specified mode.
+    async fn transfer_article(
+        &mut self,
+        article: &Message,
+        msg_id: &str,
+        mode: TransferMode,
+    ) -> PeerResult<()> {
+        // Initialize transfer based on mode
+        match mode {
+            TransferMode::TakeThis => {
+                self.send_command("MODE STREAM\r\n").await?;
+                let _response = self.read_response().await?; // Streaming mode setup
+                self.send_command(&format!("TAKETHIS {msg_id}\r\n")).await?;
+            }
+            TransferMode::IHave => {
+                self.send_command(&format!("IHAVE {msg_id}\r\n")).await?;
+                let response = self.read_response().await?;
+                if !response.starts_with("335") {
+                    return Ok(()); // Article not wanted by peer
+                }
+            }
+        }
+
+        // Send article content
+        self.send_article_content(article).await?;
+
+        // Read and validate final response
+        let response = self.read_response().await?;
+        if !response.starts_with("2") {
+            return Err(format!("Transfer failed: {}", response.trim()).into());
+        }
+
+        Ok(())
+    }
+
+    /// Send the complete article content including headers and body.
+    async fn send_article_content(&mut self, article: &Message) -> PeerResult<()> {
+        send_headers(&mut self.writer, article).await?;
+        self.send_command("\r\n").await?;
+        send_body(&mut self.writer, &article.body).await?;
+        self.send_command(".\r\n").await?;
+        Ok(())
+    }
+
+    /// Close the connection gracefully.
+    async fn close(mut self) -> PeerResult<()> {
+        let _ = self.writer.shutdown().await;
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -69,16 +299,22 @@ impl PeerDb {
     /// # Errors
     ///
     /// Returns an error if the database connection fails or schema creation fails.
-    pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn new(path: &str) -> PeerResult<Self> {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect(path)
             .await?;
+
+        // Create peers table if it doesn't exist
         sqlx::query(
-            "CREATE TABLE IF NOT EXISTS peers (\n                sitename TEXT PRIMARY KEY,\n                last_sync INTEGER\n            )",
+            r"CREATE TABLE IF NOT EXISTS peers (
+                sitename TEXT PRIMARY KEY,
+                last_sync INTEGER
+            )",
         )
         .execute(&pool)
         .await?;
+
         Ok(Self { pool })
     }
 
@@ -91,7 +327,7 @@ impl PeerDb {
     /// # Panics
     ///
     /// Panics if the sitename column cannot be retrieved from the database row.
-    pub async fn list_peers(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+    pub async fn list_peers(&self) -> PeerResult<Vec<String>> {
         let rows = sqlx::query("SELECT sitename FROM peers")
             .fetch_all(&self.pool)
             .await?;
@@ -106,24 +342,29 @@ impl PeerDb {
     /// # Errors
     ///
     /// Returns an error if database operations fail.
-    pub async fn sync_config(&self, names: &[String]) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let existing = self.list_peers().await?;
-        for n in names {
-            if !existing.iter().any(|e| e == n) {
+    pub async fn sync_config(&self, names: &[String]) -> PeerResult<()> {
+        let existing_peers = self.list_peers().await?;
+
+        // Add new peers
+        for name in names {
+            if !existing_peers.contains(name) {
                 sqlx::query("INSERT INTO peers (sitename, last_sync) VALUES (?, 0)")
-                    .bind(n)
+                    .bind(name)
                     .execute(&self.pool)
                     .await?;
             }
         }
-        for e in existing {
-            if !names.iter().any(|n| n == &e) {
+
+        // Remove peers no longer in configuration
+        for existing_peer in existing_peers {
+            if !names.contains(&existing_peer) {
                 sqlx::query("DELETE FROM peers WHERE sitename = ?")
-                    .bind(e)
+                    .bind(&existing_peer)
                     .execute(&self.pool)
                     .await?;
             }
         }
+
         Ok(())
     }
 
@@ -132,11 +373,7 @@ impl PeerDb {
     /// # Errors
     ///
     /// Returns an error if the database update fails.
-    pub async fn update_last_sync(
-        &self,
-        name: &str,
-        when: DateTime<Utc>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn update_last_sync(&self, name: &str, when: DateTime<Utc>) -> PeerResult<()> {
         sqlx::query("UPDATE peers SET last_sync = ? WHERE sitename = ?")
             .bind(when.timestamp())
             .bind(name)
@@ -150,22 +387,22 @@ impl PeerDb {
     /// # Errors
     ///
     /// Returns an error if the database query fails.
-    pub async fn get_last_sync(
-        &self,
-        name: &str,
-    ) -> Result<Option<DateTime<Utc>>, Box<dyn Error + Send + Sync>> {
-        if let Some(row) = sqlx::query("SELECT last_sync FROM peers WHERE sitename = ?")
+    pub async fn get_last_sync(&self, name: &str) -> PeerResult<Option<DateTime<Utc>>> {
+        let row = sqlx::query("SELECT last_sync FROM peers WHERE sitename = ?")
             .bind(name)
             .fetch_optional(&self.pool)
-            .await?
-        {
-            let ts: i64 = row.try_get("last_sync")?;
-            if ts == 0 {
-                return Ok(None);
+            .await?;
+
+        match row {
+            Some(row) => {
+                let timestamp: i64 = row.try_get("last_sync")?;
+                if timestamp == 0 {
+                    Ok(None)
+                } else {
+                    Ok(DateTime::<Utc>::from_timestamp(timestamp, 0))
+                }
             }
-            Ok(DateTime::<Utc>::from_timestamp(ts, 0))
-        } else {
-            Ok(None)
+            None => Ok(None),
         }
     }
 }
@@ -196,70 +433,66 @@ pub async fn peer_task(
 ) {
     let interval = peer.sync_interval_secs.unwrap_or(default_interval);
     let delay = tokio::time::Duration::from_secs(interval.max(1));
-    let use_takethis = peer.sync_interval_secs == Some(0);
+    let transfer_mode = TransferMode::from_interval(peer.sync_interval_secs);
+
+    tracing::info!(
+        "Starting peer sync task for {} with interval {}s (mode: {:?})",
+        peer.sitename,
+        interval,
+        transfer_mode
+    );
+
     loop {
-        if let Err(e) = sync_peer_once(&peer, &db, &storage, &site_name, use_takethis).await {
-            tracing::error!("peer sync error: {e}");
+        let sync_start = std::time::Instant::now();
+
+        match sync_peer_once(&peer, &db, &storage, &site_name, transfer_mode).await {
+            Ok(()) => {
+                let duration = sync_start.elapsed();
+                tracing::debug!(
+                    "Peer sync completed successfully for {} in {:?}",
+                    peer.sitename,
+                    duration
+                );
+            }
+            Err(e) => {
+                tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
+            }
         }
-        let _ = db.update_last_sync(&peer.sitename, Utc::now()).await;
+
+        // Update last sync time regardless of success/failure
+        if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
+            tracing::error!(
+                "Failed to update last sync time for {}: {}",
+                peer.sitename,
+                e
+            );
+        }
+
         tokio::time::sleep(delay).await;
     }
 }
 
-async fn send_article(
+async fn send_article_to_peer(
     host: &str,
     article: &Message,
-    use_takethis: bool,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
-    let (host_part, port, creds) = parse_host_port(host, 563);
-    let addr = format!("{host_part}:{port}");
-    let tcp = TcpStream::connect(addr).await?;
-    let connector = tls_connector()?;
-    let server_name = rustls::ServerName::try_from(host_part.as_str())?;
-    let tls_stream = connector.connect(server_name, tcp).await?;
-    let (read_half, mut write_half) = tokio::io::split(tls_stream);
-    let mut reader = BufReader::new(read_half);
-    let mut line = String::new();
-    reader.read_line(&mut line).await?; // greeting
-    if let Some((user, pass)) = creds.as_ref() {
-        write_simple(&mut write_half, &format!("AUTHINFO USER {user}\r\n")).await?;
-        line.clear();
-        reader.read_line(&mut line).await?;
-        if line.starts_with("381") {
-            write_simple(&mut write_half, &format!("AUTHINFO PASS {pass}\r\n")).await?;
-            line.clear();
-            reader.read_line(&mut line).await?;
-            if !line.starts_with("281") {
-                let _ = write_half.shutdown().await;
-                return Ok(());
-            }
-        } else if !line.starts_with("281") {
-            let _ = write_half.shutdown().await;
-            return Ok(());
-        }
+    transfer_mode: TransferMode,
+) -> PeerResult<()> {
+    let msg_id = extract_message_id(article).ok_or_else(|| "Article missing Message-ID header")?;
+
+    let connection_info = parse_peer_address(host, 563);
+    let mut connection = PeerConnection::connect(&connection_info)
+        .await
+        .map_err(|e| format!("Failed to connect to peer {}: {}", host, e))?;
+
+    let result = connection
+        .transfer_article(article, msg_id, transfer_mode)
+        .await;
+
+    if let Err(close_err) = connection.close().await {
+        tracing::warn!("Failed to close connection to {}: {}", host, close_err);
     }
-    if use_takethis {
-        write_simple(&mut write_half, "MODE STREAM\r\n").await?;
-        line.clear();
-        reader.read_line(&mut line).await?; // ignore
-        write_simple(&mut write_half, &format!("TAKETHIS {msg_id}\r\n")).await?;
-    } else {
-        write_simple(&mut write_half, &format!("IHAVE {msg_id}\r\n")).await?;
-        line.clear();
-        reader.read_line(&mut line).await?;
-        if !line.starts_with("335") {
-            return Ok(());
-        }
-    }
-    send_headers(&mut write_half, article).await?;
-    write_simple(&mut write_half, "\r\n").await?;
-    send_body(&mut write_half, &article.body).await?;
-    write_simple(&mut write_half, ".\r\n").await?;
-    line.clear();
-    reader.read_line(&mut line).await?;
-    let _ = write_half.shutdown().await;
-    Ok(())
+
+    result
 }
 
 async fn sync_peer_once(
@@ -267,46 +500,149 @@ async fn sync_peer_once(
     db: &PeerDb,
     storage: &DynStorage,
     site_name: &str,
-    use_takethis: bool,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let last = db.get_last_sync(&peer.sitename).await?;
+    transfer_mode: TransferMode,
+) -> PeerResult<()> {
+    let last_sync = db.get_last_sync(&peer.sitename).await?;
     let groups = storage.list_groups().await?;
+
     for group in groups {
-        if !peer.patterns.iter().any(|p| wildmat(p, &group)) {
+        if !peer.patterns.iter().any(|pattern| wildmat(pattern, &group)) {
             continue;
         }
-        let ids = if let Some(ts) = last {
-            storage.list_article_ids_since(&group, ts).await?
-        } else {
-            storage.list_article_ids(&group).await?
+
+        let article_ids = match last_sync {
+            Some(timestamp) => storage.list_article_ids_since(&group, timestamp).await?,
+            None => storage.list_article_ids(&group).await?,
         };
-        for id in ids {
-            if let Some(orig) = storage.get_article_by_id(&id).await? {
-                let mut article = Message {
-                    headers: orig.headers.clone(),
-                    body: orig.body.clone(),
-                };
-                let mut has_path = false;
-                let mut skip = false;
-                for (k, v) in &mut article.headers {
-                    if k.eq_ignore_ascii_case("Path") {
-                        if v.split('!').any(|s| s.trim() == peer.sitename) {
-                            skip = true;
-                            break;
-                        }
-                        *v = format!("{site_name}!{v}");
-                        has_path = true;
-                    }
-                }
-                if skip {
-                    continue;
-                }
-                if !has_path {
-                    article.headers.push(("Path".into(), site_name.to_string()));
-                }
-                let _ = send_article(&peer.sitename, &article, use_takethis).await;
+
+        process_group_articles(peer, storage, site_name, transfer_mode, &group, article_ids)
+            .await?;
+    }
+
+    Ok(())
+}
+
+/// Process and send articles from a specific group to a peer.
+async fn process_group_articles(
+    peer: &PeerConfig,
+    storage: &DynStorage,
+    site_name: &str,
+    transfer_mode: TransferMode,
+    group: &str,
+    article_ids: Vec<String>,
+) -> PeerResult<()> {
+    if article_ids.is_empty() {
+        return Ok(());
+    }
+
+    tracing::debug!(
+        "Processing {} articles from group {} for peer {}",
+        article_ids.len(),
+        group,
+        peer.sitename
+    );
+
+    let mut sent_count = 0;
+    let mut skipped_count = 0;
+    let mut error_count = 0;
+
+    for article_id in &article_ids {
+        match process_single_article(peer, storage, site_name, transfer_mode, article_id).await {
+            Ok(ArticleProcessResult::Sent) => sent_count += 1,
+            Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
+            Ok(ArticleProcessResult::NotFound) => {
+                tracing::debug!("Article {} not found in storage", article_id);
+            }
+            Err(e) => {
+                error_count += 1;
+                tracing::warn!(
+                    "Failed to process article {} for peer {}: {}",
+                    article_id,
+                    peer.sitename,
+                    e
+                );
             }
         }
     }
+
+    tracing::info!(
+        "Completed processing for peer {} in group {}: {} sent, {} skipped, {} errors",
+        peer.sitename,
+        group,
+        sent_count,
+        skipped_count,
+        error_count
+    );
+
     Ok(())
+}
+
+/// Result of processing a single article.
+#[derive(Debug)]
+enum ArticleProcessResult {
+    Sent,
+    Skipped,
+    NotFound,
+}
+
+/// Process a single article for peer distribution.
+async fn process_single_article(
+    peer: &PeerConfig,
+    storage: &DynStorage,
+    site_name: &str,
+    transfer_mode: TransferMode,
+    article_id: &str,
+) -> PeerResult<ArticleProcessResult> {
+    let Some(original_article) = storage.get_article_by_id(article_id).await? else {
+        return Ok(ArticleProcessResult::NotFound);
+    };
+
+    if should_skip_article(&original_article, &peer.sitename) {
+        tracing::debug!(
+            "Skipping article {} for peer {} (already in path)",
+            article_id,
+            peer.sitename
+        );
+        return Ok(ArticleProcessResult::Skipped);
+    }
+
+    let peer_article = create_peer_article(&original_article, site_name)?;
+    send_article_to_peer(&peer.sitename, &peer_article, transfer_mode).await?;
+    tracing::debug!(
+        "Successfully sent article {} to {}",
+        article_id,
+        peer.sitename
+    );
+
+    Ok(ArticleProcessResult::Sent)
+}
+
+/// Creates a copy of an article with appropriate Path header for peer distribution.
+fn create_peer_article(orig: &Message, site_name: &str) -> PeerResult<Message> {
+    let mut article = orig.clone();
+
+    // Update or add Path header
+    if let Some((_, path_value)) = article
+        .headers
+        .iter_mut()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Path"))
+    {
+        *path_value = format!("{site_name}!{path_value}");
+    } else {
+        article.headers.push(("Path".into(), site_name.to_string()));
+    }
+
+    Ok(article)
+}
+
+/// Checks if an article should be skipped for a specific peer.
+fn should_skip_article(article: &Message, peer_sitename: &str) -> bool {
+    article
+        .headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case("Path"))
+        .any(|(_, path)| {
+            path.split('!')
+                .any(|segment| segment.trim() == peer_sitename)
+        })
 }

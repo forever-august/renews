@@ -1,13 +1,36 @@
+//! NNTP Server implementation
+//!
+//! This module contains the main server infrastructure for the NNTP server,
+//! including TCP and TLS listeners, peer synchronization, and configuration reloading.
+//!
+//! ## Architecture
+//!
+//! The server is organized into several key components:
+//!
+//! - **Server**: Main server struct that orchestrates all components
+//! - **ServerComponents**: Shared resources (storage, auth, config)
+//! - **ConfigManager**: Handles configuration loading and TLS setup
+//! - **PeerManager**: Manages peer synchronization tasks
+//!
+//! ## Key Features
+//!
+//! - Concurrent handling of TCP and TLS connections
+//! - Hot configuration reloading via SIGHUP
+//! - WebSocket bridge support (optional)
+//! - Automatic peer synchronization
+//! - Article retention cleanup
+//!
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 
+use std::net::SocketAddr;
 use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
 use tracing::{error, info};
-use std::net::SocketAddr;
 
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
@@ -21,28 +44,411 @@ use crate::storage::{self, Storage};
 use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
-fn load_tls_config(
-    cert_path: &str,
-    key_path: &str,
-) -> Result<rustls::ServerConfig, Box<dyn Error + Send + Sync>> {
+type ServerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+/// Shared server components
+#[derive(Clone)]
+struct ServerComponents {
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+    config: Arc<RwLock<Config>>,
+}
+
+/// Server handles all lifecycle management
+pub struct Server {
+    components: ServerComponents,
+    config_manager: ConfigManager,
+    peer_manager: PeerManager,
+}
+
+impl Server {
+    /// Create a new server instance
+    pub async fn new(cfg: Config) -> ServerResult<Self> {
+        let components = Self::initialize_components(&cfg).await?;
+        let peer_db = Self::initialize_peer_db(&cfg).await?;
+        let config_manager = ConfigManager::new(components.config.clone());
+        let peer_manager = PeerManager::new(peer_db);
+
+        Ok(Self {
+            components,
+            config_manager,
+            peer_manager,
+        })
+    }
+
+    /// Initialize core server components
+    async fn initialize_components(cfg: &Config) -> ServerResult<ServerComponents> {
+        let config = Arc::new(RwLock::new(cfg.clone()));
+
+        let storage: Arc<dyn Storage> = storage::open(&cfg.db_path).await?;
+        let auth: Arc<dyn AuthProvider> = auth::open(&cfg.auth_db_path).await?;
+
+        Ok(ServerComponents {
+            storage,
+            auth,
+            config,
+        })
+    }
+
+    /// Initialize peer database and sync configuration
+    async fn initialize_peer_db(cfg: &Config) -> ServerResult<PeerDb> {
+        let peer_db = PeerDb::new(&cfg.peer_db_path).await?;
+        let names: Vec<String> = cfg.peers.iter().map(|p| p.sitename.clone()).collect();
+        peer_db.sync_config(&names).await?;
+        Ok(peer_db)
+    }
+
+    /// Start all peer synchronization tasks
+    async fn start_peer_tasks(&self) -> ServerResult<()> {
+        let cfg_guard = self.components.config.read().await;
+        self.peer_manager
+            .start_peer_tasks(&cfg_guard, self.components.storage.clone())
+            .await
+    }
+
+    /// Start TCP listener task
+    async fn start_tcp_listener(&self) -> ServerResult<tokio::task::JoinHandle<()>> {
+        let addr = {
+            let cfg_guard = self.components.config.read().await;
+            listen_addr(&cfg_guard.addr)
+        };
+
+        info!("listening on {addr}");
+        let listener = TcpListener::bind(&addr).await?;
+
+        let storage = self.components.storage.clone();
+        let auth = self.components.auth.clone();
+        let config = self.components.config.clone();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((socket, _)) => {
+                        info!("accepted connection");
+                        handle_connection(
+                            socket,
+                            storage.clone(),
+                            auth.clone(),
+                            config.clone(),
+                            false,
+                        )
+                        .await;
+                    }
+                    Err(e) => error!("failed to accept connection: {e}"),
+                }
+            }
+        });
+
+        Ok(handle)
+    }
+
+    /// Start TLS listener task if configured
+    async fn start_tls_listener(&self) -> ServerResult<Option<tokio::task::JoinHandle<()>>> {
+        let cfg_guard = self.components.config.read().await;
+
+        let Some((tls_addr_raw, cert, key)) = (|| {
+            Some((
+                cfg_guard.tls_addr.as_deref()?,
+                cfg_guard.tls_cert.as_ref()?,
+                cfg_guard.tls_key.as_ref()?,
+            ))
+        })() else {
+            return Ok(None);
+        };
+
+        let tls_addr = listen_addr(tls_addr_raw);
+        info!("listening TLS on {tls_addr}");
+
+        let tls_listener = TcpListener::bind(&tls_addr).await?;
+        let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
+        *self.config_manager.tls_acceptor.write().await = Some(acceptor.clone());
+
+        let storage = self.components.storage.clone();
+        let auth = self.components.auth.clone();
+        let config = self.components.config.clone();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                match tls_listener.accept().await {
+                    Ok((socket, _)) => {
+                        info!("accepted TLS connection");
+                        let storage_clone = storage.clone();
+                        let auth_clone = auth.clone();
+                        let config_clone = config.clone();
+                        let acceptor_clone = acceptor.clone();
+
+                        tokio::spawn(async move {
+                            match acceptor_clone.accept(socket).await {
+                                Ok(stream) => {
+                                    handle_connection(
+                                        stream,
+                                        storage_clone,
+                                        auth_clone,
+                                        config_clone,
+                                        true,
+                                    )
+                                    .await;
+                                }
+                                Err(e) => error!("tls error: {e}"),
+                            }
+                        });
+                    }
+                    Err(e) => error!("failed to accept TLS connection: {e}"),
+                }
+            }
+        });
+
+        Ok(Some(handle))
+    }
+
+    /// Start WebSocket bridge task if configured
+    #[cfg(feature = "websocket")]
+    async fn start_websocket_bridge(&self) -> ServerResult<Option<tokio::task::JoinHandle<()>>> {
+        let cfg_guard = self.components.config.read().await;
+
+        if let Some(addr_raw) = cfg_guard.ws_addr.as_deref() {
+            info!("websocket bridge on {addr_raw}");
+            let config = self.components.config.clone();
+
+            let handle = tokio::spawn(async move {
+                if let Err(e) = ws::run_ws_bridge(config).await {
+                    error!("websocket error: {e}");
+                }
+            });
+
+            Ok(Some(handle))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Start WebSocket bridge task (no-op for non-websocket builds)
+    #[cfg(not(feature = "websocket"))]
+    async fn start_websocket_bridge(&self) -> ServerResult<Option<tokio::task::JoinHandle<()>>> {
+        Ok(None)
+    }
+
+    /// Start retention cleanup task
+    async fn start_retention_cleanup(&self) -> ServerResult<tokio::task::JoinHandle<()>> {
+        let storage = self.components.storage.clone();
+        let config = self.components.config.clone();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                let cfg_guard = config.read().await;
+                if let Err(e) = cleanup_expired_articles(&*storage, &cfg_guard).await {
+                    error!("retention cleanup error: {e}");
+                }
+                drop(cfg_guard);
+                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+            }
+        });
+
+        Ok(handle)
+    }
+
+    /// Start configuration reload handler
+    async fn start_config_reload_handler(
+        &self,
+        cfg_path: String,
+    ) -> ServerResult<tokio::task::JoinHandle<()>> {
+        let config_manager = self.config_manager.clone();
+        let peer_manager = self.peer_manager.clone();
+        let storage = self.components.storage.clone();
+
+        let handle = tokio::spawn(async move {
+            if let Ok(mut hup) = signal(SignalKind::hangup()) {
+                while hup.recv().await.is_some() {
+                    if let Err(e) = handle_config_reload_with_managers(
+                        &config_manager,
+                        &peer_manager,
+                        &storage,
+                        &cfg_path,
+                    )
+                    .await
+                    {
+                        error!("config reload failed: {e}");
+                    }
+                }
+            }
+        });
+
+        Ok(handle)
+    }
+
+    /// Start all server services
+    pub async fn run(self, cfg_path: String) -> ServerResult<()> {
+        self.start_peer_tasks().await?;
+
+        // Start all listeners and background tasks
+        let _tcp_handle = self.start_tcp_listener().await?;
+        let _tls_handle = self.start_tls_listener().await?;
+        let _ws_handle = self.start_websocket_bridge().await?;
+        let _retention_handle = self.start_retention_cleanup().await?;
+        let _config_handle = self.start_config_reload_handler(cfg_path).await?;
+
+        // Wait for shutdown signal
+        tokio::signal::ctrl_c().await?;
+        info!("shutdown signal received");
+
+        Ok(())
+    }
+}
+
+/// Configuration management for the server
+#[derive(Clone)]
+struct ConfigManager {
+    config: Arc<RwLock<Config>>,
+    tls_acceptor: Arc<RwLock<Option<TlsAcceptor>>>,
+}
+
+impl ConfigManager {
+    fn new(config: Arc<RwLock<Config>>) -> Self {
+        Self {
+            config,
+            tls_acceptor: Arc::new(RwLock::new(None)),
+        }
+    }
+
+    async fn reload(&self, cfg_path: &str) -> ServerResult<()> {
+        let new_cfg = Config::from_file(cfg_path)?;
+
+        // Update TLS configuration if present
+        if let (Some(cert), Some(key)) = (new_cfg.tls_cert.as_ref(), new_cfg.tls_key.as_ref()) {
+            match load_tls_config(cert, key) {
+                Ok(conf) => {
+                    *self.tls_acceptor.write().await = Some(TlsAcceptor::from(Arc::new(conf)));
+                }
+                Err(e) => error!("failed to load tls config: {e}"),
+            }
+        }
+
+        // Update runtime configuration
+        self.config.write().await.update_runtime(new_cfg);
+        info!("configuration reloaded");
+
+        Ok(())
+    }
+}
+
+/// Peer management for the server
+#[derive(Clone)]
+struct PeerManager {
+    peer_db: PeerDb,
+    peer_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
+}
+
+impl PeerManager {
+    fn new(peer_db: PeerDb) -> Self {
+        Self {
+            peer_db,
+            peer_tasks: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    async fn start_peer_tasks(
+        &self,
+        config: &Config,
+        storage: Arc<dyn Storage>,
+    ) -> ServerResult<()> {
+        let default_interval = config.peer_sync_secs;
+
+        for peer in &config.peers {
+            let pc = PeerConfig::from(peer);
+            let name = pc.sitename.clone();
+
+            let handle = tokio::spawn(peer_task(
+                pc,
+                default_interval,
+                self.peer_db.clone(),
+                storage.clone(),
+                config.site_name.clone(),
+            ));
+
+            self.peer_tasks.write().await.insert(name, handle);
+        }
+
+        Ok(())
+    }
+
+    async fn update_tasks(&self, new_cfg: &Config, storage: &Arc<dyn Storage>) -> ServerResult<()> {
+        let names: Vec<String> = new_cfg.peers.iter().map(|p| p.sitename.clone()).collect();
+        self.peer_db.sync_config(&names).await?;
+
+        let mut tasks = self.peer_tasks.write().await;
+        let default_interval = new_cfg.peer_sync_secs;
+
+        // Start new peer tasks
+        for peer in &new_cfg.peers {
+            if !tasks.contains_key(&peer.sitename) {
+                let dbc = self.peer_db.clone();
+                let pc = PeerConfig::from(peer);
+                let name = pc.sitename.clone();
+                let storage_clone = storage.clone();
+                let site = new_cfg.site_name.clone();
+
+                let handle =
+                    tokio::spawn(peer_task(pc, default_interval, dbc, storage_clone, site));
+
+                tasks.insert(name, handle);
+            }
+        }
+
+        // Remove obsolete peer tasks
+        let to_remove: Vec<String> = tasks
+            .keys()
+            .filter(|k| !new_cfg.peers.iter().any(|p| &p.sitename == *k))
+            .cloned()
+            .collect();
+
+        for name in to_remove {
+            if let Some(h) = tasks.remove(&name) {
+                h.abort();
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Load TLS configuration from certificate and key files
+///
+/// # Arguments
+/// * `cert_path` - Path to the certificate file in PEM format
+/// * `key_path` - Path to the private key file in PKCS#8 format
+///
+/// # Errors
+/// Returns an error if the files cannot be read or contain invalid data
+fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
     let cert_file = &mut BufReader::new(File::open(cert_path)?);
     let key_file = &mut BufReader::new(File::open(key_path)?);
+
     let certs = certs(cert_file)?
         .into_iter()
         .map(rustls::Certificate)
         .collect();
+
     let mut keys = pkcs8_private_keys(key_file)?;
     if keys.is_empty() {
         return Err("no private key found".into());
     }
+
     let key = rustls::PrivateKey(keys.remove(0));
     let config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)?;
+
     Ok(config)
 }
 
+/// Convert raw address string to a proper listen address
+///
+/// # Arguments
+/// * `raw` - Raw address string (can be just port, :port, or full address)
+///
+/// # Returns
+/// A properly formatted address string suitable for binding
 fn listen_addr(raw: &str) -> String {
     if raw.parse::<SocketAddr>().is_ok() {
         raw.to_string()
@@ -53,215 +459,66 @@ fn listen_addr(raw: &str) -> String {
     }
 }
 
-
-#[allow(clippy::too_many_lines)]
-pub async fn run(
-    cfg_initial: Config,
-    cfg_path: String,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let cfg = Arc::new(RwLock::new(cfg_initial));
-    let tls_acceptor: Arc<RwLock<Option<TlsAcceptor>>> = Arc::new(RwLock::new(None));
-    let storage: Arc<dyn Storage> = {
-        let cfg_guard = cfg.read().await;
-        storage::open(&cfg_guard.db_path).await?
-    };
-    let auth_path = {
-        let cfg_guard = cfg.read().await;
-        cfg_guard.auth_db_path.clone()
-    };
-    let auth: Arc<dyn AuthProvider> = auth::open(&auth_path).await?;
-    let peer_db = {
-        let cfg_guard = cfg.read().await;
-        PeerDb::new(&cfg_guard.peer_db_path).await?
-    };
-    {
-        let cfg_guard = cfg.read().await;
-        let names: Vec<String> = cfg_guard.peers.iter().map(|p| p.sitename.clone()).collect();
-        peer_db.sync_config(&names).await?;
-    }
-    let peer_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>> =
-        Arc::new(RwLock::new(HashMap::new()));
-    {
-        let cfg_guard = cfg.read().await;
-        let default_interval = cfg_guard.peer_sync_secs;
-        for peer in &cfg_guard.peers {
-            let pc = PeerConfig::from(peer);
-            let name = pc.sitename.clone();
-            let db_clone = peer_db.clone();
-            let storage_clone = storage.clone();
-            let site = cfg_guard.site_name.clone();
-            let handle = tokio::spawn(peer_task(
-                pc.clone(),
-                default_interval,
-                db_clone,
-                storage_clone,
-                site,
-            ));
-            peer_tasks.write().await.insert(name, handle);
-        }
-    }
-    let addr = {
-        let cfg_guard = cfg.read().await;
-        listen_addr(&cfg_guard.addr)
-    };
-    info!("listening on {addr}");
-    let listener = TcpListener::bind(&addr).await?;
-    let storage_clone = storage.clone();
-    let auth_clone = auth.clone();
-    let cfg_clone = cfg.clone();
+/// Handle an incoming client connection
+async fn handle_connection<S>(
+    socket: S,
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+    config: Arc<RwLock<Config>>,
+    is_tls: bool,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
     tokio::spawn(async move {
-        loop {
-            let (socket, _) = listener.accept().await.unwrap();
-            info!("accepted connection");
-            let st = storage_clone.clone();
-            let au = auth_clone.clone();
-            let cfg = cfg_clone.clone();
-            tokio::spawn(async move {
-                if let Err(e) = crate::handle_client(socket, st, au, cfg, false).await {
-                    error!("client error: {e}");
-                }
-            });
+        if let Err(e) = crate::handle_client(socket, storage, auth, config, is_tls).await {
+            error!("client error: {e}");
         }
     });
+}
 
-    {
-        let cfg_guard = cfg.read().await;
-        if let (Some(tls_addr_raw), Some(cert), Some(key)) = (
-            cfg_guard.tls_addr.as_deref(),
-            cfg_guard.tls_cert.as_ref(),
-            cfg_guard.tls_key.as_ref(),
-        ) {
-            let tls_addr = listen_addr(tls_addr_raw);
-            info!("listening TLS on {tls_addr}");
-            let tls_listener = TcpListener::bind(&tls_addr).await?;
-            let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
-            *tls_acceptor.write().await = Some(acceptor.clone());
-            let storage_clone = storage.clone();
-            let auth_clone = auth.clone();
-            let cfg_clone = cfg.clone();
-            let acceptor_handle = tls_acceptor.clone();
-            tokio::spawn(async move {
-                loop {
-                    let (socket, _) = tls_listener.accept().await.unwrap();
-                    info!("accepted TLS connection");
-                    let st = storage_clone.clone();
-                    let au = auth_clone.clone();
-                    let cfg = cfg_clone.clone();
-                    let acceptor_opt = { acceptor_handle.read().await.clone() };
-                    tokio::spawn(async move {
-                        if let Some(acc) = acceptor_opt {
-                            match acc.accept(socket).await {
-                                Ok(stream) => {
-                                    if let Err(e) =
-                                        crate::handle_client(stream, st, au, cfg, true).await
-                                    {
-                                        error!("client error: {e}");
-                                    }
-                                }
-                                Err(e) => error!("tls error: {e}"),
-                            }
-                        }
-                    });
-                }
-            });
-        }
+/// Main server entry point
+///
+/// This function initializes the server and starts all necessary components:
+/// - TCP and TLS listeners for NNTP connections
+/// - WebSocket bridge (if enabled)
+/// - Peer synchronization tasks
+/// - Retention cleanup task
+/// - Configuration reload handler
+///
+/// # Arguments
+/// * `cfg_initial` - Initial server configuration
+/// * `cfg_path` - Path to configuration file for reloading
+///
+/// # Errors
+/// Returns an error if server initialization or startup fails
+pub async fn run(cfg_initial: Config, cfg_path: String) -> ServerResult<()> {
+    let server = Server::new(cfg_initial).await?;
+    server.run(cfg_path).await
+}
 
-        #[cfg(feature = "websocket")]
-        {
-            let cfg_ws = cfg.clone();
-            if let Some(addr_raw) = cfg.read().await.ws_addr.as_deref() {
-                info!("websocket bridge on {addr_raw}");
-                tokio::spawn(async move {
-                    if let Err(e) = ws::run_ws_bridge(cfg_ws).await {
-                        error!("websocket error: {e}");
-                    }
-                });
-            }
-        }
+/// Handle a single configuration reload using managers
+///
+/// # Arguments
+/// * `config_manager` - Configuration manager
+/// * `peer_manager` - Peer manager
+/// * `storage` - Storage backend
+/// * `cfg_path` - Path to configuration file
+///
+/// # Errors
+/// Returns an error if configuration reload fails
+async fn handle_config_reload_with_managers(
+    config_manager: &ConfigManager,
+    peer_manager: &PeerManager,
+    storage: &Arc<dyn Storage>,
+    cfg_path: &str,
+) -> ServerResult<()> {
+    let new_cfg = Config::from_file(cfg_path)?;
 
-        let storage_clone = storage.clone();
-        let cfg_clone = cfg.clone();
-        tokio::spawn(async move {
-            loop {
-                let cfg_guard = cfg_clone.read().await;
-                if let Err(e) = cleanup_expired_articles(&*storage_clone, &cfg_guard).await {
-                    error!("retention cleanup error: {e}");
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-            }
-        });
+    // Update configuration using manager
+    config_manager.reload(cfg_path).await?;
 
-        let cfg_reload = cfg.clone();
-        let tls_reload = tls_acceptor.clone();
-        let cfg_path_reload = cfg_path.clone();
-        let peer_db_reload = peer_db.clone();
-        let peer_tasks_reload = peer_tasks.clone();
-        let storage_reload = storage.clone();
-        tokio::spawn(async move {
-            if let Ok(mut hup) = signal(SignalKind::hangup()) {
-                while hup.recv().await.is_some() {
-                    match Config::from_file(&cfg_path_reload) {
-                        Ok(new_cfg) => {
-                            if let (Some(cert), Some(key)) =
-                                (new_cfg.tls_cert.as_ref(), new_cfg.tls_key.as_ref())
-                            {
-                                match load_tls_config(cert, key) {
-                                    Ok(conf) => {
-                                        *tls_reload.write().await =
-                                            Some(TlsAcceptor::from(Arc::new(conf)));
-                                    }
-                                    Err(e) => error!("failed to load tls config: {e}"),
-                                }
-                            }
-                            {
-                                let names: Vec<String> =
-                                    new_cfg.peers.iter().map(|p| p.sitename.clone()).collect();
-                                if let Err(e) = peer_db_reload.sync_config(&names).await {
-                                    error!("peer db sync error: {e}");
-                                }
-                                let mut tasks = peer_tasks_reload.write().await;
-                                let default_interval = new_cfg.peer_sync_secs;
-                                for peer in &new_cfg.peers {
-                                    if !tasks.contains_key(&peer.sitename) {
-                                        let dbc = peer_db_reload.clone();
-                                        let pc = PeerConfig::from(peer);
-                                        let name = pc.sitename.clone();
-                                        let storage_clone = storage_reload.clone();
-                                        let site = new_cfg.site_name.clone();
-                                        let handle = tokio::spawn(peer_task(
-                                            pc.clone(),
-                                            default_interval,
-                                            dbc,
-                                            storage_clone,
-                                            site,
-                                        ));
-                                        tasks.insert(name, handle);
-                                    }
-                                }
-                                let to_remove: Vec<String> = tasks
-                                    .keys()
-                                    .filter(|k| !new_cfg.peers.iter().any(|p| &p.sitename == *k))
-                                    .cloned()
-                                    .collect();
-                                for name in to_remove {
-                                    if let Some(h) = tasks.remove(&name) {
-                                        h.abort();
-                                    }
-                                }
-                            }
-                            cfg_reload.write().await.update_runtime(new_cfg);
-                            info!("configuration reloaded");
-                        }
-                        Err(e) => {
-                            error!("failed to reload config: {e}");
-                        }
-                    }
-                }
-            }
-        });
+    // Update peer configuration using manager
+    peer_manager.update_tasks(&new_cfg, storage).await?;
 
-        tokio::signal::ctrl_c().await?;
-        info!("shutdown signal received");
-        Ok(())
-    }
+    Ok(())
 }

@@ -69,7 +69,7 @@ pub fn parse_response(input: &str) -> IResult<&str, Response> {
     ))
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Message {
     pub headers: Vec<(String, String)>,
     pub body: String,
