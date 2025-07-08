@@ -23,7 +23,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
     storage.add_group("test.group", false).await.unwrap();
     
     // Create config with queue settings
-    let mut config = Config {
+    let config = Config {
         addr: "127.0.0.1:0".to_string(),
         site_name: "test".to_string(),
         db_path: "sqlite::memory:".to_string(),
