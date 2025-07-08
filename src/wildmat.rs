@@ -43,9 +43,9 @@ fn parse_class<I>(chars: &mut std::iter::Peekable<I>) -> Option<String>
 where
     I: Iterator<Item = char> + Clone,
 {
-    let mut preview = chars.clone();
+    let preview = chars.clone();
     let mut found = false;
-    while let Some(ch) = preview.next() {
+    for ch in preview {
         if ch == ']' {
             found = true;
             break;
@@ -70,7 +70,7 @@ where
             if let Some(next) = chars.next() {
                 class.push_str(&regex::escape(&next.to_string()));
             } else {
-                class.push_str("\\");
+                class.push('\\');
             }
         } else {
             class.push(ch);

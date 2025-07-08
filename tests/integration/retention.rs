@@ -13,8 +13,8 @@ async fn cleanup_retention_zero_keeps_articles() {
     let cfg: Config = toml::from_str("addr=\":119\"\ndefault_retention_days=0").unwrap();
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nB").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nB").unwrap();
+    storage.store_article(&msg).await.unwrap();
     sleep(StdDuration::from_secs(1)).await;
     cleanup_expired_articles(&*storage, &cfg).await.unwrap();
     assert!(
@@ -33,9 +33,9 @@ async fn cleanup_expires_header() {
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
     let past = (chrono::Utc::now() - ChronoDuration::days(1)).to_rfc2822();
-    let text = format!("Message-ID: <2@test>\r\nExpires: {past}\r\n\r\nB");
+    let text = format!("Message-ID: <2@test>\r\nNewsgroups: misc\r\nExpires: {past}\r\n\r\nB");
     let (_, msg) = parse_message(&text).unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    storage.store_article(&msg).await.unwrap();
     cleanup_expired_articles(&*storage, &cfg).await.unwrap();
     assert!(
         storage
