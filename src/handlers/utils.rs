@@ -3,19 +3,40 @@
 use crate::storage::DynStorage;
 use crate::{ConnectionState, Message};
 use std::error::Error;
-use tokio::io::AsyncWrite;
-use tokio::io::AsyncWriteExt;
+use std::fmt;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
-/// Errors that can occur when querying articles.
-#[derive(Debug)]
+/// Errors that can occur when querying for articles.
+#[derive(Debug, Clone)]
 pub enum ArticleQueryError {
+    /// No group is currently selected.
     NoGroup,
+    /// Invalid message-id format.
     InvalidId,
+    /// The specified range is empty.
     RangeEmpty,
+    /// Article not found by number.
     NotFoundByNumber,
+    /// Article not found by message-id.
     MessageIdNotFound,
+    /// No current article is selected.
     NoCurrentArticle,
 }
+
+impl fmt::Display for ArticleQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ArticleQueryError::NoGroup => write!(f, "No group selected"),
+            ArticleQueryError::InvalidId => write!(f, "Invalid message-id format"),
+            ArticleQueryError::RangeEmpty => write!(f, "Range is empty"),
+            ArticleQueryError::NotFoundByNumber => write!(f, "Article not found by number"),
+            ArticleQueryError::MessageIdNotFound => write!(f, "Article not found by message-id"),
+            ArticleQueryError::NoCurrentArticle => write!(f, "No current article selected"),
+        }
+    }
+}
+
+impl Error for ArticleQueryError {}
 
 /// Write a simple response line to the writer.
 pub async fn write_simple<W: AsyncWrite + Unpin>(
@@ -258,7 +279,7 @@ pub async fn handle_article_error<W: AsyncWrite + Unpin>(
             write_simple(writer, RESP_423_RANGE_EMPTY).await?;
         }
         ArticleQueryError::NotFoundByNumber => {
-            write_simple(writer, "423 no such article number in this group\r\n").await?;
+            write_simple(writer, RESP_423_NO_ARTICLE_NUM).await?;
         }
         ArticleQueryError::MessageIdNotFound => {
             write_simple(writer, RESP_430_NO_ARTICLE).await?;
@@ -298,4 +319,26 @@ pub async fn write_lines<W: AsyncWrite + Unpin>(
         writer.write_all(line.as_bytes()).await?;
     }
     Ok(())
+}
+
+/// Read a message from the reader until dot termination.
+pub async fn read_message<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let mut msg = String::new();
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        reader.read_line(&mut line).await?;
+        if line == ".\r\n" || line == ".\n" {
+            break;
+        }
+        if line.starts_with("..") {
+            msg.push_str(&line[1..]);
+        } else {
+            msg.push_str(&line);
+        }
+    }
+    Ok(msg)
 }

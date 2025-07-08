@@ -24,9 +24,13 @@ pub const RESP_225_HEADERS: &str = "225 Headers follow\r\n";
 
 // Group and list responses
 pub const RESP_211_GROUP: &str = "211";
+pub const RESP_211_LISTGROUP: &str = "211 article numbers follow\r\n";
 pub const RESP_215_LIST_FOLLOWS: &str = "215 list of newsgroups follows\r\n";
+pub const RESP_215_DESCRIPTIONS: &str = "215 descriptions follow\r\n";
+pub const RESP_215_INFO_FOLLOWS: &str = "215 information follows\r\n";
 pub const RESP_215_OVERVIEW_FMT: &str = "215 Order of fields in overview database.\r\n";
 pub const RESP_215_METADATA: &str = "215 metadata items supported:\r\n";
+pub const RESP_221_HEADER_FOLLOWS: &str = "221 Header follows\r\n";
 pub const RESP_230_NEWNEWS: &str = "230 list of new articles follows\r\n";
 pub const RESP_231_NEWGROUPS: &str = "231 list of new newsgroups follows\r\n";
 
@@ -52,6 +56,7 @@ pub const RESP_420_NO_CURRENT: &str = "420 no current article selected\r\n";
 pub const RESP_421_NO_NEXT: &str = "421 no next article\r\n";
 pub const RESP_422_NO_PREV: &str = "422 no previous article\r\n";
 pub const RESP_423_RANGE_EMPTY: &str = "423 no articles in that range\r\n";
+pub const RESP_423_NO_ARTICLE_NUM: &str = "423 no such article number in this group\r\n";
 pub const RESP_430_NO_ARTICLE: &str = "430 no such article\r\n";
 pub const RESP_435_NOT_WANTED: &str = "435 article not wanted\r\n";
 pub const RESP_437_REJECTED: &str = "437 article rejected\r\n";

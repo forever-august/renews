@@ -1,11 +1,11 @@
 //! Posting command handlers.
 
-use super::utils::write_simple;
+use super::utils::{read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use std::error::Error;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite};
+use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Handler for the POST command.
 pub struct PostHandler;
@@ -61,28 +61,6 @@ impl CommandHandler for PostHandler {
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
         Ok(())
     }
-}
-
-/// Read a message from the reader until dot termination.
-async fn read_message<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let mut msg = String::new();
-    let mut line = String::new();
-
-    loop {
-        line.clear();
-        reader.read_line(&mut line).await?;
-        if line == ".\r\n" || line == ".\n" {
-            break;
-        }
-        if line.starts_with("..") {
-            msg.push_str(&line[1..]);
-        } else {
-            msg.push_str(&line);
-        }
-    }
-    Ok(msg)
 }
 
 /// Validate an article for posting.

@@ -1,6 +1,6 @@
 //! Group and listing command handlers.
 
-use super::utils::{write_simple, write_lines};
+use super::utils::{write_lines, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{parse_datetime, wildmat};
@@ -96,7 +96,7 @@ impl CommandHandler for ListGroupHandler {
         };
 
         let nums = ctx.storage.list_article_numbers(&group_name).await?;
-        write_simple(&mut ctx.writer, "211 article numbers follow\r\n").await?;
+        write_simple(&mut ctx.writer, RESP_211_LISTGROUP).await?;
 
         for num in nums {
             ctx.writer
@@ -267,7 +267,7 @@ where
     W: AsyncWrite + Unpin,
 {
     let groups = ctx.storage.list_groups().await?;
-    write_simple(&mut ctx.writer, "215 descriptions follow\r\n").await?;
+    write_simple(&mut ctx.writer, RESP_215_DESCRIPTIONS).await?;
 
     for group in groups {
         ctx.writer
@@ -285,7 +285,7 @@ where
     W: AsyncWrite + Unpin,
 {
     let groups_with_times = ctx.storage.list_groups_with_times().await?;
-    write_simple(&mut ctx.writer, "215 information follows\r\n").await?;
+    write_simple(&mut ctx.writer, RESP_215_INFO_FOLLOWS).await?;
 
     for (group, time) in groups_with_times {
         ctx.writer
@@ -326,7 +326,13 @@ where
 {
     write_lines(
         &mut ctx.writer,
-        &[RESP_215_METADATA, RESP_COLON, RESP_LINES, RESP_BYTES, RESP_DOT_CRLF],
+        &[
+            RESP_215_METADATA,
+            RESP_COLON,
+            RESP_LINES,
+            RESP_BYTES,
+            RESP_DOT_CRLF,
+        ],
     )
     .await
 }

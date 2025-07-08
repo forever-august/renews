@@ -94,7 +94,7 @@ impl CommandHandler for XPatHandler {
         let values =
             collect_header_values(&ctx.storage, &ctx.state, field, Some(range_or_msgid)).await?;
 
-        write_simple(&mut ctx.writer, "221 Header follows\r\n").await?;
+        write_simple(&mut ctx.writer, RESP_221_HEADER_FOLLOWS).await?;
 
         for (n, val) in values {
             if let Some(v) = val {
