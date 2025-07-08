@@ -1,15 +1,93 @@
 # Renews
 
-Renews is a minimal NNTP server implemented in Rust.  It stores articles in a
-database and supports a configurable set of newsgroups.  The server can
-optionally accept NNTP over TLS when the TLS parameters are provided.
+Renews is a modern, lightweight NNTP (Network News Transfer Protocol) server implemented in Rust. It provides a complete newsgroup server solution with a focus on performance, reliability, and ease of administration.
+
+## Overview
+
+Renews implements the NNTP protocol as defined in RFC 3977, storing articles in a database and supporting configurable newsgroups with flexible retention policies. The server is designed for both standalone operation and distributed newsgroup synchronization with peer servers.
+
+## Features
+
+• **Full NNTP Protocol Support** - RFC 3977 compliant with standard commands (ARTICLE, HEAD, BODY, POST, etc.)
+• **Multiple Storage Backends** - SQLite (default) and PostgreSQL support  
+• **TLS/SSL Support** - Secure NNTP over TLS with configurable certificates
+• **Authentication System** - User authentication with admin and moderator roles
+• **Moderated Groups** - Support for moderated newsgroups with approval workflows
+• **Peer Synchronization** - Distribute articles across multiple server instances
+• **WebSocket Bridge** - Optional WebSocket support for web-based clients
+• **Flexible Retention** - Configurable article retention policies per newsgroup
+• **Article Size Limits** - Configurable maximum article sizes per group
+• **Streaming Mode** - RFC 4644 streaming feeds support (CHECK/TAKETHIS commands)
+• **Control Messages** - Support for newgroup/rmgroup/cancel control messages
+• **Administrative CLI** - Built-in commands for user and group management
+• **Hot Configuration Reload** - Runtime configuration updates via SIGHUP
 
 ## Building
+
+### Prerequisites
+
+- Rust toolchain (latest stable recommended)
+- SQLite development libraries (for default build)
+- PostgreSQL development libraries (if using PostgreSQL backend)
+
+### Basic Build
 
 ```bash
 cargo build --release
 ```
-This produces the `renews` binary in `target/release/`.
+
+This produces the `renews` binary in `target/release/` with default features (SQLite storage).
+
+### Build with Features
+
+```bash
+# Build with WebSocket support for web clients
+cargo build --release --features websocket
+
+# Build with PostgreSQL backend support  
+cargo build --release --features postgres
+
+# Build with all features
+cargo build --release --features websocket,postgres
+```
+
+### Available Features
+
+- `websocket` - Enables WebSocket bridge for web-based NNTP clients
+- `postgres` - Adds PostgreSQL storage backend support alongside SQLite
+
+### Running Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run with specific features
+cargo test --features websocket,postgres
+```
+
+## Quick Start
+
+### Minimal Configuration
+
+Create a basic configuration file (`renews.toml`):
+
+```toml
+addr = ":119"
+site_name = "news.example.com" 
+db_path = "sqlite:///var/renews/news.db"
+auth_db_path = "sqlite:///var/renews/auth.db"
+```
+
+### Initialize and Run
+
+```bash
+# Initialize databases
+./renews --init --config renews.toml
+
+# Start the server
+./renews --config renews.toml
+```
 
 ## Configuration
 
@@ -152,3 +230,12 @@ without starting the server:
 ```bash
 renews --init --config /opt/renews/config.toml
 ```
+
+## Documentation
+
+For detailed information about Renews architecture, configuration, and deployment:
+
+- **[Architecture Guide](docs/architecture.md)** - System design and component overview
+- **[Configuration Guide](docs/configuration.md)** - Complete configuration reference  
+- **[Deployment Guide](docs/deployment.md)** - Installation and production deployment
+- **[Task Interactions](docs/task-interactions.md)** - System flows and task coordination
