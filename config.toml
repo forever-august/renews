@@ -4,6 +4,7 @@ db_path = "sqlite:///var/renews/news.db"
 auth_db_path = "sqlite:///var/renews/auth.db"
 peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
+peer_sync_schedule = "0 0 * * * *"  # Default: sync every hour
 idle_timeout_secs = 600
 tls_addr = ":563"
 tls_cert = "cert.pem"
@@ -24,4 +25,9 @@ max_article_bytes = "2M"
 [[peers]]
 sitename = "peeruser:peerpass@peer.example.com"
 patterns = ["*"]
-sync_interval_secs = 3600
+sync_schedule = "0 */30 * * * *"  # Sync every 30 minutes
+
+[[peers]]
+sitename = "daily-peer.example.com"
+patterns = ["daily.*"]
+sync_schedule = "0 0 2 * * *"  # Sync daily at 2 AM

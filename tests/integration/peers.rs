@@ -144,6 +144,6 @@ async fn peer_transfer_fast_schedule() {
 
 #[tokio::test]
 #[serial]
-async fn peer_transfer_hourly_schedule() {
-    peer_transfer_helper("0 0 * * * *").await; // Every hour
+async fn peer_transfer_default_schedule() {
+    peer_transfer_helper("*/2 * * * * *").await; // Every 2 seconds
 }

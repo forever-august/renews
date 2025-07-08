@@ -150,3 +150,26 @@ fn file_substitution() {
     let cfg = Config::from_file(cfg_path.to_str().unwrap()).unwrap();
     assert_eq!(cfg.addr, ":5050");
 }
+
+#[test]
+fn peer_cron_schedule_configuration() {
+    let cfg_str = r#"addr = ":119"
+peer_sync_schedule = "0 0 * * * *"
+[[peers]]
+sitename = "peer1.example.com"
+patterns = ["*"]
+sync_schedule = "0 */30 * * * *"
+
+[[peers]]
+sitename = "peer2.example.com"
+patterns = ["misc.*"]
+# Uses default schedule
+"#;
+    let cfg: Config = toml::from_str(cfg_str).unwrap();
+    assert_eq!(cfg.peer_sync_schedule, "0 0 * * * *");
+    assert_eq!(cfg.peers.len(), 2);
+    assert_eq!(cfg.peers[0].sitename, "peer1.example.com");
+    assert_eq!(cfg.peers[0].sync_schedule, Some("0 */30 * * * *".to_string()));
+    assert_eq!(cfg.peers[1].sitename, "peer2.example.com");
+    assert_eq!(cfg.peers[1].sync_schedule, None);
+}
