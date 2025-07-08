@@ -1,5 +1,4 @@
 /// SQL schemas and common utilities for authentication implementations.
-
 /// SQL schemas for authentication tables.
 pub mod sql {
     /// Schema for the users table (stores user credentials and PGP keys).
