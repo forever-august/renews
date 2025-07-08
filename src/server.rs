@@ -387,8 +387,13 @@ impl PeerManager {
                 let storage_clone = storage.clone();
                 let site = new_cfg.site_name.clone();
 
-                let handle =
-                    tokio::spawn(peer_task(pc, default_schedule.clone(), dbc, storage_clone, site));
+                let handle = tokio::spawn(peer_task(
+                    pc,
+                    default_schedule.clone(),
+                    dbc,
+                    storage_clone,
+                    site,
+                ));
 
                 tasks.insert(name, handle);
             }

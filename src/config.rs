@@ -1,10 +1,10 @@
 use crate::wildmat::wildmat;
 use chrono::Duration;
+use regex::Regex;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
 use std::error::Error;
 use std::fmt;
-use regex::Regex;
 
 fn default_db_path() -> String {
     "sqlite:///var/renews/news.db".into()
@@ -16,10 +16,6 @@ fn default_auth_db_path() -> String {
 
 fn default_peer_db_path() -> String {
     "sqlite:///var/renews/peers.db".into()
-}
-
-fn default_peer_sync_secs() -> u64 {
-    3600
 }
 
 fn default_peer_sync_schedule() -> String {
@@ -140,8 +136,7 @@ pub struct Config {
     pub auth_db_path: String,
     #[serde(default = "default_peer_db_path")]
     pub peer_db_path: String,
-    #[serde(default = "default_peer_sync_secs")]
-    pub peer_sync_secs: u64,
+
     #[serde(default = "default_peer_sync_schedule")]
     pub peer_sync_schedule: String,
     #[serde(default = "default_idle_timeout_secs")]
@@ -239,7 +234,7 @@ impl Config {
         self.default_retention_days = other.default_retention_days;
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
-        self.peer_sync_secs = other.peer_sync_secs;
+
         self.peer_sync_schedule = other.peer_sync_schedule;
         self.idle_timeout_secs = other.idle_timeout_secs;
         self.peers = other.peers;

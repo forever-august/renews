@@ -34,7 +34,14 @@ async fn peer_task_updates_last_sync() {
     let db_clone = db.clone();
     let storage_clone = storage.clone();
     tokio::spawn(async move {
-        peer_task(peer, "* * * * * *".to_string(), db_clone, storage_clone, "local".into()).await;
+        peer_task(
+            peer,
+            "* * * * * *".to_string(),
+            db_clone,
+            storage_clone,
+            "local".into(),
+        )
+        .await;
     });
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     let last = db.get_last_sync("127.0.0.1:9").await.unwrap();
@@ -104,7 +111,14 @@ async fn peer_transfer_helper(schedule: &str) {
     let db_clone = db.clone();
     let storage_clone = storage_a.clone();
     let peer_handle = tokio::spawn(async move {
-        peer_task(peer, "* * * * * *".to_string(), db_clone, storage_clone, "A".into()).await;
+        peer_task(
+            peer,
+            "* * * * * *".to_string(),
+            db_clone,
+            storage_clone,
+            "A".into(),
+        )
+        .await;
     });
 
     tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;

@@ -1,4 +1,7 @@
-use super::{Message, Storage, common::{Headers, extract_message_id}};
+use super::{
+    Message, Storage,
+    common::{Headers, extract_message_id},
+};
 use async_trait::async_trait;
 use sqlx::{
     PgPool, Row,
@@ -8,16 +11,14 @@ use std::error::Error;
 use std::str::FromStr;
 
 // SQL schemas for PostgreSQL storage
-const MESSAGES_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS messages (
+const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
         message_id TEXT PRIMARY KEY,
         headers TEXT,
         body TEXT,
         size BIGINT NOT NULL
     )";
 
-const GROUP_ARTICLES_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS group_articles (
+const GROUP_ARTICLES_TABLE: &str = "CREATE TABLE IF NOT EXISTS group_articles (
         group_name TEXT,
         number BIGINT,
         message_id TEXT,
@@ -26,8 +27,7 @@ const GROUP_ARTICLES_TABLE: &str =
         FOREIGN KEY(message_id) REFERENCES messages(message_id)
     )";
 
-const GROUPS_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS groups (
+const GROUPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS groups (
         name TEXT PRIMARY KEY,
         created_at BIGINT NOT NULL,
         moderated BOOLEAN NOT NULL DEFAULT FALSE
@@ -47,12 +47,12 @@ impl PostgresStorage {
             .max_connections(5)
             .connect_with(opts)
             .await?;
-        
+
         // Create database schema
         sqlx::query(MESSAGES_TABLE).execute(&pool).await?;
         sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await?;
         sqlx::query(GROUPS_TABLE).execute(&pool).await?;
-        
+
         Ok(Self { pool })
     }
 }

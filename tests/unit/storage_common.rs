@@ -1,5 +1,5 @@
-use renews::storage::common::{extract_message_id, Headers};
 use renews::Message;
+use renews::storage::common::{Headers, extract_message_id};
 
 #[test]
 fn test_extract_message_id_present() {
@@ -66,6 +66,6 @@ fn test_headers_serialization() {
     // Test that Headers can be serialized and deserialized
     let serialized = serde_json::to_string(&headers).unwrap();
     let deserialized: Headers = serde_json::from_str(&serialized).unwrap();
-    
+
     assert_eq!(headers.0, deserialized.0);
 }

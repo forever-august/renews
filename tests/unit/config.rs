@@ -28,7 +28,7 @@ fn runtime_update_preserves_immutable_fields() {
 db_path = "/tmp/db1"
 auth_db_path = "sqlite:///tmp/auth1"
 peer_db_path = "/tmp/peer1"
-peer_sync_secs = 1800
+
 idle_timeout_secs = 600
 tls_addr = ":563"
 tls_cert = "old.pem"
@@ -45,7 +45,7 @@ retention_days = 5
 db_path = "/tmp/db2"
 auth_db_path = "sqlite:///tmp/auth2"
 peer_db_path = "/tmp/peer2"
-peer_sync_secs = 3600
+
 idle_timeout_secs = 1200
 tls_addr = ":9999"
 tls_cert = "new.pem"
@@ -63,7 +63,6 @@ retention_days = 1
     assert_eq!(cfg.db_path, "/tmp/db1");
     assert_eq!(cfg.auth_db_path, "sqlite:///tmp/auth1");
     assert_eq!(cfg.peer_db_path, "/tmp/peer1");
-    assert_eq!(cfg.peer_sync_secs, 3600);
     assert_eq!(cfg.idle_timeout_secs, 1200);
     assert_eq!(cfg.tls_addr.as_deref(), Some(":563"));
     assert_eq!(cfg.tls_cert.as_deref(), Some("new.pem"));
@@ -79,7 +78,6 @@ fn default_paths() {
     assert_eq!(cfg.db_path, "sqlite:///var/renews/news.db");
     assert_eq!(cfg.auth_db_path, "sqlite:///var/renews/auth.db");
     assert_eq!(cfg.peer_db_path, "sqlite:///var/renews/peers.db");
-    assert_eq!(cfg.peer_sync_secs, 3600);
     assert_eq!(cfg.idle_timeout_secs, 600);
 }
 
@@ -137,7 +135,7 @@ fn env_substitution() {
 
 #[test]
 fn file_substitution() {
-    use std::fs::{write, File};
+    use std::fs::{File, write};
     use std::io::Write as _;
     use tempfile::tempdir;
 
@@ -169,7 +167,10 @@ patterns = ["misc.*"]
     assert_eq!(cfg.peer_sync_schedule, "0 0 * * * *");
     assert_eq!(cfg.peers.len(), 2);
     assert_eq!(cfg.peers[0].sitename, "peer1.example.com");
-    assert_eq!(cfg.peers[0].sync_schedule, Some("0 */30 * * * *".to_string()));
+    assert_eq!(
+        cfg.peers[0].sync_schedule,
+        Some("0 */30 * * * *".to_string())
+    );
     assert_eq!(cfg.peers[1].sitename, "peer2.example.com");
     assert_eq!(cfg.peers[1].sync_schedule, None);
 }

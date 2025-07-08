@@ -11,7 +11,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_cron_scheduler::{JobScheduler, Job};
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
@@ -441,7 +441,11 @@ pub async fn peer_task(
     let scheduler = match JobScheduler::new().await {
         Ok(scheduler) => scheduler,
         Err(e) => {
-            tracing::error!("Failed to create job scheduler for {}: {}", peer.sitename, e);
+            tracing::error!(
+                "Failed to create job scheduler for {}: {}",
+                peer.sitename,
+                e
+            );
             return;
         }
     };
@@ -488,7 +492,11 @@ pub async fn peer_task(
     match job {
         Ok(job) => {
             if let Err(e) = scheduler.add(job).await {
-                tracing::error!("Failed to add job to scheduler for {}: {}", peer.sitename, e);
+                tracing::error!(
+                    "Failed to add job to scheduler for {}: {}",
+                    peer.sitename,
+                    e
+                );
                 return;
             }
 

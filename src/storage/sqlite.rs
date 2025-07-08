@@ -1,19 +1,20 @@
-use super::{Message, Storage, common::{Headers, extract_message_id}};
+use super::{
+    Message, Storage,
+    common::{Headers, extract_message_id},
+};
 use async_trait::async_trait;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
 
 // SQL schemas for SQLite storage
-const MESSAGES_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS messages (
+const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
         message_id TEXT PRIMARY KEY,
         headers TEXT,
         body TEXT,
         size INTEGER NOT NULL
     )";
 
-const GROUP_ARTICLES_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS group_articles (
+const GROUP_ARTICLES_TABLE: &str = "CREATE TABLE IF NOT EXISTS group_articles (
         group_name TEXT,
         number INTEGER,
         message_id TEXT,
@@ -22,8 +23,7 @@ const GROUP_ARTICLES_TABLE: &str =
         FOREIGN KEY(message_id) REFERENCES messages(message_id)
     )";
 
-const GROUPS_TABLE: &str = 
-    "CREATE TABLE IF NOT EXISTS groups (
+const GROUPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS groups (
         name TEXT PRIMARY KEY,
         created_at INTEGER NOT NULL,
         moderated INTEGER NOT NULL DEFAULT 0
@@ -46,12 +46,12 @@ impl SqliteStorage {
             .max_connections(5)
             .connect(path)
             .await?;
-        
+
         // Create database schema
         sqlx::query(MESSAGES_TABLE).execute(&pool).await?;
         sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await?;
         sqlx::query(GROUPS_TABLE).execute(&pool).await?;
-        
+
         Ok(Self { pool })
     }
 }
