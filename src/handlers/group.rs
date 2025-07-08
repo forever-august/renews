@@ -1,6 +1,6 @@
 //! Group and listing command handlers.
 
-use super::utils::write_simple;
+use super::utils::{write_simple, write_lines};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{parse_datetime, wildmat};
@@ -118,36 +118,7 @@ impl CommandHandler for NextHandler {
         R: AsyncBufRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        if let (Some(group), Some(current)) = (
-            ctx.state.current_group.as_deref(),
-            ctx.state.current_article,
-        ) {
-            let nums = ctx.storage.list_article_numbers(group).await?;
-            if let Some(pos) = nums.iter().position(|&n| n == current) {
-                if let Some(&next_num) = nums.get(pos + 1) {
-                    if let Some(article) =
-                        ctx.storage.get_article_by_number(group, next_num).await?
-                    {
-                        ctx.state.current_article = Some(next_num);
-                        let id = super::utils::extract_message_id(&article).unwrap_or("");
-                        write_simple(
-                            &mut ctx.writer,
-                            &format!("223 {next_num} {id} article exists\r\n"),
-                        )
-                        .await?;
-                    } else {
-                        write_simple(&mut ctx.writer, RESP_421_NO_NEXT).await?;
-                    }
-                } else {
-                    write_simple(&mut ctx.writer, RESP_421_NO_NEXT).await?;
-                }
-            } else {
-                write_simple(&mut ctx.writer, RESP_421_NO_NEXT).await?;
-            }
-        } else {
-            write_simple(&mut ctx.writer, RESP_412_NO_GROUP).await?;
-        }
-        Ok(())
+        navigate_article(ctx, NavigationDirection::Next).await
     }
 }
 
@@ -160,37 +131,7 @@ impl CommandHandler for LastHandler {
         R: AsyncBufRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        if let (Some(group), Some(current)) = (
-            ctx.state.current_group.as_deref(),
-            ctx.state.current_article,
-        ) {
-            let nums = ctx.storage.list_article_numbers(group).await?;
-            if let Some(pos) = nums.iter().position(|&n| n == current) {
-                if pos > 0 {
-                    let prev_num = nums[pos - 1];
-                    if let Some(article) =
-                        ctx.storage.get_article_by_number(group, prev_num).await?
-                    {
-                        ctx.state.current_article = Some(prev_num);
-                        let id = super::utils::extract_message_id(&article).unwrap_or("");
-                        write_simple(
-                            &mut ctx.writer,
-                            &format!("223 {prev_num} {id} article exists\r\n"),
-                        )
-                        .await?;
-                    } else {
-                        write_simple(&mut ctx.writer, RESP_422_NO_PREV).await?;
-                    }
-                } else {
-                    write_simple(&mut ctx.writer, RESP_422_NO_PREV).await?;
-                }
-            } else {
-                write_simple(&mut ctx.writer, RESP_422_NO_PREV).await?;
-            }
-        } else {
-            write_simple(&mut ctx.writer, RESP_412_NO_GROUP).await?;
-        }
-        Ok(())
+        navigate_article(ctx, NavigationDirection::Previous).await
     }
 }
 
@@ -361,18 +302,21 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    ctx.writer
-        .write_all(RESP_215_OVERVIEW_FMT.as_bytes())
-        .await?;
-    ctx.writer.write_all(RESP_SUBJECT.as_bytes()).await?;
-    ctx.writer.write_all(RESP_FROM.as_bytes()).await?;
-    ctx.writer.write_all(RESP_DATE.as_bytes()).await?;
-    ctx.writer.write_all(RESP_MESSAGE_ID.as_bytes()).await?;
-    ctx.writer.write_all(RESP_REFERENCES.as_bytes()).await?;
-    ctx.writer.write_all(RESP_BYTES.as_bytes()).await?;
-    ctx.writer.write_all(RESP_LINES.as_bytes()).await?;
-    ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
-    Ok(())
+    write_lines(
+        &mut ctx.writer,
+        &[
+            RESP_215_OVERVIEW_FMT,
+            RESP_SUBJECT,
+            RESP_FROM,
+            RESP_DATE,
+            RESP_MESSAGE_ID,
+            RESP_REFERENCES,
+            RESP_BYTES,
+            RESP_LINES,
+            RESP_DOT_CRLF,
+        ],
+    )
+    .await
 }
 
 async fn handle_list_headers<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
@@ -380,10 +324,77 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    ctx.writer.write_all(RESP_215_METADATA.as_bytes()).await?;
-    ctx.writer.write_all(RESP_COLON.as_bytes()).await?;
-    ctx.writer.write_all(RESP_LINES.as_bytes()).await?;
-    ctx.writer.write_all(RESP_BYTES.as_bytes()).await?;
-    ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+    write_lines(
+        &mut ctx.writer,
+        &[RESP_215_METADATA, RESP_COLON, RESP_LINES, RESP_BYTES, RESP_DOT_CRLF],
+    )
+    .await
+}
+
+/// Navigate to the next or previous article in the current group.
+async fn navigate_article<R, W>(
+    ctx: &mut HandlerContext<R, W>,
+    direction: NavigationDirection,
+) -> HandlerResult
+where
+    R: AsyncBufRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let (group, current) = match (&ctx.state.current_group, ctx.state.current_article) {
+        (Some(group), Some(current)) => (group.as_str(), current),
+        _ => {
+            write_simple(&mut ctx.writer, RESP_412_NO_GROUP).await?;
+            return Ok(());
+        }
+    };
+
+    let nums = ctx.storage.list_article_numbers(group).await?;
+    let pos = match nums.iter().position(|&n| n == current) {
+        Some(pos) => pos,
+        None => {
+            let response = match direction {
+                NavigationDirection::Next => RESP_421_NO_NEXT,
+                NavigationDirection::Previous => RESP_422_NO_PREV,
+            };
+            write_simple(&mut ctx.writer, response).await?;
+            return Ok(());
+        }
+    };
+
+    let new_pos = match direction {
+        NavigationDirection::Next => pos + 1,
+        NavigationDirection::Previous => pos.saturating_sub(1),
+    };
+
+    if let Some(&new_num) = nums.get(new_pos) {
+        if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await? {
+            ctx.state.current_article = Some(new_num);
+            let id = super::utils::extract_message_id(&article).unwrap_or("");
+            write_simple(
+                &mut ctx.writer,
+                &format!("223 {new_num} {id} article exists\r\n"),
+            )
+            .await?;
+        } else {
+            let response = match direction {
+                NavigationDirection::Next => RESP_421_NO_NEXT,
+                NavigationDirection::Previous => RESP_422_NO_PREV,
+            };
+            write_simple(&mut ctx.writer, response).await?;
+        }
+    } else {
+        let response = match direction {
+            NavigationDirection::Next => RESP_421_NO_NEXT,
+            NavigationDirection::Previous => RESP_422_NO_PREV,
+        };
+        write_simple(&mut ctx.writer, response).await?;
+    }
+
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NavigationDirection {
+    Next,
+    Previous,
 }

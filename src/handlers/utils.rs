@@ -162,6 +162,84 @@ pub async fn resolve_articles(
     Ok(articles)
 }
 
+/// Article operation types.
+#[derive(Debug, Clone, Copy)]
+pub enum ArticleOperation {
+    Full,    // ARTICLE command - send headers + body
+    Headers, // HEAD command - send headers only
+    Body,    // BODY command - send body only
+    Stat,    // STAT command - send status only
+}
+
+impl ArticleOperation {
+    pub fn response_code(&self) -> u16 {
+        match self {
+            ArticleOperation::Full => 220,
+            ArticleOperation::Headers => 221,
+            ArticleOperation::Body => 222,
+            ArticleOperation::Stat => 223,
+        }
+    }
+
+    pub fn response_suffix(&self) -> &'static str {
+        match self {
+            ArticleOperation::Full => "article follows",
+            ArticleOperation::Headers => "article headers follow",
+            ArticleOperation::Body => "article body follows",
+            ArticleOperation::Stat => "article exists",
+        }
+    }
+}
+
+/// Generic handler for article operations (ARTICLE, HEAD, BODY, STAT).
+pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    storage: &DynStorage,
+    state: &mut ConnectionState,
+    args: &[String],
+    operation: ArticleOperation,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    use crate::responses::*;
+
+    match resolve_articles(storage, state, args.first().map(String::as_str)).await {
+        Ok(articles) => {
+            for (num, article) in articles {
+                let id = extract_message_id(&article).unwrap_or("");
+                let response = format!(
+                    "{} {} {} {}\r\n",
+                    operation.response_code(),
+                    num,
+                    id,
+                    operation.response_suffix()
+                );
+                write_simple(writer, &response).await?;
+
+                match operation {
+                    ArticleOperation::Full => {
+                        send_headers(writer, &article).await?;
+                        writer.write_all(RESP_CRLF.as_bytes()).await?;
+                        send_body(writer, &article.body).await?;
+                        writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+                    }
+                    ArticleOperation::Headers => {
+                        send_headers(writer, &article).await?;
+                        writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+                    }
+                    ArticleOperation::Body => {
+                        send_body(writer, &article.body).await?;
+                        writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+                    }
+                    ArticleOperation::Stat => {
+                        // STAT just sends the status line, no content
+                    }
+                }
+            }
+        }
+        Err(error) => handle_article_error(writer, error).await?,
+    }
+    Ok(())
+}
+
 /// Handle errors from article queries consistently.
 pub async fn handle_article_error<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -188,6 +266,36 @@ pub async fn handle_article_error<W: AsyncWrite + Unpin>(
         ArticleQueryError::NoCurrentArticle => {
             write_simple(writer, RESP_420_NO_CURRENT).await?;
         }
+    }
+    Ok(())
+}
+
+/// Write a response with header values.
+pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    response: &str,
+    values: &[(u64, Option<String>)],
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    writer.write_all(response.as_bytes()).await?;
+    for (n, val) in values {
+        if let Some(v) = val {
+            writer.write_all(format!("{n} {v}\r\n").as_bytes()).await?;
+        } else {
+            writer.write_all(format!("{n}\r\n").as_bytes()).await?;
+        }
+    }
+    use crate::responses::RESP_DOT_CRLF;
+    writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+    Ok(())
+}
+
+/// Write multiple response lines to the writer.
+pub async fn write_lines<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    lines: &[&str],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    for line in lines {
+        writer.write_all(line.as_bytes()).await?;
     }
     Ok(())
 }
