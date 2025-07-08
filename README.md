@@ -32,6 +32,7 @@ following keys are recognised:
 - `peer_db_path` - connection string for the peer state database. Defaults to
   `sqlite:///var/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
+- `idle_timeout_secs` - idle timeout in seconds for client connections. Defaults to 600 (10 minutes).
 - `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. The `sitename` may include credentials in the form `user:pass@host:port` which are used for `AUTHINFO` when connecting.
 - `tls_addr` - optional listen address for NNTP over TLS. Omitting the host
   portion listens on all interfaces.
@@ -59,6 +60,7 @@ db_path = "sqlite:///var/renews/news.db"
 auth_db_path = "sqlite:///var/renews/auth.db"
 peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
+idle_timeout_secs = 600
 tls_addr = ":563"
 tls_cert = "cert.pem"
 tls_key = "key.pem"
