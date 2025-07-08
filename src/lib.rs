@@ -33,6 +33,7 @@ use crate::handlers::{HandlerContext, dispatch_command};
 use crate::storage::DynStorage;
 use std::error::Error;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -83,7 +84,26 @@ where
     let mut line = String::new();
     loop {
         line.clear();
-        let n = ctx.reader.read_line(&mut line).await?;
+        
+        // Get the current idle timeout from config
+        let timeout_duration = {
+            let cfg_guard = ctx.config.read().await;
+            Duration::from_secs(cfg_guard.idle_timeout_secs)
+        };
+
+        // Apply timeout to the read operation
+        let read_result = tokio::time::timeout(timeout_duration, ctx.reader.read_line(&mut line)).await;
+        
+        let n = match read_result {
+            Ok(Ok(n)) => n,
+            Ok(Err(e)) => return Err(e.into()),
+            Err(_) => {
+                // Timeout occurred
+                debug!("Connection timed out after {} seconds", timeout_duration.as_secs());
+                break;
+            }
+        };
+        
         if n == 0 {
             break;
         }

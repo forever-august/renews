@@ -22,6 +22,10 @@ fn default_peer_sync_secs() -> u64 {
     3600
 }
 
+fn default_idle_timeout_secs() -> u64 {
+    600
+}
+
 fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
@@ -134,6 +138,8 @@ pub struct Config {
     pub peer_db_path: String,
     #[serde(default = "default_peer_sync_secs")]
     pub peer_sync_secs: u64,
+    #[serde(default = "default_idle_timeout_secs")]
+    pub idle_timeout_secs: u64,
     #[serde(default)]
     pub peers: Vec<PeerRule>,
     #[serde(default)]
@@ -228,6 +234,7 @@ impl Config {
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
         self.peer_sync_secs = other.peer_sync_secs;
+        self.idle_timeout_secs = other.idle_timeout_secs;
         self.peers = other.peers;
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
