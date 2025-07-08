@@ -17,7 +17,7 @@ async fn cancel_key_allows_cancel() {
         "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
     let (_, msg) = parse_message(&orig).unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     let cancel = format!(
         "Message-ID: <c@test>\r\nNewsgroups: misc.test\r\nControl: cancel <a@test>\r\nCancel-Key: sha256:{key_b64}\r\n\r\n.\r\n"

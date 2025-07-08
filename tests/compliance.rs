@@ -38,8 +38,10 @@ fn help_lines() -> Vec<String> {
 async fn head_and_list_commands() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: T\r\n\r\nBody").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nSubject: T\r\nNewsgroups: misc\r\n\r\nBody")
+            .unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
@@ -50,6 +52,7 @@ async fn head_and_list_commands() {
                 "221 1 <1@test> article headers follow",
                 "Message-ID: <1@test>",
                 "Subject: T",
+                "Newsgroups: misc",
                 ".",
             ],
         )
@@ -66,10 +69,10 @@ async fn head_and_list_commands() {
 async fn listgroup_and_navigation_commands() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
-    storage.store_article("misc", &m1).await.unwrap();
-    storage.store_article("misc", &m2).await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nNewsgroups: misc\r\n\r\nB").unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
 
     let future = Utc::now() + Duration::seconds(1);
     let date = future.format("%Y%m%d");
@@ -87,6 +90,7 @@ async fn listgroup_and_navigation_commands() {
             vec![
                 "221 1 <1@test> article headers follow",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc",
                 ".",
             ],
         )
@@ -138,8 +142,8 @@ async fn capabilities_and_misc_commands() {
 async fn no_group_returns_412() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
@@ -153,8 +157,8 @@ async fn no_group_returns_412() {
 async fn responses_include_number_and_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
@@ -164,6 +168,7 @@ async fn responses_include_number_and_id() {
             vec![
                 "221 1 <1@test> article headers follow",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc",
                 ".",
             ],
         )
@@ -177,6 +182,7 @@ async fn responses_include_number_and_id() {
             vec![
                 "220 1 <1@test> article follows",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc",
                 "",
                 "Body",
                 ".",
@@ -213,8 +219,10 @@ async fn post_and_dot_stuffing() {
 async fn body_returns_proper_crlf() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nline1\r\nline2\r\n").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nline1\r\nline2\r\n")
+            .unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
@@ -246,8 +254,8 @@ async fn newgroups_accepts_gmt_argument() {
 async fn newnews_accepts_gmt_argument() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc", &msg).await.unwrap();
+    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     ClientMock::new()
         .expect("MODE READER", "201 Posting prohibited")
@@ -516,8 +524,9 @@ async fn group_select_returns_211() {
 async fn article_success_by_number() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect_multi(
@@ -525,6 +534,7 @@ async fn article_success_by_number() {
             vec![
                 "220 1 <1@test> article follows",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 "",
                 "Body",
                 ".",
@@ -538,14 +548,16 @@ async fn article_success_by_number() {
 async fn article_success_by_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "ARTICLE <1@test>",
             vec![
                 "220 0 <1@test> article follows",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 "",
                 "Body",
                 ".",
@@ -578,8 +590,9 @@ async fn article_number_no_group() {
 async fn head_success_by_number() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect_multi(
@@ -587,6 +600,7 @@ async fn head_success_by_number() {
             vec![
                 "221 1 <1@test> article headers follow",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 ".",
             ],
         )
@@ -598,14 +612,16 @@ async fn head_success_by_number() {
 async fn head_success_by_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "HEAD <1@test>",
             vec![
                 "221 0 <1@test> article headers follow",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 ".",
             ],
         )
@@ -617,8 +633,9 @@ async fn head_success_by_id() {
 async fn head_number_not_found() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect("HEAD 2", "423 no such article number in this group")
@@ -651,8 +668,9 @@ async fn head_no_current_article_selected() {
 async fn body_success_by_number() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect_multi(
@@ -667,8 +685,9 @@ async fn body_success_by_number() {
 async fn body_success_by_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "BODY <1@test>",
@@ -682,8 +701,9 @@ async fn body_success_by_id() {
 async fn body_number_not_found() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect("BODY 2", "423 no such article number in this group")
@@ -714,8 +734,9 @@ async fn body_number_no_group() {
 async fn stat_success_by_number() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect("STAT 1", "223 1 <1@test> article exists")
@@ -727,8 +748,9 @@ async fn stat_success_by_number() {
 async fn stat_success_by_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("STAT <1@test>", "223 0 <1@test> article exists")
         .run(storage, auth)
@@ -739,8 +761,9 @@ async fn stat_success_by_id() {
 async fn stat_number_not_found() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 1 1 1 misc.test")
         .expect("STAT 2", "423 no such article number in this group")
@@ -771,8 +794,9 @@ async fn stat_number_no_group() {
 async fn listgroup_returns_numbers() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "LISTGROUP misc.test",
@@ -862,8 +886,9 @@ async fn list_all_keywords() {
 async fn newnews_lists_recent_articles() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "NEWNEWS misc.test 19700101 000000",
@@ -877,8 +902,9 @@ async fn newnews_lists_recent_articles() {
 async fn newnews_no_matches_returns_empty() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nBody").unwrap();
+    storage.store_article(&msg).await.unwrap();
     use chrono::{Duration, Utc};
     let future = Utc::now() + Duration::seconds(1);
     let date = future.format("%Y%m%d");
@@ -896,8 +922,11 @@ async fn newnews_no_matches_returns_empty() {
 async fn hdr_subject_by_message_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) = parse_message(
+        "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: Hello\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "HDR Subject <1@test>",
@@ -911,10 +940,14 @@ async fn hdr_subject_by_message_id() {
 async fn hdr_subject_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: A\r\n\r\nBody").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: B\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) =
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: A\r\n\r\nBody")
+            .unwrap();
+    let (_, m2) =
+        parse_message("Message-ID: <2@test>\r\nNewsgroups: misc.test\r\nSubject: B\r\n\r\nBody")
+            .unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -930,15 +963,16 @@ async fn hdr_all_headers_message_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let (_, msg) =
-        parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody")
+        parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: Hello\r\nFrom: a@test\r\n\r\nBody")
             .unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "HDR : <1@test>",
             vec![
                 "225 Headers follow",
                 "0 Message-ID: <1@test>",
+                "0 Newsgroups: misc.test",
                 "0 Subject: Hello",
                 "0 From: a@test",
                 ".",
@@ -952,8 +986,11 @@ async fn hdr_all_headers_message_id() {
 async fn xpat_subject_message_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\nSubject: Hello\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) = parse_message(
+        "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: Hello\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "XPAT Subject <1@test> *ell*",
@@ -967,10 +1004,16 @@ async fn xpat_subject_message_id() {
 async fn xpat_subject_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\nSubject: apple\r\n\r\nBody").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\nSubject: banana\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) = parse_message(
+        "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: apple\r\n\r\nBody",
+    )
+    .unwrap();
+    let (_, m2) = parse_message(
+        "Message-ID: <2@test>\r\nNewsgroups: misc.test\r\nSubject: banana\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -985,9 +1028,11 @@ async fn xpat_subject_range() {
 async fn over_message_id() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, msg) =
-        parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    let (_, msg) = parse_message(
+        "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article(&msg).await.unwrap();
     ClientMock::new()
         .expect_multi(
             "OVER <1@test>",
@@ -1005,12 +1050,16 @@ async fn over_message_id() {
 async fn over_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) =
-        parse_message("Message-ID: <1@test>\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody").unwrap();
-    let (_, m2) =
-        parse_message("Message-ID: <2@test>\r\nSubject: B\r\nFrom: b@test\r\n\r\nBody").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) = parse_message(
+        "Message-ID: <1@test>\r\nNewsgroups: misc.test\r\nSubject: A\r\nFrom: a@test\r\n\r\nBody",
+    )
+    .unwrap();
+    let (_, m2) = parse_message(
+        "Message-ID: <2@test>\r\nNewsgroups: misc.test\r\nSubject: B\r\nFrom: b@test\r\n\r\nBody",
+    )
+    .unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -1030,10 +1079,10 @@ async fn over_range() {
 async fn head_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nNewsgroups: misc.test\r\n\r\nB").unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -1041,9 +1090,11 @@ async fn head_range() {
             vec![
                 "221 1 <1@test> article headers follow",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 ".",
                 "221 2 <2@test> article headers follow",
                 "Message-ID: <2@test>",
+                "Newsgroups: misc.test",
                 ".",
             ],
         )
@@ -1055,10 +1106,10 @@ async fn head_range() {
 async fn body_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nNewsgroups: misc.test\r\n\r\nB").unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -1080,10 +1131,10 @@ async fn body_range() {
 async fn article_range() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, m1) = parse_message("Message-ID: <1@test>\r\n\r\nA").unwrap();
-    let (_, m2) = parse_message("Message-ID: <2@test>\r\n\r\nB").unwrap();
-    storage.store_article("misc.test", &m1).await.unwrap();
-    storage.store_article("misc.test", &m2).await.unwrap();
+    let (_, m1) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc.test\r\n\r\nA").unwrap();
+    let (_, m2) = parse_message("Message-ID: <2@test>\r\nNewsgroups: misc.test\r\n\r\nB").unwrap();
+    storage.store_article(&m1).await.unwrap();
+    storage.store_article(&m2).await.unwrap();
     ClientMock::new()
         .expect("GROUP misc.test", "211 2 1 2 misc.test")
         .expect_multi(
@@ -1091,11 +1142,13 @@ async fn article_range() {
             vec![
                 "220 1 <1@test> article follows",
                 "Message-ID: <1@test>",
+                "Newsgroups: misc.test",
                 "",
                 "A",
                 ".",
                 "220 2 <2@test> article follows",
                 "Message-ID: <2@test>",
+                "Newsgroups: misc.test",
                 "",
                 "B",
                 ".",
@@ -1108,12 +1161,12 @@ async fn article_range() {
 #[tokio::test]
 async fn ihave_example() {
     let (storage, auth) = utils::setup().await;
-    storage.add_group("misc.test", false).await.unwrap();
+    storage.add_group("misc.test.test", false).await.unwrap();
 
     let article = concat!(
         "Path: pathost!demo!somewhere!not-for-mail\r\n",
         "From: \"Demo User\" <nobody@example.com>\r\n",
-        "Newsgroups: misc.test\r\n",
+        "Newsgroups: misc.test.test\r\n",
         "Subject: I am just a test article\r\n",
         "Date: 6 Oct 1998 04:38:40 -0500\r\n",
         "Organization: An Example Com, San Jose, CA\r\n",
@@ -1143,18 +1196,18 @@ async fn ihave_example() {
 #[tokio::test]
 async fn takethis_example() {
     let (storage, auth) = utils::setup().await;
-    storage.add_group("misc.test", false).await.unwrap();
+    storage.add_group("misc.test.test", false).await.unwrap();
     let (_, exist) = parse_message(
-        "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test\r\n\r\nBody",
+        "Message-ID: <i.am.an.article.you.have@example.com>\r\nNewsgroups: misc.test.test\r\n\r\nBody",
     )
     .unwrap();
-    storage.store_article("misc.test", &exist).await.unwrap();
+    storage.store_article(&exist).await.unwrap();
 
     let take_article = concat!(
         "TAKETHIS <i.am.an.article.new@example.com>\r\n",
         "Path: pathost!demo!somewhere!not-for-mail\r\n",
         "From: \"Demo User\" <nobody@example.com>\r\n",
-        "Newsgroups: misc.test\r\n",
+        "Newsgroups: misc.test.test\r\n",
         "Subject: I am just a test article\r\n",
         "Date: 6 Oct 1998 04:38:40 -0500\r\n",
         "Organization: An Example Com, San Jose, CA\r\n",
@@ -1168,7 +1221,7 @@ async fn takethis_example() {
         "TAKETHIS <i.am.an.article.you.have@example.com>\r\n",
         "Path: pathost!demo!somewhere!not-for-mail\r\n",
         "From: \"Demo User\" <nobody@example.com>\r\n",
-        "Newsgroups: misc.test\r\n",
+        "Newsgroups: misc.test.test\r\n",
         "Subject: I am just a test article\r\n",
         "Date: 6 Oct 1998 04:38:40 -0500\r\n",
         "Organization: An Example Com, San Jose, CA\r\n",
@@ -1193,7 +1246,7 @@ async fn takethis_example() {
 #[tokio::test]
 async fn mode_stream_check_and_takethis() {
     let (storage, auth) = utils::setup().await;
-    storage.add_group("misc.test", false).await.unwrap();
+    storage.add_group("misc.test.test", false).await.unwrap();
     ClientMock::new()
         .expect("MODE STREAM", "203 Streaming permitted")
         .expect("CHECK <stream1@test>", "238 <stream1@test>")
@@ -1202,7 +1255,7 @@ async fn mode_stream_check_and_takethis() {
             utils::request_lines(
                 concat!(
                     "TAKETHIS <stream1@test>\r\n",
-                    "Newsgroups: misc.test\r\n",
+                    "Newsgroups: misc.test.test\r\n",
                     "From: a@test\r\n",
                     "Subject: one\r\n",
                     "Message-ID: <stream1@test>\r\n",
@@ -1218,7 +1271,7 @@ async fn mode_stream_check_and_takethis() {
             utils::request_lines(
                 concat!(
                     "TAKETHIS <stream2@test>\r\n",
-                    "Newsgroups: misc.test\r\n",
+                    "Newsgroups: misc.test.test\r\n",
                     "From: b@test\r\n",
                     "Subject: two\r\n",
                     "Message-ID: <stream2@test>\r\n",

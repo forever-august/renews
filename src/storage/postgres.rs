@@ -73,13 +73,11 @@ impl PostgresStorage {
 #[async_trait]
 impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
-    async fn store_article(
-        &self,
-        group: &str,
-        article: &Message,
-    ) -> Result<u64, Box<dyn Error + Send + Sync>> {
+    async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>> {
         let msg_id = Self::message_id(article).ok_or("missing Message-ID")?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
+
+        // Store the message once
         sqlx::query(
             "INSERT INTO messages (message_id, headers, body, size) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
         )
@@ -89,23 +87,43 @@ impl Storage for PostgresStorage {
         .bind(i64::try_from(article.body.len()).unwrap_or(i64::MAX))
         .execute(&self.pool)
         .await?;
-        let next: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(number),0)+1 FROM group_articles WHERE group_name = $1",
-        )
-        .bind(group)
-        .fetch_one(&self.pool)
-        .await?;
+
+        // Extract newsgroups from headers
+        let newsgroups: Vec<String> = article
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+            .map(|(_, v)| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        // Associate with each group
         let now = chrono::Utc::now().timestamp();
-        sqlx::query(
-            "INSERT INTO group_articles (group_name, number, message_id, inserted_at) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(group)
-        .bind(next)
-        .bind(&msg_id)
-        .bind(now)
-        .execute(&self.pool)
-        .await?;
-        Ok(u64::try_from(next).unwrap_or(0))
+        for group in newsgroups {
+            let next: i64 = sqlx::query_scalar(
+                "SELECT COALESCE(MAX(number),0)+1 FROM group_articles WHERE group_name = $1",
+            )
+            .bind(&group)
+            .fetch_one(&self.pool)
+            .await?;
+
+            sqlx::query(
+                "INSERT INTO group_articles (group_name, number, message_id, inserted_at) VALUES ($1, $2, $3, $4)",
+            )
+            .bind(&group)
+            .bind(next)
+            .bind(&msg_id)
+            .bind(now)
+            .execute(&self.pool)
+            .await?;
+        }
+
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]

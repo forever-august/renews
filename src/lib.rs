@@ -1213,13 +1213,11 @@ where
     parse::ensure_date(&mut message);
     parse::escape_message_id_header(&mut message);
     let size = msg.len() as u64;
-    let Ok(newsgroups) = validate_article(storage, auth, cfg, &message, size).await else {
+    let Ok(_) = validate_article(storage, auth, cfg, &message, size).await else {
         writer.write_all(RESP_441_POSTING_FAILED.as_bytes()).await?;
         return Ok(());
     };
-    for g in newsgroups {
-        let _ = storage.store_article(&g, &message).await?;
-    }
+    storage.store_article(&message).await?;
     writer
         .write_all(RESP_240_ARTICLE_RECEIVED.as_bytes())
         .await?;
@@ -1252,7 +1250,7 @@ async fn validate_article(
     cfg: &Config,
     article: &Message,
     size: u64,
-) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let has_from = article
         .headers
         .iter()
@@ -1350,7 +1348,7 @@ async fn validate_article(
             control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest).await?;
         }
     }
-    Ok(newsgroups)
+    Ok(())
 }
 
 /// Handle the IHAVE command as defined in RFC 3977 Section 6.3.2.
@@ -1386,13 +1384,11 @@ where
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.len() as u64;
-        let Ok(newsgroups) = validate_article(storage, auth, cfg, &article, size).await else {
+        let Ok(_) = validate_article(storage, auth, cfg, &article, size).await else {
             writer.write_all(RESP_437_REJECTED.as_bytes()).await?;
             return Ok(());
         };
-        for g in newsgroups {
-            let _ = storage.store_article(&g, &article).await?;
-        }
+        storage.store_article(&article).await?;
         writer.write_all(RESP_235_TRANSFER_OK.as_bytes()).await?;
     } else {
         writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;
@@ -1452,13 +1448,11 @@ where
         parse::ensure_date(&mut article);
         parse::escape_message_id_header(&mut article);
         let size = msg.len() as u64;
-        let Ok(newsgroups) = validate_article(storage, auth, cfg, &article, size).await else {
+        let Ok(_) = validate_article(storage, auth, cfg, &article, size).await else {
             writer.write_all(format!("439 {id}\r\n").as_bytes()).await?;
             return Ok(());
         };
-        for g in newsgroups {
-            let _ = storage.store_article(&g, &article).await?;
-        }
+        storage.store_article(&article).await?;
         writer.write_all(format!("239 {id}\r\n").as_bytes()).await?;
     } else {
         writer.write_all(RESP_501_MSGID_REQUIRED.as_bytes()).await?;

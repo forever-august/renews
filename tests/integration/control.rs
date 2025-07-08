@@ -82,7 +82,7 @@ async fn control_cancel_removes_article() {
         "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nFrom: u@test\r\nSubject: t\r\n\r\nBody",
     )
     .unwrap();
-    storage.store_article("misc.test", &art).await.unwrap();
+    storage.store_article(&art).await.unwrap();
     auth.add_user("admin@example.org", "x").await.unwrap();
     auth.add_admin("admin@example.org", ADMIN_PUB)
         .await
@@ -121,7 +121,7 @@ async fn admin_cancel_ignores_lock() {
         "Message-ID: <al@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
     let (_, msg) = parse_message(&orig).unwrap();
-    storage.store_article("misc.test", &msg).await.unwrap();
+    storage.store_article(&msg).await.unwrap();
 
     // admin setup
     auth.add_user("admin@example.org", "x").await.unwrap();

@@ -5,12 +5,8 @@ use std::sync::Arc;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
-    /// Store `article` in `group` returning the assigned article number
-    async fn store_article(
-        &self,
-        group: &str,
-        article: &Message,
-    ) -> Result<u64, Box<dyn Error + Send + Sync>>;
+    /// Store `article` and associate it with all groups specified in the Newsgroups header
+    async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Retrieve an article by group name and article number
     async fn get_article_by_number(

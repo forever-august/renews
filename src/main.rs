@@ -2,7 +2,7 @@ use std::error::Error;
 
 use clap::{Parser, Subcommand};
 
-use renews::auth::{self, AuthProvider};
+use renews::auth;
 use renews::config::Config;
 use renews::server;
 use renews::storage;
