@@ -5,6 +5,11 @@ auth_db_path = "sqlite:///var/renews/auth.db"
 peer_db_path = "sqlite:///var/renews/peers.db"
 peer_sync_secs = 3600
 idle_timeout_secs = 600
+
+# Article queue configuration
+# article_queue_capacity = 1000    # Maximum articles in queue (default: 1000)
+# article_worker_count = 4         # Number of worker threads (default: 4)
+
 tls_addr = ":563"
 tls_cert = "cert.pem"
 tls_key = "key.pem"

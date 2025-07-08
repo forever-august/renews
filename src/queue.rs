@@ -134,11 +134,9 @@ async fn process_article(
     let article = &queued_article.message;
     
     // Handle control messages first
-    if queued_article.is_control {
-        if crate::control::handle_control(article, storage, auth).await? {
-            debug!("Processed control message");
-            return Ok(());
-        }
+    if queued_article.is_control && crate::control::handle_control(article, storage, auth).await? {
+        debug!("Processed control message");
+        return Ok(());
     }
 
     // Perform comprehensive validation
