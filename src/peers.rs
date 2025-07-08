@@ -12,7 +12,7 @@ use tokio_rustls::{
 
 use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
-use crate::{Message, extract_message_id, send_body, send_headers, write_simple};
+use crate::{Message, handlers::utils::{extract_message_id, send_body, send_headers, write_simple}};
 
 fn parse_host_port(addr: &str, default_port: u16) -> (String, u16, Option<(String, String)>) {
     let (creds, host_port) = if let Some((c, rest)) = addr.rsplit_once('@') {
