@@ -27,7 +27,6 @@ pub trait AuthProvider: Send + Sync {
 
 pub type DynAuth = Arc<dyn AuthProvider>;
 
-mod common;
 pub mod sqlite;
 #[cfg(feature = "postgres")]
 pub mod postgres;

@@ -1,4 +1,4 @@
-use super::{AuthProvider, Error, async_trait, common::sql};
+use super::{AuthProvider, Error, async_trait};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::{
@@ -6,6 +6,26 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
 };
 use std::str::FromStr;
+
+// SQL schemas for PostgreSQL authentication
+const USERS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        key TEXT
+    )";
+
+const ADMINS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS admins (
+        username TEXT PRIMARY KEY REFERENCES users(username)
+    )";
+
+const MODERATORS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS moderators (
+        username TEXT REFERENCES users(username),
+        pattern TEXT,
+        PRIMARY KEY(username, pattern)
+    )";
 
 #[derive(Clone)]
 pub struct PostgresAuth {
@@ -22,9 +42,9 @@ impl PostgresAuth {
             .await?;
         
         // Create authentication schema
-        sqlx::query(sql::USERS_TABLE_POSTGRES).execute(&pool).await?;
-        sqlx::query(sql::ADMINS_TABLE_POSTGRES).execute(&pool).await?;
-        sqlx::query(sql::MODERATORS_TABLE_POSTGRES).execute(&pool).await?;
+        sqlx::query(USERS_TABLE).execute(&pool).await?;
+        sqlx::query(ADMINS_TABLE).execute(&pool).await?;
+        sqlx::query(MODERATORS_TABLE).execute(&pool).await?;
         
         Ok(Self { pool })
     }

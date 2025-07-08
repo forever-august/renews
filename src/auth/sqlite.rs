@@ -1,7 +1,27 @@
-use super::{AuthProvider, Error, async_trait, common::sql};
+use super::{AuthProvider, Error, async_trait};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+
+// SQL schemas for SQLite authentication
+const USERS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        password_hash TEXT NOT NULL,
+        key TEXT
+    )";
+
+const ADMINS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS admins (
+        username TEXT PRIMARY KEY REFERENCES users(username)
+    )";
+
+const MODERATORS_TABLE: &str = 
+    "CREATE TABLE IF NOT EXISTS moderators (
+        username TEXT REFERENCES users(username),
+        pattern TEXT,
+        PRIMARY KEY(username, pattern)
+    )";
 
 #[derive(Clone)]
 pub struct SqliteAuth {
@@ -21,9 +41,9 @@ impl SqliteAuth {
             .await?;
         
         // Create authentication schema
-        sqlx::query(sql::USERS_TABLE_SQLITE).execute(&pool).await?;
-        sqlx::query(sql::ADMINS_TABLE_SQLITE).execute(&pool).await?;
-        sqlx::query(sql::MODERATORS_TABLE_SQLITE).execute(&pool).await?;
+        sqlx::query(USERS_TABLE).execute(&pool).await?;
+        sqlx::query(ADMINS_TABLE).execute(&pool).await?;
+        sqlx::query(MODERATORS_TABLE).execute(&pool).await?;
         
         Ok(Self { pool })
     }
