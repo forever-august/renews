@@ -1,6 +1,5 @@
-use super::{Message, Storage};
+use super::{Message, Storage, common::{Headers, extract_message_id, sql}};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use sqlx::{
     PgPool, Row,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -13,9 +12,6 @@ pub struct PostgresStorage {
     pool: PgPool,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Headers(Vec<(String, String)>);
-
 impl PostgresStorage {
     #[tracing::instrument(skip_all)]
     /// Create a new Postgres storage backend.
@@ -25,48 +21,13 @@ impl PostgresStorage {
             .max_connections(5)
             .connect_with(opts)
             .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS messages (\
-                message_id TEXT PRIMARY KEY,\
-                headers TEXT,\
-                body TEXT,\
-                size BIGINT NOT NULL\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS group_articles (\
-                group_name TEXT,\
-                number BIGINT,\
-                message_id TEXT,\
-                inserted_at BIGINT NOT NULL,\
-                PRIMARY KEY(group_name, number),\
-                FOREIGN KEY(message_id) REFERENCES messages(message_id)\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS groups (\
-                name TEXT PRIMARY KEY,\
-                created_at BIGINT NOT NULL,\
-                moderated BOOLEAN NOT NULL DEFAULT FALSE\
-            )",
-        )
-        .execute(&pool)
-        .await?;
+        
+        // Create database schema
+        sqlx::query(sql::MESSAGES_TABLE_POSTGRES).execute(&pool).await?;
+        sqlx::query(sql::GROUP_ARTICLES_TABLE_POSTGRES).execute(&pool).await?;
+        sqlx::query(sql::GROUPS_TABLE_POSTGRES).execute(&pool).await?;
+        
         Ok(Self { pool })
-    }
-
-    fn message_id(article: &Message) -> Option<String> {
-        article.headers.iter().find_map(|(k, v)| {
-            if k.eq_ignore_ascii_case("Message-ID") {
-                Some(v.clone())
-            } else {
-                None
-            }
-        })
     }
 }
 
@@ -74,7 +35,7 @@ impl PostgresStorage {
 impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
     async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let msg_id = Self::message_id(article).ok_or("missing Message-ID")?;
+        let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
         // Store the message once

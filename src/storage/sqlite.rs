@@ -1,6 +1,5 @@
-use super::{Message, Storage};
+use super::{Message, Storage, common::{Headers, extract_message_id, sql}};
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
 
@@ -8,9 +7,6 @@ use std::error::Error;
 pub struct SqliteStorage {
     pool: SqlitePool,
 }
-
-#[derive(Serialize, Deserialize)]
-struct Headers(Vec<(String, String)>);
 
 impl SqliteStorage {
     #[tracing::instrument(skip_all)]
@@ -24,51 +20,13 @@ impl SqliteStorage {
             .max_connections(5)
             .connect(path)
             .await?;
-        // table storing unique messages keyed by Message-ID
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS messages (
-                message_id TEXT PRIMARY KEY,
-                headers TEXT,
-                body TEXT,
-                size INTEGER NOT NULL
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        // table mapping groups and numbers to message IDs
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS group_articles (
-                group_name TEXT,
-                number INTEGER,
-                message_id TEXT,
-                inserted_at INTEGER NOT NULL,
-                PRIMARY KEY(group_name, number),
-                FOREIGN KEY(message_id) REFERENCES messages(message_id)
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        // table of available newsgroups with creation time
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS groups (
-                name TEXT PRIMARY KEY,
-                created_at INTEGER NOT NULL,
-                moderated INTEGER NOT NULL DEFAULT 0
-            )",
-        )
-        .execute(&pool)
-        .await?;
+        
+        // Create database schema
+        sqlx::query(sql::MESSAGES_TABLE_SQLITE).execute(&pool).await?;
+        sqlx::query(sql::GROUP_ARTICLES_TABLE_SQLITE).execute(&pool).await?;
+        sqlx::query(sql::GROUPS_TABLE_SQLITE).execute(&pool).await?;
+        
         Ok(Self { pool })
-    }
-
-    fn message_id(article: &Message) -> Option<String> {
-        article.headers.iter().find_map(|(k, v)| {
-            if k.eq_ignore_ascii_case("Message-ID") {
-                Some(v.clone())
-            } else {
-                None
-            }
-        })
     }
 }
 
@@ -76,7 +34,7 @@ impl SqliteStorage {
 impl Storage for SqliteStorage {
     #[tracing::instrument(skip_all)]
     async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let msg_id = Self::message_id(article).ok_or("missing Message-ID")?;
+        let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
         // Store the message once
