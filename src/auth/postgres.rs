@@ -1,4 +1,4 @@
-use super::{AuthProvider, Error, async_trait};
+use super::{AuthProvider, Error, async_trait, common::sql};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::{
@@ -20,31 +20,12 @@ impl PostgresAuth {
             .max_connections(5)
             .connect_with(opts)
             .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS users (\
-                username TEXT PRIMARY KEY,\
-                password_hash TEXT NOT NULL,\
-                key TEXT\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS admins (\
-                username TEXT PRIMARY KEY REFERENCES users(username)\
-            )",
-        )
-        .execute(&pool)
-        .await?;
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS moderators (\
-                username TEXT REFERENCES users(username),\
-                pattern TEXT,\
-                PRIMARY KEY(username, pattern)\
-            )",
-        )
-        .execute(&pool)
-        .await?;
+        
+        // Create authentication schema
+        sqlx::query(sql::USERS_TABLE_POSTGRES).execute(&pool).await?;
+        sqlx::query(sql::ADMINS_TABLE_POSTGRES).execute(&pool).await?;
+        sqlx::query(sql::MODERATORS_TABLE_POSTGRES).execute(&pool).await?;
+        
         Ok(Self { pool })
     }
 }
