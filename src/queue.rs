@@ -4,15 +4,15 @@
 //! Articles are validated minimally on submission, queued, and then processed
 //! by background workers that perform comprehensive validation and storage.
 
+use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use crate::Message;
 use flume::{Receiver, Sender};
 use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{error, info, debug};
+use tracing::{debug, error, info};
 
 /// An article queued for processing
 #[derive(Debug, Clone)]
@@ -46,7 +46,9 @@ impl ArticleQueue {
     /// Returns Ok(()) if the article was queued successfully,
     /// Err if the queue is full or closed.
     pub async fn submit(&self, article: QueuedArticle) -> Result<(), Box<dyn Error + Send + Sync>> {
-        self.sender.send_async(article).await
+        self.sender
+            .send_async(article)
+            .await
             .map_err(|e| format!("Failed to queue article: {}", e).into())
     }
 
@@ -86,7 +88,7 @@ impl WorkerPool {
     /// Start all worker tasks
     pub async fn start(&self) -> Vec<tokio::task::JoinHandle<()>> {
         let mut handles = Vec::with_capacity(self.worker_count);
-        
+
         for worker_id in 0..self.worker_count {
             let receiver = self.queue.receiver();
             let storage = self.storage.clone();
@@ -96,7 +98,7 @@ impl WorkerPool {
             let handle = tokio::spawn(async move {
                 worker_task(worker_id, receiver, storage, auth, config).await;
             });
-            
+
             handles.push(handle);
         }
 
@@ -114,15 +116,15 @@ async fn worker_task(
     config: Arc<RwLock<Config>>,
 ) {
     info!("Article worker {} started", worker_id);
-    
+
     while let Ok(queued_article) = receiver.recv_async().await {
         debug!("Worker {} processing article", worker_id);
-        
+
         if let Err(e) = process_article(&queued_article, &storage, &auth, &config).await {
             error!("Worker {} failed to process article: {}", worker_id, e);
         }
     }
-    
+
     info!("Article worker {} stopped", worker_id);
 }
 
@@ -134,7 +136,7 @@ async fn process_article(
     config: &Arc<RwLock<Config>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let article = &queued_article.message;
-    
+
     // Handle control messages first
     if queued_article.is_control && crate::control::handle_control(article, storage, auth).await? {
         debug!("Processed control message");
@@ -144,23 +146,32 @@ async fn process_article(
     // Perform comprehensive validation only if not already done
     if !queued_article.already_validated {
         let cfg_guard = config.read().await;
-        crate::handlers::utils::comprehensive_validate_article(storage, auth, &cfg_guard, article, queued_article.size).await?;
+        crate::handlers::utils::comprehensive_validate_article(
+            storage,
+            auth,
+            &cfg_guard,
+            article,
+            queued_article.size,
+        )
+        .await?;
         drop(cfg_guard);
     }
 
     // Store the article (check if it already exists to avoid duplicates)
-    let message_id = article.headers.iter()
+    let message_id = article
+        .headers
+        .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
         .map(|(_, v)| v.as_str())
         .unwrap_or("");
-    
+
     if !message_id.is_empty() && storage.get_article_by_id(message_id).await?.is_some() {
         debug!("Article already exists, skipping storage");
         return Ok(());
     }
-    
+
     storage.store_article(article).await?;
     debug!("Article stored successfully");
-    
+
     Ok(())
 }

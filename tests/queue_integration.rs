@@ -3,10 +3,10 @@
 mod utils;
 
 use renews::{
-    auth::{sqlite::SqliteAuth, AuthProvider},
-    storage::{sqlite::SqliteStorage, Storage},
-    queue::{ArticleQueue, WorkerPool},
+    auth::{AuthProvider, sqlite::SqliteAuth},
     config::Config,
+    queue::{ArticleQueue, WorkerPool},
+    storage::{Storage, sqlite::SqliteStorage},
 };
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -17,11 +17,11 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
     // Create storage and auth
     let storage = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     let auth = Arc::new(SqliteAuth::new("sqlite::memory:").await.unwrap());
-    
+
     // Add test user and group
     auth.add_user("testuser", "password").await.unwrap();
     storage.add_group("test.group", false).await.unwrap();
-    
+
     // Create config with queue settings
     let config = Config {
         addr: "127.0.0.1:0".to_string(),
@@ -42,12 +42,12 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         article_worker_count: 2,
         group_settings: vec![],
     };
-    
+
     // Since we can't easily test with TLS in this setup, we'll create a simplified server
     // that demonstrates the queue functionality
     let queue = ArticleQueue::new(100);
     let config_arc = Arc::new(RwLock::new(config));
-    
+
     // Create worker pool and start workers
     let worker_pool = WorkerPool::new(
         queue.clone(),
@@ -56,18 +56,18 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         config_arc.clone(),
         2,
     );
-    
+
     let _worker_handles = worker_pool.start().await;
-    
+
     // Create a simple TCP server that uses our queue
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    
+
     let storage_clone = storage.clone();
     let auth_clone = auth.clone();
     let config_clone = config_arc.clone();
     let queue_clone = queue;
-    
+
     tokio::spawn(async move {
         if let Ok((socket, _)) = listener.accept().await {
             let _ = renews::handle_client(
@@ -77,62 +77,76 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
                 config_clone,
                 true, // TLS mode for posting
                 queue_clone,
-            ).await;
+            )
+            .await;
         }
     });
-    
+
     (addr, storage)
 }
 
 #[tokio::test]
 async fn test_full_queue_integration() {
     let (addr, storage) = setup_queue_enabled_server().await;
-    
+
     // Connect to server
     let stream = TcpStream::connect(addr).await.unwrap();
     let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
     let mut writer = write_half;
-    
+
     // Read greeting
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("200")); // Should be ready for posting since is_tls=true
-    
+
     // Authenticate
-    writer.write_all(b"AUTHINFO USER testuser\r\n").await.unwrap();
+    writer
+        .write_all(b"AUTHINFO USER testuser\r\n")
+        .await
+        .unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("381")); // More auth info required
-    
-    writer.write_all(b"AUTHINFO PASS password\r\n").await.unwrap();
+
+    writer
+        .write_all(b"AUTHINFO PASS password\r\n")
+        .await
+        .unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("281")); // Authentication accepted
-    
+
     // Post an article
     writer.write_all(b"POST\r\n").await.unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("340")); // Send article
-    
+
     // Send article
     let article = "From: test@example.com\r\nSubject: Test Article\r\nNewsgroups: test.group\r\nMessage-ID: <queue-test@example.com>\r\n\r\nThis is a test article submitted via queue.\r\n.\r\n";
     writer.write_all(article.as_bytes()).await.unwrap();
-    
+
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("240")); // Article received (should be immediate due to queue)
-    
+
     // Wait for queue processing
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
-    
+
     // Verify article was stored by worker
-    let stored = storage.get_article_by_id("<queue-test@example.com>").await.unwrap();
+    let stored = storage
+        .get_article_by_id("<queue-test@example.com>")
+        .await
+        .unwrap();
     assert!(stored.is_some());
     let article = stored.unwrap();
-    assert!(article.body.contains("This is a test article submitted via queue"));
-    
+    assert!(
+        article
+            .body
+            .contains("This is a test article submitted via queue")
+    );
+
     // Quit
     writer.write_all(b"QUIT\r\n").await.unwrap();
 }
@@ -140,38 +154,44 @@ async fn test_full_queue_integration() {
 #[tokio::test]
 async fn test_queue_validation_failure() {
     let (addr, _storage) = setup_queue_enabled_server().await;
-    
+
     // Connect to server
     let stream = TcpStream::connect(addr).await.unwrap();
     let (read_half, write_half) = stream.into_split();
     let mut reader = BufReader::new(read_half);
     let mut writer = write_half;
-    
+
     // Read greeting and authenticate
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
-    
-    writer.write_all(b"AUTHINFO USER testuser\r\n").await.unwrap();
+
+    writer
+        .write_all(b"AUTHINFO USER testuser\r\n")
+        .await
+        .unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
-    
-    writer.write_all(b"AUTHINFO PASS password\r\n").await.unwrap();
+
+    writer
+        .write_all(b"AUTHINFO PASS password\r\n")
+        .await
+        .unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
-    
+
     // Try to post an invalid article (missing required headers)
     writer.write_all(b"POST\r\n").await.unwrap();
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("340")); // Send article
-    
+
     // Send invalid article (missing From header)
     let article = "Subject: Test Article\r\nNewsgroups: test.group\r\n\r\nThis should fail validation.\r\n.\r\n";
     writer.write_all(article.as_bytes()).await.unwrap();
-    
+
     line.clear();
     reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("441")); // Posting failed due to basic validation
-    
+
     writer.write_all(b"QUIT\r\n").await.unwrap();
 }

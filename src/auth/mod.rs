@@ -50,6 +50,7 @@ pub trait AuthProvider: Send + Sync {
 
 pub type DynAuth = Arc<dyn AuthProvider>;
 
+pub mod pgp_discovery;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod sqlite;

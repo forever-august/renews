@@ -1,6 +1,6 @@
 //! Posting command handlers.
 
-use super::utils::{read_message, write_simple, comprehensive_validate_article};
+use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::queue::QueuedArticle;
 use crate::responses::*;
@@ -46,7 +46,10 @@ impl CommandHandler for PostHandler {
         // Comprehensive validation before queuing for POST (to maintain expected behavior)
         let cfg_guard = ctx.config.read().await;
         let size = msg.len() as u64;
-        if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size).await.is_err() {
+        if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
+            .await
+            .is_err()
+        {
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
         }
@@ -59,7 +62,7 @@ impl CommandHandler for PostHandler {
             is_control,
             already_validated: true, // POST uses comprehensive validation and queues for storage only
         };
-        
+
         if ctx.queue.submit(queued_article).await.is_err() {
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());

@@ -1,4 +1,11 @@
-use crate::{Message, auth::DynAuth, storage::DynStorage};
+use crate::{
+    Message,
+    auth::{
+        DynAuth,
+        pgp_discovery::{DefaultPgpKeyDiscovery, PgpKeyDiscovery},
+    },
+    storage::DynStorage,
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pgp::composed::{Deserializable, SignedPublicKey, StandaloneSignature};
 use sha2::{Digest, Sha256, Sha512};
@@ -123,23 +130,30 @@ pub async fn verify_pgp(
     signed_headers: &str,
     sig_data: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // Create PGP key discovery instance
+    let discovery = DefaultPgpKeyDiscovery::new();
+
     // First try with existing stored key
     let stored_key = auth.get_pgp_key(user).await?;
-    
+
     if let Some(key_text) = &stored_key {
-        if let Ok(verification_result) = try_verify_with_key(msg, key_text, version, signed_headers, sig_data).await {
+        if let Ok(verification_result) =
+            try_verify_with_key(msg, key_text, version, signed_headers, sig_data).await
+        {
             if verification_result.is_ok() {
                 return Ok(());
             }
             // If verification failed with stored key, try discovery
         }
     }
-    
+
     // Attempt key discovery if no key exists or verification failed
-    match crate::pgp_discovery::discover_pgp_key(user).await? {
+    match discovery.discover_key(user).await? {
         Some(discovered_key) => {
             // Try verification with discovered key
-            match try_verify_with_key(msg, &discovered_key, version, signed_headers, sig_data).await? {
+            match try_verify_with_key(msg, &discovered_key, version, signed_headers, sig_data)
+                .await?
+            {
                 Ok(()) => {
                     // Verification succeeded, update stored key
                     if let Err(e) = auth.update_pgp_key(user, &discovered_key).await {
@@ -151,7 +165,10 @@ pub async fn verify_pgp(
                 Err(e) => {
                     // Discovery found a key but verification still failed
                     // Keep original key if it existed
-                    Err(format!("Signature verification failed even with discovered key: {e}").into())
+                    Err(
+                        format!("Signature verification failed even with discovered key: {e}")
+                            .into(),
+                    )
                 }
             }
         }
@@ -180,7 +197,7 @@ async fn try_verify_with_key(
     );
     let (sig, _) = StandaloneSignature::from_armor_single(armor.as_bytes())?;
     let data = canonical_text(msg, signed_headers);
-    
+
     match sig.verify(&key, data.as_bytes()) {
         Ok(()) => Ok(Ok(())),
         Err(e) => Ok(Err(e.into())),

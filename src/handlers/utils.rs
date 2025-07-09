@@ -481,7 +481,8 @@ pub async fn comprehensive_validate_article(
                     body: article.body.clone(),
                 };
 
-                crate::control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest).await?;
+                crate::control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest)
+                    .await?;
             }
         }
     }
