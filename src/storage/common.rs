@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Headers(pub Vec<(String, String)>);
 
 /// Extract the Message-ID header from an article.
-/// 
+///
 /// Returns the Message-ID value if found, None otherwise.
 pub fn extract_message_id(article: &Message) -> Option<String> {
     article.headers.iter().find_map(|(k, v)| {

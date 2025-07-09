@@ -5,8 +5,8 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info};
 
 use crate::config::Config;
-use std::net::SocketAddr;
 use std::error::Error;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

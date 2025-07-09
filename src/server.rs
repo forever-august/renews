@@ -376,7 +376,7 @@ impl PeerManager {
         config: &Config,
         storage: Arc<dyn Storage>,
     ) -> ServerResult<()> {
-        let default_interval = config.peer_sync_secs;
+        let default_schedule = config.peer_sync_schedule.clone();
 
         for peer in &config.peers {
             let pc = PeerConfig::from(peer);
@@ -384,7 +384,7 @@ impl PeerManager {
 
             let handle = tokio::spawn(peer_task(
                 pc,
-                default_interval,
+                default_schedule.clone(),
                 self.peer_db.clone(),
                 storage.clone(),
                 config.site_name.clone(),
@@ -401,7 +401,7 @@ impl PeerManager {
         self.peer_db.sync_config(&names).await?;
 
         let mut tasks = self.peer_tasks.write().await;
-        let default_interval = new_cfg.peer_sync_secs;
+        let default_schedule = new_cfg.peer_sync_schedule.clone();
 
         // Start new peer tasks
         for peer in &new_cfg.peers {
@@ -412,8 +412,13 @@ impl PeerManager {
                 let storage_clone = storage.clone();
                 let site = new_cfg.site_name.clone();
 
-                let handle =
-                    tokio::spawn(peer_task(pc, default_interval, dbc, storage_clone, site));
+                let handle = tokio::spawn(peer_task(
+                    pc,
+                    default_schedule.clone(),
+                    dbc,
+                    storage_clone,
+                    site,
+                ));
 
                 tasks.insert(name, handle);
             }

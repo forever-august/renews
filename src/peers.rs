@@ -11,6 +11,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
@@ -25,25 +26,6 @@ use crate::{
 
 /// Result type for peer operations.
 type PeerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
-
-/// Represents different methods for transferring articles to peers.
-#[derive(Debug, Clone, Copy)]
-enum TransferMode {
-    /// Use IHAVE command for article transfer
-    IHave,
-    /// Use TAKETHIS command for streaming mode
-    TakeThis,
-}
-
-impl TransferMode {
-    fn from_interval(interval: Option<u64>) -> Self {
-        if interval == Some(0) {
-            Self::TakeThis
-        } else {
-            Self::IHave
-        }
-    }
-}
 
 /// Connection credentials for peer authentication.
 #[derive(Debug, Clone)]
@@ -237,27 +219,17 @@ impl PeerConnection {
         Ok(())
     }
 
-    /// Transfer an article using the specified mode.
+    /// Transfer an article using IHAVE protocol.
     async fn transfer_article(
         &mut self,
         article: &Message,
         msg_id: &str,
-        mode: TransferMode,
     ) -> PeerResult<()> {
-        // Initialize transfer based on mode
-        match mode {
-            TransferMode::TakeThis => {
-                self.send_command("MODE STREAM\r\n").await?;
-                let _response = self.read_response().await?; // Streaming mode setup
-                self.send_command(&format!("TAKETHIS {msg_id}\r\n")).await?;
-            }
-            TransferMode::IHave => {
-                self.send_command(&format!("IHAVE {msg_id}\r\n")).await?;
-                let response = self.read_response().await?;
-                if !response.starts_with("335") {
-                    return Ok(()); // Article not wanted by peer
-                }
-            }
+        // Send IHAVE command
+        self.send_command(&format!("IHAVE {msg_id}\r\n")).await?;
+        let response = self.read_response().await?;
+        if !response.starts_with("335") {
+            return Ok(()); // Article not wanted by peer
         }
 
         // Send article content
@@ -411,7 +383,7 @@ impl PeerDb {
 pub struct PeerConfig {
     pub sitename: String,
     pub patterns: Vec<String>,
-    pub sync_interval_secs: Option<u64>,
+    pub sync_schedule: Option<String>,
 }
 
 impl From<&crate::config::PeerRule> for PeerConfig {
@@ -419,63 +391,107 @@ impl From<&crate::config::PeerRule> for PeerConfig {
         Self {
             sitename: r.sitename.clone(),
             patterns: r.patterns.clone(),
-            sync_interval_secs: r.sync_interval_secs,
+            sync_schedule: r.sync_schedule.clone(),
         }
     }
 }
 
 pub async fn peer_task(
     peer: PeerConfig,
-    default_interval: u64,
+    default_schedule: String,
     db: PeerDb,
     storage: DynStorage,
     site_name: String,
 ) {
-    let interval = peer.sync_interval_secs.unwrap_or(default_interval);
-    let delay = tokio::time::Duration::from_secs(interval.max(1));
-    let transfer_mode = TransferMode::from_interval(peer.sync_interval_secs);
+    let schedule = peer.sync_schedule.as_deref().unwrap_or(&default_schedule);
 
     tracing::info!(
-        "Starting peer sync task for {} with interval {}s (mode: {:?})",
+        "Starting peer sync task for {} with schedule '{}'",
         peer.sitename,
-        interval,
-        transfer_mode
+        schedule
     );
 
-    loop {
-        let sync_start = std::time::Instant::now();
-
-        match sync_peer_once(&peer, &db, &storage, &site_name, transfer_mode).await {
-            Ok(()) => {
-                let duration = sync_start.elapsed();
-                tracing::debug!(
-                    "Peer sync completed successfully for {} in {:?}",
-                    peer.sitename,
-                    duration
-                );
-            }
-            Err(e) => {
-                tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
-            }
-        }
-
-        // Update last sync time regardless of success/failure
-        if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
+    let scheduler = match JobScheduler::new().await {
+        Ok(scheduler) => scheduler,
+        Err(e) => {
             tracing::error!(
-                "Failed to update last sync time for {}: {}",
+                "Failed to create job scheduler for {}: {}",
                 peer.sitename,
                 e
             );
+            return;
         }
+    };
 
-        tokio::time::sleep(delay).await;
+    let peer_clone = peer.clone();
+    let db_clone = db.clone();
+    let storage_clone = storage.clone();
+    let site_name_clone = site_name.clone();
+
+    let job = Job::new_async(schedule, move |_uuid, _l| {
+        let peer = peer_clone.clone();
+        let db = db_clone.clone();
+        let storage = storage_clone.clone();
+        let site_name = site_name_clone.clone();
+
+        Box::pin(async move {
+            let sync_start = std::time::Instant::now();
+
+            match sync_peer_once(&peer, &db, &storage, &site_name).await {
+                Ok(()) => {
+                    let duration = sync_start.elapsed();
+                    tracing::debug!(
+                        "Peer sync completed successfully for {} in {:?}",
+                        peer.sitename,
+                        duration
+                    );
+                }
+                Err(e) => {
+                    tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
+                }
+            }
+
+            // Update last sync time regardless of success/failure
+            if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
+                tracing::error!(
+                    "Failed to update last sync time for {}: {}",
+                    peer.sitename,
+                    e
+                );
+            }
+        })
+    });
+
+    match job {
+        Ok(job) => {
+            if let Err(e) = scheduler.add(job).await {
+                tracing::error!(
+                    "Failed to add job to scheduler for {}: {}",
+                    peer.sitename,
+                    e
+                );
+                return;
+            }
+
+            if let Err(e) = scheduler.start().await {
+                tracing::error!("Failed to start scheduler for {}: {}", peer.sitename, e);
+                return;
+            }
+
+            // Keep the task running with shorter sleeps for responsiveness
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to create cron job for {}: {}", peer.sitename, e);
+        }
     }
 }
 
 async fn send_article_to_peer(
     host: &str,
     article: &Message,
-    transfer_mode: TransferMode,
 ) -> PeerResult<()> {
     let msg_id = extract_message_id(article).ok_or("Article missing Message-ID header")?;
 
@@ -485,7 +501,7 @@ async fn send_article_to_peer(
         .map_err(|e| format!("Failed to connect to peer {host}: {e}"))?;
 
     let result = connection
-        .transfer_article(article, msg_id, transfer_mode)
+        .transfer_article(article, msg_id)
         .await;
 
     if let Err(close_err) = connection.close().await {
@@ -500,7 +516,6 @@ async fn sync_peer_once(
     db: &PeerDb,
     storage: &DynStorage,
     site_name: &str,
-    transfer_mode: TransferMode,
 ) -> PeerResult<()> {
     let last_sync = db.get_last_sync(&peer.sitename).await?;
     let groups = storage.list_groups().await?;
@@ -515,7 +530,7 @@ async fn sync_peer_once(
             None => storage.list_article_ids(&group).await?,
         };
 
-        process_group_articles(peer, storage, site_name, transfer_mode, &group, article_ids)
+        process_group_articles(peer, storage, site_name, &group, article_ids)
             .await?;
     }
 
@@ -527,7 +542,6 @@ async fn process_group_articles(
     peer: &PeerConfig,
     storage: &DynStorage,
     site_name: &str,
-    transfer_mode: TransferMode,
     group: &str,
     article_ids: Vec<String>,
 ) -> PeerResult<()> {
@@ -547,7 +561,7 @@ async fn process_group_articles(
     let mut error_count = 0;
 
     for article_id in &article_ids {
-        match process_single_article(peer, storage, site_name, transfer_mode, article_id).await {
+        match process_single_article(peer, storage, site_name, article_id).await {
             Ok(ArticleProcessResult::Sent) => sent_count += 1,
             Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
             Ok(ArticleProcessResult::NotFound) => {
@@ -590,7 +604,6 @@ async fn process_single_article(
     peer: &PeerConfig,
     storage: &DynStorage,
     site_name: &str,
-    transfer_mode: TransferMode,
     article_id: &str,
 ) -> PeerResult<ArticleProcessResult> {
     let Some(original_article) = storage.get_article_by_id(article_id).await? else {
@@ -607,7 +620,7 @@ async fn process_single_article(
     }
 
     let peer_article = create_peer_article(&original_article, site_name)?;
-    send_article_to_peer(&peer.sitename, &peer_article, transfer_mode).await?;
+    send_article_to_peer(&peer.sitename, &peer_article).await?;
     tracing::debug!(
         "Successfully sent article {} to {}",
         article_id,

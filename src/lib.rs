@@ -88,7 +88,7 @@ where
     let mut line = String::new();
     loop {
         line.clear();
-        
+
         // Get the current idle timeout from config
         let timeout_duration = {
             let cfg_guard = ctx.config.read().await;
@@ -96,18 +96,22 @@ where
         };
 
         // Apply timeout to the read operation
-        let read_result = tokio::time::timeout(timeout_duration, ctx.reader.read_line(&mut line)).await;
-        
+        let read_result =
+            tokio::time::timeout(timeout_duration, ctx.reader.read_line(&mut line)).await;
+
         let n = match read_result {
             Ok(Ok(n)) => n,
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => {
                 // Timeout occurred
-                debug!("Connection timed out after {} seconds", timeout_duration.as_secs());
+                debug!(
+                    "Connection timed out after {} seconds",
+                    timeout_duration.as_secs()
+                );
                 break;
             }
         };
-        
+
         if n == 0 {
             break;
         }

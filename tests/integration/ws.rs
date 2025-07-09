@@ -18,11 +18,20 @@ mod websocket_bridge {
     #[tokio::test]
     async fn quit_via_websocket() {
         let (storage, auth) = utils::setup().await;
-        let (nntp_addr, _, nntp_handle) =
-            utils::start_server(storage, auth, toml::from_str("addr=\":119\"").unwrap(), false).await;
+        let (nntp_addr, _, nntp_handle) = utils::start_server(
+            storage,
+            auth,
+            toml::from_str("addr=\":119\"").unwrap(),
+            false,
+        )
+        .await;
         let ws_port = free_port();
-        let cfg: Config =
-            toml::from_str(&format!("addr=\"127.0.0.1:{}\"\nws_addr=\":{}\"", nntp_addr.port(), ws_port)).unwrap();
+        let cfg: Config = toml::from_str(&format!(
+            "addr=\"127.0.0.1:{}\"\nws_addr=\":{}\"",
+            nntp_addr.port(),
+            ws_port
+        ))
+        .unwrap();
         let cfg = Arc::new(RwLock::new(cfg));
         let ws_handle = tokio::spawn(ws::run_ws_bridge(cfg));
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
