@@ -106,10 +106,15 @@ pub fn is_control_message(msg: &Message) -> bool {
 
 /// Verify a PGP signature on a message.
 ///
+/// This function attempts to verify a PGP signature using a stored key.
+/// If no key is stored or verification fails, it will attempt to discover
+/// the key from key servers and update the stored key if discovery succeeds
+/// and verification with the new key is successful.
+///
 /// # Errors
 ///
-/// Returns an error if the signature verification fails or if there are issues
-/// with key retrieval or parsing.
+/// Returns an error if the signature verification fails even after attempting
+/// key discovery, or if there are issues with key retrieval or parsing.
 pub async fn verify_pgp(
     msg: &Message,
     auth: &DynAuth,
@@ -118,15 +123,68 @@ pub async fn verify_pgp(
     signed_headers: &str,
     sig_data: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let key_text = auth.get_pgp_key(user).await?.ok_or("no key")?;
-    let (key, _) = SignedPublicKey::from_string(&key_text)?;
+    // First try with existing stored key
+    let stored_key = auth.get_pgp_key(user).await?;
+    
+    if let Some(key_text) = &stored_key {
+        if let Ok(verification_result) = try_verify_with_key(msg, key_text, version, signed_headers, sig_data).await {
+            if verification_result.is_ok() {
+                return Ok(());
+            }
+            // If verification failed with stored key, try discovery
+        }
+    }
+    
+    // Attempt key discovery if no key exists or verification failed
+    match crate::pgp_discovery::discover_pgp_key(user).await? {
+        Some(discovered_key) => {
+            // Try verification with discovered key
+            match try_verify_with_key(msg, &discovered_key, version, signed_headers, sig_data).await? {
+                Ok(()) => {
+                    // Verification succeeded, update stored key
+                    if let Err(e) = auth.update_pgp_key(user, &discovered_key).await {
+                        tracing::warn!("Failed to update PGP key for {}: {}", user, e);
+                        // Continue anyway since verification succeeded
+                    }
+                    Ok(())
+                }
+                Err(e) => {
+                    // Discovery found a key but verification still failed
+                    // Keep original key if it existed
+                    Err(format!("Signature verification failed even with discovered key: {e}").into())
+                }
+            }
+        }
+        None => {
+            // No key could be discovered
+            if stored_key.is_some() {
+                Err("Signature verification failed with stored key and no alternative key could be discovered".into())
+            } else {
+                Err("No PGP key found for user and no key could be discovered".into())
+            }
+        }
+    }
+}
+
+/// Try to verify a signature with a specific key.
+async fn try_verify_with_key(
+    msg: &Message,
+    key_text: &str,
+    version: &str,
+    signed_headers: &str,
+    sig_data: &str,
+) -> Result<Result<(), Box<dyn Error + Send + Sync>>, Box<dyn Error + Send + Sync>> {
+    let (key, _) = SignedPublicKey::from_string(key_text)?;
     let armor = format!(
         "-----BEGIN PGP SIGNATURE-----\nVersion: {version}\n\n{sig_data}\n-----END PGP SIGNATURE-----\n"
     );
     let (sig, _) = StandaloneSignature::from_armor_single(armor.as_bytes())?;
     let data = canonical_text(msg, signed_headers);
-    sig.verify(&key, data.as_bytes())?;
-    Ok(())
+    
+    match sig.verify(&key, data.as_bytes()) {
+        Ok(()) => Ok(Ok(())),
+        Err(e) => Ok(Err(e.into())),
+    }
 }
 
 /// Handle control messages for newsgroup management.

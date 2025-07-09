@@ -9,6 +9,7 @@ pub mod config;
 pub mod control;
 pub mod handlers;
 pub mod peers;
+pub mod pgp_discovery;
 pub mod queue;
 pub mod responses;
 pub mod retention;
