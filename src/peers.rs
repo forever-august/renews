@@ -220,11 +220,7 @@ impl PeerConnection {
     }
 
     /// Transfer an article using IHAVE protocol.
-    async fn transfer_article(
-        &mut self,
-        article: &Message,
-        msg_id: &str,
-    ) -> PeerResult<()> {
+    async fn transfer_article(&mut self, article: &Message, msg_id: &str) -> PeerResult<()> {
         // Send IHAVE command
         self.send_command(&format!("IHAVE {msg_id}\r\n")).await?;
         let response = self.read_response().await?;
@@ -489,10 +485,7 @@ pub async fn peer_task(
     }
 }
 
-async fn send_article_to_peer(
-    host: &str,
-    article: &Message,
-) -> PeerResult<()> {
+async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
     let msg_id = extract_message_id(article).ok_or("Article missing Message-ID header")?;
 
     let connection_info = parse_peer_address(host, 563);
@@ -500,9 +493,7 @@ async fn send_article_to_peer(
         .await
         .map_err(|e| format!("Failed to connect to peer {host}: {e}"))?;
 
-    let result = connection
-        .transfer_article(article, msg_id)
-        .await;
+    let result = connection.transfer_article(article, msg_id).await;
 
     if let Err(close_err) = connection.close().await {
         tracing::warn!("Failed to close connection to {}: {}", host, close_err);
@@ -530,8 +521,7 @@ async fn sync_peer_once(
             None => storage.list_article_ids(&group).await?,
         };
 
-        process_group_articles(peer, storage, site_name, &group, article_ids)
-            .await?;
+        process_group_articles(peer, storage, site_name, &group, article_ids).await?;
     }
 
     Ok(())

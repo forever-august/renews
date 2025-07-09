@@ -1,6 +1,6 @@
 //! Streaming command handlers (IHAVE, CHECK, TAKETHIS).
 
-use super::utils::{read_message, write_simple, comprehensive_validate_article};
+use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
@@ -65,13 +65,13 @@ impl CommandHandler for IHaveHandler {
                 is_control: false, // Control messages are handled above, so this is always false
                 already_validated: true, // IHAVE does comprehensive validation before queuing
             };
-            
+
             // Store immediately for protocol compliance (second IHAVE should know article exists)
             if let Err(_) = ctx.storage.store_article(&article).await {
                 write_simple(&mut ctx.writer, RESP_437_REJECTED).await?;
                 return Ok(());
             }
-            
+
             // Also queue for background processing consistency
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
             write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
@@ -162,13 +162,13 @@ impl CommandHandler for TakeThisHandler {
                 is_control: false, // Control messages are handled above, so this is always false
                 already_validated: true, // TAKETHIS does comprehensive validation before queuing
             };
-            
+
             // Store immediately for protocol compliance (duplicate TAKETHIS should be detected)
             if let Err(_) = ctx.storage.store_article(&article).await {
                 write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
                 return Ok(());
             }
-            
+
             // Also queue for background processing consistency
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
             write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;

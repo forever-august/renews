@@ -4,10 +4,10 @@
 //! Each filter implements the `ArticleFilter` trait and can be combined
 //! into a validation chain that must all pass for an article to be accepted.
 
+use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use crate::Message;
 use std::error::Error;
 
 pub mod groups;

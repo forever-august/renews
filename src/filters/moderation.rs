@@ -3,10 +3,10 @@
 //! Validates moderated group approval and PGP signatures.
 
 use super::ArticleFilter;
+use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use crate::Message;
 use std::error::Error;
 
 /// Filter that validates moderated group requirements
@@ -96,7 +96,10 @@ impl ArticleFilter for ModerationFilter {
                         body: article.body.clone(),
                     };
 
-                    crate::control::verify_pgp(&tmp_msg, auth, approved, version, signed, &sig_rest).await?;
+                    crate::control::verify_pgp(
+                        &tmp_msg, auth, approved, version, signed, &sig_rest,
+                    )
+                    .await?;
                 }
             }
         }

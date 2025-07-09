@@ -3,10 +3,10 @@
 //! Validates that articles are within configured size limits.
 
 use super::ArticleFilter;
+use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use crate::Message;
 use std::error::Error;
 
 /// Filter that validates article size limits

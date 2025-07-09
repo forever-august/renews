@@ -403,7 +403,9 @@ pub async fn comprehensive_validate_article(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Use the default filter chain for validation
     let filter_chain = crate::filters::FilterChain::default();
-    filter_chain.validate(storage, auth, cfg, article, size).await
+    filter_chain
+        .validate(storage, auth, cfg, article, size)
+        .await
 }
 
 /// Validate an article using a custom filter chain.
@@ -416,5 +418,7 @@ pub async fn validate_article_with_filters(
     size: u64,
     filter_chain: &crate::filters::FilterChain,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    filter_chain.validate(storage, auth, cfg, article, size).await
+    filter_chain
+        .validate(storage, auth, cfg, article, size)
+        .await
 }

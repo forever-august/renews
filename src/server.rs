@@ -71,7 +71,7 @@ impl Server {
         let peer_db = Self::initialize_peer_db(&cfg).await?;
         let config_manager = ConfigManager::new(components.config.clone());
         let peer_manager = PeerManager::new(peer_db);
-        
+
         // Create worker pool
         let worker_pool = WorkerPool::new(
             components.queue.clone(),
@@ -95,7 +95,7 @@ impl Server {
 
         let storage: Arc<dyn Storage> = storage::open(&cfg.db_path).await?;
         let auth: Arc<dyn AuthProvider> = auth::open(&cfg.auth_db_path).await?;
-        
+
         // Create article queue with configurable capacity
         let queue = ArticleQueue::new(cfg.article_queue_capacity);
 
@@ -302,7 +302,7 @@ impl Server {
     pub async fn run(self, cfg_path: String) -> ServerResult<()> {
         // Start worker pool first
         let _worker_handles = self.worker_pool.start().await;
-        
+
         self.start_peer_tasks().await?;
 
         // Start all listeners and background tasks

@@ -202,11 +202,11 @@ impl Config {
         let text = std::fs::read_to_string(path)?;
         let text = expand_placeholders(&text)?;
         let mut cfg: Config = toml::from_str(&text)?;
-        
+
         // Enforce minimum values for queue configuration
         cfg.article_queue_capacity = cfg.article_queue_capacity.max(1);
         cfg.article_worker_count = cfg.article_worker_count.max(1);
-        
+
         Ok(cfg)
     }
 
