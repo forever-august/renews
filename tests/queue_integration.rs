@@ -29,7 +29,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         db_path: "sqlite::memory:".to_string(),
         auth_db_path: "sqlite::memory:".to_string(),
         peer_db_path: "sqlite::memory:".to_string(),
-        peer_sync_secs: 3600,
+        peer_sync_schedule: "0 0 * * * *".to_string(),
         idle_timeout_secs: 600,
         peers: vec![],
         tls_addr: Some("127.0.0.1:0".to_string()),
