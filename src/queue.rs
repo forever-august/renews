@@ -146,12 +146,25 @@ async fn process_article(
     // Perform comprehensive validation only if not already done
     if !queued_article.already_validated {
         let cfg_guard = config.read().await;
-        crate::handlers::utils::comprehensive_validate_article(
+        
+        // Create filter chain from configuration
+        let filter_chain = match crate::filters::factory::create_filter_chain(&cfg_guard.filters) {
+            Ok(chain) => chain,
+            Err(e) => {
+                error!("Failed to create filter chain: {}", e);
+                // Fall back to default chain if configuration is invalid
+                crate::filters::FilterChain::default()
+            }
+        };
+        
+        // Use the configured filter chain for validation
+        crate::handlers::utils::validate_article_with_filters(
             storage,
             auth,
             &cfg_guard,
             article,
             queued_article.size,
+            &filter_chain,
         )
         .await?;
         drop(cfg_guard);

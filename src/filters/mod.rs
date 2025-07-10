@@ -10,6 +10,7 @@ use crate::config::Config;
 use crate::storage::DynStorage;
 use std::error::Error;
 
+pub mod factory;
 pub mod groups;
 pub mod header;
 pub mod moderation;

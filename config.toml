@@ -36,3 +36,18 @@ sync_schedule = "0 */30 * * * *"  # Sync every 30 minutes
 sitename = "daily-peer.example.com"
 patterns = ["daily.*"]
 sync_schedule = "0 0 2 * * *"  # Sync daily at 2 AM
+
+# Filter pipeline configuration
+# If not specified, the default filter chain is used (all filters)
+# You can customize the filter chain by specifying which filters to use and in what order
+[[filters]]
+name = "HeaderFilter"
+
+[[filters]]
+name = "SizeFilter"
+
+[[filters]]
+name = "GroupExistenceFilter"
+
+[[filters]]
+name = "ModerationFilter"
