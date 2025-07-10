@@ -36,13 +36,13 @@ async fn test_config_file_with_filter_pipeline() {
 addr = ":119"
 site_name = "test.example.com"
 
-[[filter_pipeline]]
+[[filters]]
 name = "HeaderFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "SizeFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "GroupExistenceFilter"
 "#;
 
@@ -52,13 +52,13 @@ name = "GroupExistenceFilter"
     let config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
     
     // Check that filter pipeline was parsed correctly
-    assert_eq!(config.filter_pipeline.len(), 3);
-    assert_eq!(config.filter_pipeline[0].name, "HeaderFilter");
-    assert_eq!(config.filter_pipeline[1].name, "SizeFilter");
-    assert_eq!(config.filter_pipeline[2].name, "GroupExistenceFilter");
+    assert_eq!(config.filters.len(), 3);
+    assert_eq!(config.filters[0].name, "HeaderFilter");
+    assert_eq!(config.filters[1].name, "SizeFilter");
+    assert_eq!(config.filters[2].name, "GroupExistenceFilter");
     
     // Test creating filter chain from this config
-    let chain = create_filter_chain(&config.filter_pipeline).unwrap();
+    let chain = create_filter_chain(&config.filters).unwrap();
     let names = chain.filter_names();
     assert_eq!(names.len(), 3);
     assert_eq!(names[0], "HeaderFilter");
@@ -73,10 +73,10 @@ async fn test_config_reload_updates_filter_pipeline() {
 addr = ":119"
 site_name = "test.example.com"
 
-[[filter_pipeline]]
+[[filters]]
 name = "HeaderFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "SizeFilter"
 "#;
 
@@ -84,23 +84,23 @@ name = "SizeFilter"
     std::io::Write::write_all(&mut temp_file, initial_config_content.as_bytes()).unwrap();
     
     let mut config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
-    assert_eq!(config.filter_pipeline.len(), 2);
+    assert_eq!(config.filters.len(), 2);
     
     // Create new config with different filter pipeline
     let new_config_content = r#"
 addr = ":119"
 site_name = "test.example.com"
 
-[[filter_pipeline]]
+[[filters]]
 name = "HeaderFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "SizeFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "GroupExistenceFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "ModerationFilter"
 "#;
 
@@ -113,14 +113,14 @@ name = "ModerationFilter"
     config.update_runtime(new_config);
     
     // Verify that filter pipeline was updated
-    assert_eq!(config.filter_pipeline.len(), 4);
-    assert_eq!(config.filter_pipeline[0].name, "HeaderFilter");
-    assert_eq!(config.filter_pipeline[1].name, "SizeFilter");
-    assert_eq!(config.filter_pipeline[2].name, "GroupExistenceFilter");
-    assert_eq!(config.filter_pipeline[3].name, "ModerationFilter");
+    assert_eq!(config.filters.len(), 4);
+    assert_eq!(config.filters[0].name, "HeaderFilter");
+    assert_eq!(config.filters[1].name, "SizeFilter");
+    assert_eq!(config.filters[2].name, "GroupExistenceFilter");
+    assert_eq!(config.filters[3].name, "ModerationFilter");
     
     // Test that the new filter chain can be created
-    let chain = create_filter_chain(&config.filter_pipeline).unwrap();
+    let chain = create_filter_chain(&config.filters).unwrap();
     let names = chain.filter_names();
     assert_eq!(names.len(), 4);
     assert_eq!(names[0], "HeaderFilter");
@@ -136,10 +136,10 @@ async fn test_filter_config_with_parameters() {
 addr = ":119"
 site_name = "test.example.com"
 
-[[filter_pipeline]]
+[[filters]]
 name = "HeaderFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "SizeFilter"
 parameters = { max_size = 1048576 }
 "#;
@@ -150,12 +150,12 @@ parameters = { max_size = 1048576 }
     let config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
     
     // Check that parameters were parsed correctly
-    assert_eq!(config.filter_pipeline.len(), 2);
-    assert_eq!(config.filter_pipeline[0].name, "HeaderFilter");
+    assert_eq!(config.filters.len(), 2);
+    assert_eq!(config.filters[0].name, "HeaderFilter");
     // Default parameters should be null when not specified
-    assert_eq!(config.filter_pipeline[0].parameters, json!(null));
-    assert_eq!(config.filter_pipeline[1].name, "SizeFilter");
-    assert_eq!(config.filter_pipeline[1].parameters, json!({"max_size": 1048576}));
+    assert_eq!(config.filters[0].parameters, json!(null));
+    assert_eq!(config.filters[1].name, "SizeFilter");
+    assert_eq!(config.filters[1].parameters, json!({"max_size": 1048576}));
 }
 
 #[tokio::test]
@@ -177,4 +177,47 @@ async fn test_invalid_filter_fallback() {
     
     // The error should be handled gracefully in the queue processing,
     // falling back to the default filter chain
+}
+
+#[test]
+fn test_filters_alias() {
+    // Test with [[filters]] syntax
+    let config_content_filters = r#"
+addr = ":119"
+site_name = "test.example.com"
+
+[[filters]]
+name = "HeaderFilter"
+
+[[filters]]
+name = "SizeFilter"
+"#;
+
+    let mut temp_file1 = NamedTempFile::new().unwrap();
+    std::io::Write::write_all(&mut temp_file1, config_content_filters.as_bytes()).unwrap();
+    
+    let config1 = Config::from_file(temp_file1.path().to_str().unwrap()).unwrap();
+    assert_eq!(config1.filters.len(), 2);
+
+    // Test with [[filter]] syntax (using alias)
+    let config_content_filter = r#"
+addr = ":119"
+site_name = "test.example.com"
+
+[[filter]]
+name = "HeaderFilter"
+
+[[filter]]
+name = "SizeFilter"
+"#;
+
+    let mut temp_file2 = NamedTempFile::new().unwrap();
+    std::io::Write::write_all(&mut temp_file2, config_content_filter.as_bytes()).unwrap();
+    
+    let config2 = Config::from_file(temp_file2.path().to_str().unwrap()).unwrap();
+    assert_eq!(config2.filters.len(), 2);
+    
+    // Both should parse the same way
+    assert_eq!(config1.filters[0].name, config2.filters[0].name);
+    assert_eq!(config1.filters[1].name, config2.filters[1].name);
 }

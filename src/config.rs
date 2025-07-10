@@ -169,8 +169,8 @@ pub struct Config {
     pub article_worker_count: usize,
     #[serde(default)]
     pub group_settings: Vec<GroupRule>,
-    #[serde(default)]
-    pub filter_pipeline: Vec<FilterConfig>,
+    #[serde(default, alias = "filter")]
+    pub filters: Vec<FilterConfig>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -260,7 +260,7 @@ impl Config {
         self.default_retention_days = other.default_retention_days;
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
-        self.filter_pipeline = other.filter_pipeline;
+        self.filters = other.filters;
 
         self.peer_sync_schedule = other.peer_sync_schedule;
         self.idle_timeout_secs = other.idle_timeout_secs;

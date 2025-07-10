@@ -40,14 +40,14 @@ sync_schedule = "0 0 2 * * *"  # Sync daily at 2 AM
 # Filter pipeline configuration
 # If not specified, the default filter chain is used (all filters)
 # You can customize the filter chain by specifying which filters to use and in what order
-[[filter_pipeline]]
+[[filters]]
 name = "HeaderFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "SizeFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "GroupExistenceFilter"
 
-[[filter_pipeline]]
+[[filters]]
 name = "ModerationFilter"

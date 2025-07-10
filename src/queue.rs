@@ -148,7 +148,7 @@ async fn process_article(
         let cfg_guard = config.read().await;
         
         // Create filter chain from configuration
-        let filter_chain = match crate::filters::factory::create_filter_chain(&cfg_guard.filter_pipeline) {
+        let filter_chain = match crate::filters::factory::create_filter_chain(&cfg_guard.filters) {
             Ok(chain) => chain,
             Err(e) => {
                 error!("Failed to create filter chain: {}", e);
