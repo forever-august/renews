@@ -7,6 +7,7 @@ pub use parse::{
 pub mod auth;
 pub mod config;
 pub mod control;
+pub mod filters;
 pub mod handlers;
 pub mod peers;
 pub mod queue;

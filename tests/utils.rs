@@ -26,11 +26,11 @@ pub async fn setup() -> (Arc<dyn Storage>, Arc<dyn AuthProvider>) {
 /// Create a test article queue with workers
 pub async fn create_test_queue_with_workers(
     storage: Arc<dyn Storage>,
-    auth: Arc<dyn AuthProvider>, 
-    config: Arc<RwLock<Config>>
+    auth: Arc<dyn AuthProvider>,
+    config: Arc<RwLock<Config>>,
 ) -> ArticleQueue {
     let queue = ArticleQueue::new(10); // Small capacity for tests
-    
+
     // Start worker pool
     let worker_pool = renews::queue::WorkerPool::new(
         queue.clone(),
@@ -39,9 +39,9 @@ pub async fn create_test_queue_with_workers(
         config,
         2, // Use 2 workers for tests
     );
-    
+
     let _worker_handles = worker_pool.start().await;
-    
+
     queue
 }
 
@@ -129,7 +129,7 @@ pub async fn setup_server(
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let queue = create_test_queue();
-    
+
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
         queue.clone(),
@@ -139,7 +139,7 @@ pub async fn setup_server(
         2, // Use 2 workers for tests
     );
     let _worker_handles = worker_pool.start().await;
-    
+
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         handle_client(sock, store_clone, auth_clone, cfg, false, queue)
@@ -159,7 +159,7 @@ pub async fn setup_server_with_cfg(
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
     let queue = create_test_queue();
-    
+
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
         queue.clone(),
@@ -169,7 +169,7 @@ pub async fn setup_server_with_cfg(
         2, // Use 2 workers for tests
     );
     let _worker_handles = worker_pool.start().await;
-    
+
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         handle_client(sock, store_clone, auth_clone, cfg, false, queue)
@@ -208,7 +208,7 @@ pub async fn setup_tls_server_with_cert(
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let queue = create_test_queue();
-    
+
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
         queue.clone(),
@@ -218,7 +218,7 @@ pub async fn setup_tls_server_with_cert(
         2, // Use 2 workers for tests
     );
     let _worker_handles = worker_pool.start().await;
-    
+
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
@@ -289,7 +289,7 @@ pub async fn start_server(
             .unwrap();
         let acceptor = TlsAcceptor::from(Arc::new(tls_config));
         let queue = create_test_queue();
-        
+
         // Start worker pool for queue processing
         let worker_pool = renews::queue::WorkerPool::new(
             queue.clone(),
@@ -299,7 +299,7 @@ pub async fn start_server(
             2, // Use 2 workers for tests
         );
         let _worker_handles = worker_pool.start().await;
-        
+
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let stream = acceptor.accept(sock).await.unwrap();
@@ -310,7 +310,7 @@ pub async fn start_server(
         (addr, Some((cert, pem)), handle)
     } else {
         let queue = create_test_queue();
-        
+
         // Start worker pool for queue processing
         let worker_pool = renews::queue::WorkerPool::new(
             queue.clone(),
@@ -320,7 +320,7 @@ pub async fn start_server(
             2, // Use 2 workers for tests
         );
         let _worker_handles = worker_pool.start().await;
-        
+
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             handle_client(sock, store_clone, auth_clone, cfg, false, queue)
