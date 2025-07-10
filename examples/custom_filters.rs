@@ -40,7 +40,7 @@ impl ArticleFilter for ProfanityFilter {
             let subject_lower = subject.to_lowercase();
             for blocked_word in &self.blocked_words {
                 if subject_lower.contains(&blocked_word.to_lowercase()) {
-                    return Err(format!("Subject contains blocked word: {}", blocked_word).into());
+                    return Err(format!("Subject contains blocked word: {blocked_word}").into());
                 }
             }
         }
@@ -135,7 +135,7 @@ pub async fn example_usage() -> Result<(), Box<dyn Error + Send + Sync>> {
         .await
     {
         Ok(()) => println!("Article passed validation (unexpected)"),
-        Err(e) => println!("Article failed validation: {}", e),
+        Err(e) => println!("Article failed validation: {e}"),
     }
 
     // Example article that should pass
@@ -155,7 +155,7 @@ pub async fn example_usage() -> Result<(), Box<dyn Error + Send + Sync>> {
         .await
     {
         Ok(()) => println!("Article passed validation"),
-        Err(e) => println!("Article failed validation: {}", e),
+        Err(e) => println!("Article failed validation: {e}"),
     }
 
     Ok(())
