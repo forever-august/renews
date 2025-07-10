@@ -16,6 +16,7 @@ use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
 };
+use uuid;
 
 use crate::storage::DynStorage;
 use crate::wildmat::wildmat;
@@ -392,32 +393,24 @@ impl From<&crate::config::PeerRule> for PeerConfig {
     }
 }
 
-pub async fn peer_task(
+/// Add a peer sync job to the shared scheduler.
+///
+/// Returns the job UUID on success for later removal.
+pub async fn add_peer_job(
+    scheduler: &JobScheduler,
     peer: PeerConfig,
     default_schedule: String,
     db: PeerDb,
     storage: DynStorage,
     site_name: String,
-) {
+) -> PeerResult<uuid::Uuid> {
     let schedule = peer.sync_schedule.as_deref().unwrap_or(&default_schedule);
 
     tracing::info!(
-        "Starting peer sync task for {} with schedule '{}'",
+        "Adding peer sync job for {} with schedule '{}'",
         peer.sitename,
         schedule
     );
-
-    let scheduler = match JobScheduler::new().await {
-        Ok(scheduler) => scheduler,
-        Err(e) => {
-            tracing::error!(
-                "Failed to create job scheduler for {}: {}",
-                peer.sitename,
-                e
-            );
-            return;
-        }
-    };
 
     let peer_clone = peer.clone();
     let db_clone = db.clone();
@@ -456,33 +449,13 @@ pub async fn peer_task(
                 );
             }
         })
-    });
+    })?;
 
-    match job {
-        Ok(job) => {
-            if let Err(e) = scheduler.add(job).await {
-                tracing::error!(
-                    "Failed to add job to scheduler for {}: {}",
-                    peer.sitename,
-                    e
-                );
-                return;
-            }
-
-            if let Err(e) = scheduler.start().await {
-                tracing::error!("Failed to start scheduler for {}: {}", peer.sitename, e);
-                return;
-            }
-
-            // Keep the task running with shorter sleeps for responsiveness
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to create cron job for {}: {}", peer.sitename, e);
-        }
-    }
+    let job_uuid = job.guid();
+    scheduler.add(job).await?;
+    
+    tracing::debug!("Added peer sync job for {} with UUID {}", peer.sitename, job_uuid);
+    Ok(job_uuid)
 }
 
 async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {

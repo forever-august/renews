@@ -1,12 +1,13 @@
 use crate::utils::{self as common, ClientMock};
 use renews::auth::AuthProvider;
-use renews::peers::{PeerConfig, PeerDb, peer_task};
+use renews::peers::{PeerConfig, PeerDb, add_peer_job};
 use renews::storage::Storage;
 use renews::storage::sqlite::SqliteStorage;
 use serial_test::serial;
 use std::fs;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
+use tokio_cron_scheduler::JobScheduler;
 
 #[tokio::test]
 async fn add_and_remove_peers() {
@@ -31,21 +32,76 @@ async fn peer_task_updates_last_sync() {
         patterns: vec![],
         sync_schedule: Some("* * * * * *".into()), // Every second for testing
     };
-    let db_clone = db.clone();
-    let storage_clone = storage.clone();
-    tokio::spawn(async move {
-        peer_task(
-            peer,
-            "* * * * * *".to_string(),
-            db_clone,
-            storage_clone,
-            "local".into(),
-        )
-        .await;
-    });
+    
+    // Create shared scheduler
+    let scheduler = JobScheduler::new().await.unwrap();
+    scheduler.start().await.unwrap();
+    
+    // Add peer job to shared scheduler
+    let _job_uuid = add_peer_job(
+        &scheduler,
+        peer,
+        "* * * * * *".to_string(),
+        db.clone(),
+        storage,
+        "local".into(),
+    ).await.unwrap();
+    
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     let last = db.get_last_sync("127.0.0.1:9").await.unwrap();
     assert!(last.is_some());
+}
+
+#[tokio::test]
+async fn shared_scheduler_handles_multiple_peers() {
+    let db = PeerDb::new("sqlite::memory:").await.unwrap();
+    db.sync_config(&["peer1:9".into(), "peer2:9".into()]).await.unwrap();
+    let storage = SqliteStorage::new("sqlite::memory:").await.unwrap();
+    let storage: Arc<dyn Storage> = Arc::new(storage);
+    
+    // Create shared scheduler
+    let scheduler = JobScheduler::new().await.unwrap();
+    scheduler.start().await.unwrap();
+    
+    // Add multiple peer jobs to the same shared scheduler
+    let peer1 = PeerConfig {
+        sitename: "peer1:9".into(),
+        patterns: vec![],
+        sync_schedule: Some("* * * * * *".into()), // Every second for testing
+    };
+    
+    let peer2 = PeerConfig {
+        sitename: "peer2:9".into(),
+        patterns: vec![],
+        sync_schedule: Some("* * * * * *".into()), // Every second for testing
+    };
+    
+    let _job1_uuid = add_peer_job(
+        &scheduler,
+        peer1,
+        "* * * * * *".to_string(),
+        db.clone(),
+        storage.clone(),
+        "local".into(),
+    ).await.unwrap();
+    
+    let _job2_uuid = add_peer_job(
+        &scheduler,
+        peer2,
+        "* * * * * *".to_string(),
+        db.clone(),
+        storage,
+        "local".into(),
+    ).await.unwrap();
+    
+    // Wait for both peers to execute at least once
+    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    
+    // Both peers should have updated their last sync times
+    let last1 = db.get_last_sync("peer1:9").await.unwrap();
+    let last2 = db.get_last_sync("peer2:9").await.unwrap();
+    assert!(last1.is_some());
+    assert!(last2.is_some());
 }
 
 async fn peer_transfer_helper(schedule: &str) {
@@ -108,21 +164,22 @@ async fn peer_transfer_helper(schedule: &str) {
         patterns: vec!["*".into()],
         sync_schedule: Some(schedule.to_string()),
     };
-    let db_clone = db.clone();
-    let storage_clone = storage_a.clone();
-    let peer_handle = tokio::spawn(async move {
-        peer_task(
-            peer,
-            "* * * * * *".to_string(),
-            db_clone,
-            storage_clone,
-            "A".into(),
-        )
-        .await;
-    });
+    
+    // Create shared scheduler
+    let scheduler = JobScheduler::new().await.unwrap();
+    scheduler.start().await.unwrap();
+    
+    // Add peer job to shared scheduler
+    let _job_uuid = add_peer_job(
+        &scheduler,
+        peer,
+        "* * * * * *".to_string(),
+        db.clone(),
+        storage_a.clone(),
+        "A".into(),
+    ).await.unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
-    peer_handle.abort();
     handle_b.await.unwrap();
 
     let (check_addr, check_cert, check_handle) =
