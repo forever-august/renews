@@ -169,6 +169,8 @@ pub struct Config {
     pub article_worker_count: usize,
     #[serde(default)]
     pub group_settings: Vec<GroupRule>,
+    #[serde(default)]
+    pub filter_pipeline: Vec<FilterConfig>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -190,6 +192,13 @@ pub struct PeerRule {
     pub patterns: Vec<String>,
     #[serde(default)]
     pub sync_schedule: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct FilterConfig {
+    pub name: String,
+    #[serde(default)]
+    pub parameters: serde_json::Value,
 }
 
 impl Config {
@@ -246,11 +255,12 @@ impl Config {
     }
 
     /// Update runtime-adjustable values from a new configuration.
-    /// Only retention, group, and TLS settings are changed.
+    /// Only retention, group, filter pipeline, and TLS settings are changed.
     pub fn update_runtime(&mut self, other: Config) {
         self.default_retention_days = other.default_retention_days;
         self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
+        self.filter_pipeline = other.filter_pipeline;
 
         self.peer_sync_schedule = other.peer_sync_schedule;
         self.idle_timeout_secs = other.idle_timeout_secs;
