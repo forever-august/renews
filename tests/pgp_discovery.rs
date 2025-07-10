@@ -5,7 +5,6 @@ use renews::{
     Message,
     auth::pgp_discovery::{DefaultPgpKeyDiscovery, PgpKeyDiscovery},
 };
-use tokio;
 
 #[tokio::test]
 async fn test_pgp_discovery_with_missing_key() {

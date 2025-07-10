@@ -67,7 +67,7 @@ impl CommandHandler for IHaveHandler {
             };
 
             // Store immediately for protocol compliance (second IHAVE should know article exists)
-            if let Err(_) = ctx.storage.store_article(&article).await {
+            if ctx.storage.store_article(&article).await.is_err() {
                 write_simple(&mut ctx.writer, RESP_437_REJECTED).await?;
                 return Ok(());
             }
@@ -164,7 +164,7 @@ impl CommandHandler for TakeThisHandler {
             };
 
             // Store immediately for protocol compliance (duplicate TAKETHIS should be detected)
-            if let Err(_) = ctx.storage.store_article(&article).await {
+            if ctx.storage.store_article(&article).await.is_err() {
                 write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
                 return Ok(());
             }

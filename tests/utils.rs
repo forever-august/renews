@@ -94,7 +94,7 @@ pub fn build_sig(data: &str) -> (String, Vec<String>) {
     let sig = cfg
         .sign(
             &key.primary_key,
-            || String::new(),
+            String::new,
             Cursor::new(data.as_bytes()),
         )
         .unwrap();
