@@ -5,7 +5,7 @@
 //! from key servers when needed.
 
 use async_trait::async_trait;
-use pgp::composed::{Deserializable, SignedPublicKey};
+use pgp::native::{Deserializable, SignedPublicKey};
 use std::error::Error;
 
 /// Trait for PGP key discovery from various sources.
@@ -34,17 +34,32 @@ pub trait PgpKeyDiscovery: Send + Sync {
     async fn validate_key(&self, key_text: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
 }
 
-/// Default implementation of PGP key discovery using the pgp crate's built-in features.
-#[derive(Default)]
+/// Default implementation of PGP key discovery using pgp-lib's key discovery features.
 pub struct DefaultPgpKeyDiscovery {
-    // Configuration for key servers, timeouts, etc.
-    // This will be populated based on pgp crate's key discovery capabilities
+    key_servers: Vec<String>,
 }
 
 impl DefaultPgpKeyDiscovery {
-    /// Create a new instance with default configuration.
+    /// Create a new instance with default key servers.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            key_servers: vec![
+                "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>".to_string(),
+                "hkps://pgp.mit.edu/pks/lookup?op=get&search=<email>".to_string(),
+                "hkps://keyserver.ubuntu.com/pks/lookup?op=get&search=<email>".to_string(),
+            ],
+        }
+    }
+
+    /// Create a new instance with custom key servers.
+    pub fn with_key_servers(key_servers: Vec<String>) -> Self {
+        Self { key_servers }
+    }
+}
+
+impl Default for DefaultPgpKeyDiscovery {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -54,15 +69,28 @@ impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
         &self,
         user: &str,
     ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-        // TODO: Use pgp crate's key discovery features
-        // For now, this is a placeholder that will be implemented
-        // once we identify the correct pgp crate API to use
-
         tracing::debug!("Attempting key discovery for user: {}", user);
 
-        // Placeholder: This should use the pgp crate's key discovery functionality
-        // instead of the custom reqwest-based implementation
-        Ok(None)
+        // Use pgp-lib's HTTP key discovery functionality
+        match pgp::http::get_one(user.to_string(), self.key_servers.clone()).await {
+            Ok(public_key) => {
+                // Convert the SignedPublicKey to armored string format
+                match public_key.to_armored_string(None) {
+                    Ok(armored_key) => {
+                        tracing::debug!("Successfully discovered key for user: {}", user);
+                        Ok(Some(armored_key))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to serialize discovered key for {}: {}", user, e);
+                        Err(format!("Failed to serialize discovered key: {e}").into())
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::debug!("No key found for user {}: {}", user, e);
+                Ok(None)
+            }
+        }
     }
 
     async fn validate_key(&self, key_text: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
@@ -91,10 +119,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_discover_key_placeholder() {
+    async fn test_discover_key_returns_none_for_invalid_email() {
         let discovery = DefaultPgpKeyDiscovery::new();
-        let result = discovery.discover_key("test@example.com").await;
+        let result = discovery
+            .discover_key("invalid-email-that-should-not-exist-anywhere@nonexistent.invalid")
+            .await;
         assert!(result.is_ok());
-        assert!(result.unwrap().is_none()); // Placeholder returns None
+        assert!(result.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_custom_key_servers() {
+        let custom_servers =
+            vec!["hkps://custom.server.com/pks/lookup?op=get&search=<email>".to_string()];
+        let discovery = DefaultPgpKeyDiscovery::with_key_servers(custom_servers.clone());
+        assert_eq!(discovery.key_servers, custom_servers);
+    }
+
+    #[tokio::test]
+    async fn test_default_key_servers() {
+        let discovery = DefaultPgpKeyDiscovery::default();
+        assert!(!discovery.key_servers.is_empty());
+        assert!(
+            discovery
+                .key_servers
+                .iter()
+                .any(|s| s.contains("keys.openpgp.org"))
+        );
     }
 }

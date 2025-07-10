@@ -7,9 +7,9 @@ use crate::{
     storage::DynStorage,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use pgp::composed::{Deserializable, SignedPublicKey, StandaloneSignature};
+use pgp::native::{Deserializable, SignedPublicKey, StandaloneSignature};
 use sha2::{Digest, Sha256, Sha512};
-use std::error::Error;
+use std::{error::Error, io::Cursor};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ControlCommand {
@@ -195,7 +195,7 @@ async fn try_verify_with_key(
     let armor = format!(
         "-----BEGIN PGP SIGNATURE-----\nVersion: {version}\n\n{sig_data}\n-----END PGP SIGNATURE-----\n"
     );
-    let (sig, _) = StandaloneSignature::from_armor_single(armor.as_bytes())?;
+    let (sig, _) = StandaloneSignature::from_armor_single(Cursor::new(armor.as_bytes()))?;
     let data = canonical_text(msg, signed_headers);
 
     match sig.verify(&key, data.as_bytes()) {
