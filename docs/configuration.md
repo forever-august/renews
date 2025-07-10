@@ -61,12 +61,12 @@ max_article_bytes = "10M"       # Larger files allowed
 [[peers]]
 sitename = "user:pass@peer1.example.com:119"
 patterns = ["comp.*", "misc.*"] # Only sync these hierarchies
-sync_interval_secs = 1800       # Sync every 30 minutes
+sync_schedule = "0 */30 * * * *"       # Sync every 30 minutes
 
 [[peers]]
 sitename = "peer2.example.com"  # No authentication required
 patterns = ["*"]                # Sync all groups
-sync_interval_secs = 7200       # Sync every 2 hours
+sync_schedule = "0 0 */2 * * *"       # Sync every 2 hours
 ```
 
 ## Configuration Sections
@@ -152,7 +152,7 @@ Configure peer servers for article distribution:
 [[peers]]
 sitename = "news.example.com:119"    # Hostname and port
 patterns = ["*"]                     # Groups to sync (wildmat)
-sync_interval_secs = 3600           # Override default interval
+sync_schedule = "0 0 * * * *"           # Override default schedule
 
 [[peers]]
 sitename = "user:pass@secure.example.com:563"  # With credentials

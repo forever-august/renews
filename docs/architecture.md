@@ -47,7 +47,7 @@ Runtime configuration management:
 
 ### Peer Synchronization (`src/peers.rs`)
 Distributed newsgroup synchronization:
-- Configurable sync intervals
+- Configurable cron schedules
 - Wildcard pattern matching for group selection
 - Incremental article transfer
 - Connection pooling and retry logic
@@ -106,7 +106,7 @@ handlers --> config : Group settings
 5. **Distribution** - Queue for peer synchronization if applicable
 
 ### Peer Synchronization Flow
-1. **Schedule Check** - Timer-based sync interval triggers
+1. **Schedule Check** - Cron-based schedule triggers
 2. **Group Enumeration** - List groups matching peer patterns
 3. **Incremental Sync** - Fetch articles since last sync timestamp
 4. **Transfer** - Use IHAVE/CHECK/TAKETHIS for efficient transfer

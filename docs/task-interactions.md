@@ -47,8 +47,7 @@ package "Renews Server Process" {
   }
   
   rectangle "Background Tasks" {
-    [Peer Sync Task 1] as peertask1
-    [Peer Sync Task 2] as peertask2
+    [Peer Scheduler] as peersched
     [Retention Cleanup] as cleanup
     [Config Reloader] as configreload
   }
@@ -85,10 +84,8 @@ cmdhandlers --> auth : user validation
 cmdhandlers --> config : group policies
 
 ' Background task interactions
-peertask1 --> peers : article sync
-peertask2 --> peers : article sync
-peertask1 --> storage : read/write articles
-peertask2 --> storage : read/write articles
+peersched --> peers : article sync
+peersched --> storage : read/write articles
 
 cleanup --> storage : delete expired articles
 cleanup --> config : retention policies
@@ -109,8 +106,7 @@ admin --> config : read settings
 config --> handler1 : settings
 config --> handler2 : settings
 config --> handlerN : settings
-config --> peertask1 : peer config
-config --> peertask2 : peer config
+config --> peersched : peer config
 config --> cleanup : retention config
 
 @enduml
@@ -196,16 +192,16 @@ Client -> Handler: Disconnect
 **Purpose**: Distribute articles with other NNTP servers
 
 **Lifecycle**:
-1. One task spawned per configured peer server
-2. Periodic wake-up based on sync interval
+1. A single scheduler manages cron jobs for each peer
+2. Periodic wake-up based on the configured schedule
 3. Connect to peer server using NNTP protocol
 4. Transfer new articles since last sync
-5. Update sync timestamp and sleep until next interval
+5. Update sync timestamp and wait for the next scheduled run
 
 **Interactions**:
 - **Peer Servers**: Outbound NNTP connections for article transfer
 - **Storage Engine**: Read local articles, store received articles
-- **Configuration**: Peer settings, sync intervals, group patterns
+- **Configuration**: Peer settings, sync schedules, group patterns
 - **Peer Database**: Track sync state and timestamps
 
 **Transfer Modes**:
@@ -219,7 +215,7 @@ participant "Peer\nServer" as Peer
 participant Storage
 participant "Peer\nDatabase" as PeerDB
 
-loop Every sync interval
+loop Every scheduled run
   Task -> PeerDB: Get last sync time
   PeerDB -> Task: Timestamp
   

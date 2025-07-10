@@ -37,13 +37,14 @@ use tokio::sync::RwLock;
 
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
-use crate::peers::{PeerConfig, PeerDb, peer_task};
+use crate::peers::{PeerConfig, PeerDb, build_peer_job};
 use crate::queue::{ArticleQueue, WorkerPool};
 use crate::retention::cleanup_expired_articles;
 use crate::storage::{self, Storage};
 #[cfg(feature = "websocket")]
 use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
+use tokio_cron_scheduler::JobScheduler;
 
 type ServerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -70,7 +71,7 @@ impl Server {
         let components = Self::initialize_components(&cfg).await?;
         let peer_db = Self::initialize_peer_db(&cfg).await?;
         let config_manager = ConfigManager::new(components.config.clone());
-        let peer_manager = PeerManager::new(peer_db);
+        let peer_manager = PeerManager::new(peer_db).await?;
 
         // Create worker pool
         let worker_pool = WorkerPool::new(
@@ -360,15 +361,20 @@ impl ConfigManager {
 #[derive(Clone)]
 struct PeerManager {
     peer_db: PeerDb,
-    peer_tasks: Arc<RwLock<HashMap<String, tokio::task::JoinHandle<()>>>>,
+    scheduler: JobScheduler,
+    jobs: Arc<RwLock<HashMap<String, uuid::Uuid>>>,
 }
 
 impl PeerManager {
-    fn new(peer_db: PeerDb) -> Self {
-        Self {
+    async fn new(peer_db: PeerDb) -> ServerResult<Self> {
+        let scheduler = JobScheduler::new()
+            .await
+            .map_err(|e| format!("Failed to create peer scheduler: {e}"))?;
+        Ok(Self {
             peer_db,
-            peer_tasks: Arc::new(RwLock::new(HashMap::new())),
-        }
+            scheduler,
+            jobs: Arc::new(RwLock::new(HashMap::new())),
+        })
     }
 
     async fn start_peer_tasks(
@@ -380,19 +386,20 @@ impl PeerManager {
 
         for peer in &config.peers {
             let pc = PeerConfig::from(peer);
-            let name = pc.sitename.clone();
-
-            let handle = tokio::spawn(peer_task(
-                pc,
+            let job = build_peer_job(
+                pc.clone(),
                 default_schedule.clone(),
                 self.peer_db.clone(),
                 storage.clone(),
                 config.site_name.clone(),
-            ));
+            )?;
 
-            self.peer_tasks.write().await.insert(name, handle);
+            let guid = job.guid();
+            self.scheduler.add(job).await?;
+            self.jobs.write().await.insert(pc.sitename.clone(), guid);
         }
 
+        self.scheduler.start().await?;
         Ok(())
     }
 
@@ -400,40 +407,37 @@ impl PeerManager {
         let names: Vec<String> = new_cfg.peers.iter().map(|p| p.sitename.clone()).collect();
         self.peer_db.sync_config(&names).await?;
 
-        let mut tasks = self.peer_tasks.write().await;
+        let mut jobs = self.jobs.write().await;
         let default_schedule = new_cfg.peer_sync_schedule.clone();
 
-        // Start new peer tasks
+        // Add new peer jobs
         for peer in &new_cfg.peers {
-            if !tasks.contains_key(&peer.sitename) {
-                let dbc = self.peer_db.clone();
+            if !jobs.contains_key(&peer.sitename) {
                 let pc = PeerConfig::from(peer);
-                let name = pc.sitename.clone();
-                let storage_clone = storage.clone();
-                let site = new_cfg.site_name.clone();
-
-                let handle = tokio::spawn(peer_task(
-                    pc,
+                let job = build_peer_job(
+                    pc.clone(),
                     default_schedule.clone(),
-                    dbc,
-                    storage_clone,
-                    site,
-                ));
+                    self.peer_db.clone(),
+                    storage.clone(),
+                    new_cfg.site_name.clone(),
+                )?;
 
-                tasks.insert(name, handle);
+                let guid = job.guid();
+                self.scheduler.add(job).await?;
+                jobs.insert(pc.sitename.clone(), guid);
             }
         }
 
-        // Remove obsolete peer tasks
-        let to_remove: Vec<String> = tasks
+        // Remove jobs for deleted peers
+        let to_remove: Vec<String> = jobs
             .keys()
             .filter(|k| !new_cfg.peers.iter().any(|p| &p.sitename == *k))
             .cloned()
             .collect();
 
         for name in to_remove {
-            if let Some(h) = tasks.remove(&name) {
-                h.abort();
+            if let Some(id) = jobs.remove(&name) {
+                let _ = self.scheduler.remove(&id).await;
             }
         }
 

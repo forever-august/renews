@@ -11,7 +11,7 @@ use std::error::Error;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_cron_scheduler::{Job, JobScheduler};
+use tokio_cron_scheduler::Job;
 use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
@@ -392,32 +392,19 @@ impl From<&crate::config::PeerRule> for PeerConfig {
     }
 }
 
-pub async fn peer_task(
+/// Build a cron job that synchronizes articles with a peer server.
+///
+/// The returned job can be scheduled on a [`JobScheduler`].
+pub fn build_peer_job(
     peer: PeerConfig,
     default_schedule: String,
     db: PeerDb,
     storage: DynStorage,
     site_name: String,
-) {
+) -> PeerResult<Job> {
     let schedule = peer.sync_schedule.as_deref().unwrap_or(&default_schedule);
 
-    tracing::info!(
-        "Starting peer sync task for {} with schedule '{}'",
-        peer.sitename,
-        schedule
-    );
-
-    let scheduler = match JobScheduler::new().await {
-        Ok(scheduler) => scheduler,
-        Err(e) => {
-            tracing::error!(
-                "Failed to create job scheduler for {}: {}",
-                peer.sitename,
-                e
-            );
-            return;
-        }
-    };
+    tracing::info!("Scheduling peer {} with cron '{}'", peer.sitename, schedule);
 
     let peer_clone = peer.clone();
     let db_clone = db.clone();
@@ -447,7 +434,6 @@ pub async fn peer_task(
                 }
             }
 
-            // Update last sync time regardless of success/failure
             if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
                 tracing::error!(
                     "Failed to update last sync time for {}: {}",
@@ -456,33 +442,9 @@ pub async fn peer_task(
                 );
             }
         })
-    });
+    })?;
 
-    match job {
-        Ok(job) => {
-            if let Err(e) = scheduler.add(job).await {
-                tracing::error!(
-                    "Failed to add job to scheduler for {}: {}",
-                    peer.sitename,
-                    e
-                );
-                return;
-            }
-
-            if let Err(e) = scheduler.start().await {
-                tracing::error!("Failed to start scheduler for {}: {}", peer.sitename, e);
-                return;
-            }
-
-            // Keep the task running with shorter sleeps for responsiveness
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-        }
-        Err(e) => {
-            tracing::error!("Failed to create cron job for {}: {}", peer.sitename, e);
-        }
-    }
+    Ok(job)
 }
 
 async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
