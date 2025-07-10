@@ -74,19 +74,29 @@ pub fn request_lines(text: &str) -> Vec<String> {
 
 /// Build a detached PGP signature for the provided data.
 pub fn build_sig(data: &str) -> (String, Vec<String>) {
-    use pgp::composed::{Deserializable, SignedSecretKey, StandaloneSignature};
-    use pgp::packet::SignatureConfig;
-    use pgp::packet::SignatureType;
-    use pgp::types::Password;
-    use rand::thread_rng;
+    use pgp::native::crypto::hash::HashAlgorithm;
+    use pgp::native::packet::{SignatureConfig, SignatureType, SignatureVersion};
+    use pgp::native::types::{KeyTrait, SecretKeyTrait};
+    use pgp::native::{Deserializable, SignedSecretKey, StandaloneSignature};
+    use std::io::Cursor;
 
     const ADMIN_SEC: &str = include_str!("integration/../data/admin.sec.asc");
 
     let (key, _) = SignedSecretKey::from_string(ADMIN_SEC).unwrap();
-    let cfg =
-        SignatureConfig::from_key(thread_rng(), &key.primary_key, SignatureType::Binary).unwrap();
+    let cfg = SignatureConfig::new_v4(
+        SignatureVersion::V4,
+        SignatureType::Binary,
+        key.primary_key.public_key().algorithm(),
+        HashAlgorithm::SHA2_256,
+        Vec::new(),
+        Vec::new(),
+    );
     let sig = cfg
-        .sign(&key.primary_key, &Password::empty(), data.as_bytes())
+        .sign(
+            &key.primary_key,
+            || String::new(),
+            Cursor::new(data.as_bytes()),
+        )
         .unwrap();
     let armored = StandaloneSignature::new(sig)
         .to_armored_string(Default::default())

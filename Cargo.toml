@@ -21,7 +21,7 @@ rand_core = { version = "0.6", features = ["std", "getrandom"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
 sha1 = "0.10"
-pgp = "0.16"
+pgp-lib = { version = "1.0", features = ["key-discovery", "tokio", "rustls"] }
 rand = "0.8"
 base64 = "0.21"
 sha2 = "0.10"
