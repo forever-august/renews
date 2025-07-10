@@ -8,19 +8,19 @@ Renews implements the NNTP protocol as defined in RFC 3977, storing articles in 
 
 ## Features
 
-• **Full NNTP Protocol Support** - RFC 3977 compliant with standard commands (ARTICLE, HEAD, BODY, POST, etc.)
-• **Multiple Storage Backends** - SQLite (default) and PostgreSQL support  
-• **TLS/SSL Support** - Secure NNTP over TLS with configurable certificates
-• **Authentication System** - User authentication with admin and moderator roles
-• **Moderated Groups** - Support for moderated newsgroups with approval workflows
-• **Peer Synchronization** - Distribute articles across multiple server instances
-• **WebSocket Bridge** - Optional WebSocket support for web-based clients
-• **Flexible Retention** - Configurable article retention policies per newsgroup
-• **Article Size Limits** - Configurable maximum article sizes per group
-• **Streaming Mode** - RFC 4644 streaming feeds support (CHECK/TAKETHIS commands)
-• **Control Messages** - Support for newgroup/rmgroup/cancel control messages
-• **Administrative CLI** - Built-in commands for user and group management
-• **Hot Configuration Reload** - Runtime configuration updates via SIGHUP
+- **Full NNTP Protocol Support** - RFC 3977 compliant with standard commands (ARTICLE, HEAD, BODY, POST, etc.)
+- **Multiple Storage Backends** - SQLite (default) and PostgreSQL support  
+- **TLS/SSL Support** - Secure NNTP over TLS with configurable certificates
+- **Authentication System** - User authentication with admin and moderator roles
+- **Moderated Groups** - Support for moderated newsgroups with approval workflows
+- **Peer Synchronization** - Distribute articles across multiple server instances
+- **WebSocket Bridge** - Optional WebSocket support for web-based clients
+- **Flexible Retention** - Configurable article retention policies per newsgroup
+- **Article Size Limits** - Configurable maximum article sizes per group
+- **Streaming Mode** - RFC 4644 streaming feeds support (CHECK/TAKETHIS commands)
+- **Control Messages** - Support for newgroup/rmgroup/cancel control messages
+- **Administrative CLI** - Built-in commands for user and group management
+- **Hot Configuration Reload** - Runtime configuration updates via SIGHUP
 
 ## Building
 
