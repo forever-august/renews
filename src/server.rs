@@ -369,7 +369,7 @@ impl PeerManager {
     async fn new(peer_db: PeerDb) -> ServerResult<Self> {
         let scheduler = JobScheduler::new().await?;
         scheduler.start().await?;
-        
+
         Ok(Self {
             peer_db,
             scheduler: Arc::new(scheduler),
@@ -395,7 +395,9 @@ impl PeerManager {
                 self.peer_db.clone(),
                 storage.clone(),
                 config.site_name.clone(),
-            ).await {
+            )
+            .await
+            {
                 Ok(job_uuid) => {
                     self.peer_jobs.write().await.insert(name, job_uuid);
                 }
@@ -428,7 +430,9 @@ impl PeerManager {
                     self.peer_db.clone(),
                     storage.clone(),
                     new_cfg.site_name.clone(),
-                ).await {
+                )
+                .await
+                {
                     Ok(job_uuid) => {
                         jobs.insert(name, job_uuid);
                     }

@@ -46,9 +46,7 @@ pub fn create_filter(config: &FilterConfig) -> Result<Box<dyn ArticleFilter>, Fi
 ///
 /// If the configuration is empty, returns the default filter chain.
 /// Otherwise, creates a custom chain with the specified filters in order.
-pub fn create_filter_chain(
-    configs: &[FilterConfig],
-) -> Result<FilterChain, FilterFactoryError> {
+pub fn create_filter_chain(configs: &[FilterConfig]) -> Result<FilterChain, FilterFactoryError> {
     if configs.is_empty() {
         // If no filter configuration is provided, use the default chain
         return Ok(FilterChain::default());
@@ -73,7 +71,7 @@ mod tests {
             name: "HeaderFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "HeaderFilter");
     }
@@ -84,7 +82,7 @@ mod tests {
             name: "SizeFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "SizeFilter");
     }
@@ -95,7 +93,7 @@ mod tests {
             name: "GroupExistenceFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "GroupExistenceFilter");
     }
@@ -106,7 +104,7 @@ mod tests {
             name: "ModerationFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "ModerationFilter");
     }
@@ -117,7 +115,7 @@ mod tests {
             name: "UnknownFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let result = create_filter(&config);
         assert!(result.is_err());
         if let Err(FilterFactoryError::UnknownFilter(name)) = result {
@@ -147,7 +145,7 @@ mod tests {
                 parameters: json!({}),
             },
         ];
-        
+
         let chain = create_filter_chain(&configs).unwrap();
         let names = chain.filter_names();
         assert_eq!(names.len(), 2);
@@ -167,7 +165,7 @@ mod tests {
                 parameters: json!({}),
             },
         ];
-        
+
         let result = create_filter_chain(&configs);
         assert!(result.is_err());
     }
