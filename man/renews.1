@@ -1,0 +1,379 @@
+.TH RENEWS 1 "2024" "renews 0.1.0" "User Commands"
+.SH NAME
+renews \- modern NNTP (Network News Transfer Protocol) server
+.SH SYNOPSIS
+.B renews
+[\fB\-\-config\fR \fICONFIG_FILE\fR]
+[\fB\-\-init\fR]
+[\fB\-h\fR|\fB\-\-help\fR]
+[\fICOMMAND\fR]
+.br
+.B renews admin
+.I ADMIN_COMMAND
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B renews
+is a modern, lightweight NNTP (Network News Transfer Protocol) server implemented in Rust. It provides a complete newsgroup server solution with a focus on performance, reliability, and ease of administration.
+
+Renews implements the NNTP protocol as defined in RFC 3977, storing articles in a database and supporting configurable newsgroups with flexible retention policies. The server is designed for both standalone operation and distributed newsgroup synchronization with peer servers.
+.SH OPTIONS
+.TP
+.BR \-\-config " " \fICONFIG_FILE\fR
+Path to the configuration file. Defaults to the value of the
+.B RENEWS_CONFIG
+environment variable, or
+.I /etc/renews.toml
+if the environment variable is not set.
+.TP
+.B \-\-init
+Initialize databases and exit. This creates the article, authentication, and peer state databases without starting the server.
+.TP
+.BR \-h ", " \-\-help
+Print help information and exit.
+.SH COMMANDS
+.TP
+.B admin
+Run administrative commands for managing newsgroups and users. See
+.B ADMINISTRATIVE COMMANDS
+section below.
+.SH ADMINISTRATIVE COMMANDS
+Administrative commands allow management of newsgroups and users without starting the server. These commands read the same configuration file as the server.
+.TP
+.B admin add-group \fIGROUP\fR [\fB\-\-moderated\fR]
+Add a new newsgroup named
+.IR GROUP .
+Use
+.B \-\-moderated
+to create a moderated newsgroup requiring approval for posts.
+.TP
+.B admin remove-group \fIGROUP\fR
+Remove the newsgroup named
+.IR GROUP .
+.TP
+.B admin add-user \fIUSERNAME\fR \fIPASSWORD\fR
+Add a new user with the specified username and password for NNTP authentication.
+.TP
+.B admin remove-user \fIUSERNAME\fR
+Remove the user with the specified username.
+.TP
+.B admin add-admin \fIUSERNAME\fR \fIKEY\fR
+Grant administrative privileges to the specified user. The
+.I KEY
+parameter should be the user's PGP public key for verifying signed control messages.
+.TP
+.B admin remove-admin \fIUSERNAME\fR
+Revoke administrative privileges from the specified user.
+.TP
+.B admin add-moderator \fIUSERNAME\fR \fIPATTERN\fR
+Grant moderator privileges to the specified user for newsgroups matching the wildmat
+.IR PATTERN .
+Patterns use standard wildmat syntax with
+.B *
+for any characters and
+.B ?
+for single characters.
+.TP
+.B admin remove-moderator \fIUSERNAME\fR \fIPATTERN\fR
+Remove moderator privileges from the specified user for the given pattern.
+.SH CONFIGURATION FILE
+The configuration file uses TOML format and supports the following settings:
+.SS Basic Server Settings
+.TP
+.B addr
+Listen address for plain NNTP connections (default: none, must be specified).
+Format is
+.IR [host]:port .
+If the host portion is omitted, the server listens on all interfaces.
+Example:
+.IR :119 " or " 0.0.0.0:119
+.TP
+.B site_name
+Hostname advertised by the server (default: value of
+.B HOSTNAME
+environment variable, or
+.B localhost
+if unset).
+.TP
+.B db_path
+Database connection string for storing articles (default:
+.IR sqlite:///var/renews/news.db ).
+Supports SQLite format:
+.I sqlite:///path/to/database.db
+or PostgreSQL format:
+.IR postgres://user:pass@host:port/database .
+.TP
+.B auth_db_path
+Authentication database connection string (default:
+.IR sqlite:///var/renews/auth.db ).
+Uses the same format as
+.BR db_path .
+.TP
+.B peer_db_path
+Peer state database connection string (default:
+.IR sqlite:///var/renews/peers.db ).
+Used for tracking synchronization state with peer servers.
+.SS Network and Security Settings
+.TP
+.B tls_addr
+Optional listen address for NNTP over TLS connections.
+Requires
+.B tls_cert
+and
+.B tls_key
+to be set.
+Format is the same as
+.BR addr .
+.TP
+.B tls_cert
+Path to TLS certificate file in PEM format.
+Required for TLS support.
+.TP
+.B tls_key
+Path to TLS private key file in PEM format.
+Required for TLS support.
+.TP
+.B ws_addr
+Optional listen address for WebSocket bridge connections.
+Only available when compiled with the
+.I websocket
+feature.
+.TP
+.B idle_timeout_secs
+Idle timeout in seconds for client connections (default: 600).
+Connections are closed after being idle for this duration.
+.SS Article and Content Settings
+.TP
+.B default_retention_days
+Default number of days to keep articles before automatic deletion.
+Can be overridden per newsgroup with
+.BR group_settings .
+.TP
+.B default_max_article_bytes
+Default maximum article size in bytes.
+Supports suffixes:
+.BR K " (kilobytes), " M " (megabytes), " G " (gigabytes)."
+Can be overridden per newsgroup with
+.BR group_settings .
+Example:
+.I 1M
+for 1 megabyte.
+.TP
+.B article_queue_capacity
+Maximum number of articles in the processing queue (default: 1000).
+Minimum value is 1.
+.TP
+.B article_worker_count
+Number of worker threads for processing articles (default: 4).
+Minimum value is 1.
+.SS Peer Synchronization Settings
+.TP
+.B peer_sync_schedule
+Default cron schedule for synchronizing with peer servers (default:
+.IR "0 0 * * * *" " - every hour)."
+Uses standard cron syntax with seconds field.
+.TP
+.B [[peers]]
+Array of peer server configurations for article synchronization.
+Each peer entry supports the following fields:
+.RS
+.TP
+.B sitename
+Hostname or connection string for the peer server.
+May include credentials in the format
+.IR user:pass@host:port .
+.TP
+.B patterns
+Array of wildmat patterns specifying which newsgroups to synchronize.
+Default is
+.I ["*"]
+for all groups.
+.TP
+.B sync_schedule
+Optional cron schedule override for this specific peer.
+.RE
+.SS Group-Specific Settings
+.TP
+.B [[group_settings]]
+Array of rules for customizing settings per newsgroup.
+Each rule can match by exact group name or wildmat pattern:
+.RS
+.TP
+.B group
+Exact newsgroup name to match.
+.TP
+.B pattern
+Wildmat pattern to match multiple newsgroups.
+.TP
+.B retention_days
+Override default retention period for matched groups.
+.TP
+.B max_article_bytes
+Override default maximum article size for matched groups.
+.RE
+.SS Filter Configuration
+.TP
+.B [[filters]]
+Array of content filters applied to incoming articles.
+Each filter configuration includes:
+.RS
+.TP
+.B name
+Name of the filter to apply.
+Available filters:
+.BR HeaderFilter ", " SizeFilter ", " GroupExistenceFilter ", " ModerationFilter .
+.TP
+Additional parameters
+Filter-specific configuration parameters.
+.RE
+.SS PGP Settings
+.TP
+.B pgp_key_servers
+Array of PGP key discovery servers for looking up public keys when verifying signed control messages.
+Default servers are used if not specified.
+Supports placeholder
+.I <email>
+for email-based key lookup.
+.SS Variable Expansion
+Configuration values support variable expansion:
+.TP
+.B $ENV{VAR}
+Replaced with the value of environment variable
+.IR VAR .
+.TP
+.B $FILE{path}
+Replaced with the contents of the file at
+.IR path .
+.SH FILES
+.TP
+.I /etc/renews.toml
+Default configuration file location.
+.TP
+.I /var/renews/news.db
+Default article database location (SQLite).
+.TP
+.I /var/renews/auth.db
+Default authentication database location (SQLite).
+.TP
+.I /var/renews/peers.db
+Default peer state database location (SQLite).
+.SH ENVIRONMENT
+.TP
+.B RENEWS_CONFIG
+Default configuration file path when
+.B \-\-config
+is not specified.
+.TP
+.B HOSTNAME
+Default value for
+.B site_name
+configuration setting.
+.SH EXAMPLES
+.SS Basic Server Setup
+Initialize and start a basic NNTP server:
+.PP
+.EX
+# Create configuration file
+cat > /etc/renews.toml << EOF
+addr = ":119"
+site_name = "news.example.com"
+db_path = "sqlite:///var/renews/news.db"
+auth_db_path = "sqlite:///var/renews/auth.db"
+EOF
+
+# Initialize databases
+renews --init
+
+# Start server
+renews
+.EE
+.SS Administration Examples
+.PP
+.EX
+# Set configuration file via environment
+export RENEWS_CONFIG=/opt/renews/config.toml
+
+# Add a moderated newsgroup
+renews admin add-group comp.lang.rust --moderated
+
+# Add a user
+renews admin add-user alice secretpassword
+
+# Grant admin privileges
+renews admin add-admin alice "-----BEGIN PGP PUBLIC KEY BLOCK-----..."
+
+# Add moderator permissions for Rust groups
+renews admin add-moderator alice 'comp.lang.rust.*'
+
+# Remove a user
+renews admin remove-user bob
+.EE
+.SS TLS Configuration
+Enable NNTP over TLS:
+.PP
+.EX
+addr = ":119"
+tls_addr = ":563"
+tls_cert = "/etc/ssl/certs/news.example.com.pem"
+tls_key = "/etc/ssl/private/news.example.com.key"
+site_name = "news.example.com"
+.EE
+.SS Peer Synchronization
+Configure peer synchronization:
+.PP
+.EX
+[[peers]]
+sitename = "peeruser:peerpass@peer.example.com"
+patterns = ["*"]
+sync_schedule = "0 */30 * * * *"  # Every 30 minutes
+
+[[peers]]
+sitename = "daily-peer.example.com"
+patterns = ["daily.*"]
+sync_schedule = "0 0 2 * * *"  # Daily at 2 AM
+.EE
+.SS Group-Specific Settings
+Configure different retention policies:
+.PP
+.EX
+default_retention_days = 30
+default_max_article_bytes = "1M"
+
+[[group_settings]]
+pattern = "test.*"
+retention_days = 7
+
+[[group_settings]]
+group = "comp.lang.rust"
+retention_days = 90
+max_article_bytes = "5M"
+.EE
+.SH SIGNALS
+.TP
+.B SIGHUP
+Reload configuration. Most settings are updated at runtime except listening ports and database paths.
+.SH EXIT STATUS
+.B renews
+exits with status 0 on success, and >0 if an error occurs.
+.SH SEE ALSO
+.BR systemd (1),
+.BR systemctl (1)
+.PP
+RFC 3977 - Network News Transfer Protocol (NNTP)
+.br
+RFC 4643 - NNTP Extension for Authentication
+.br
+RFC 4644 - NNTP Extension for Streaming Feeds
+.SH FEATURES
+This version of
+.B renews
+was compiled with the following optional features:
+.TP
+.B websocket
+WebSocket bridge support for web-based NNTP clients
+.TP
+.B postgres
+PostgreSQL database backend support
+.SH AUTHORS
+Written by the Renews development team.
+.SH REPORTING BUGS
+Report bugs at: https://github.com/Chemiseblanc/renews/issues
