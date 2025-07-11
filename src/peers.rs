@@ -5,6 +5,7 @@
 //! for efficient article distribution.
 
 use chrono::{DateTime, Utc};
+use futures_util::{StreamExt, TryStreamExt};
 use rustls_native_certs::load_native_certs;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
@@ -453,8 +454,12 @@ pub async fn add_peer_job(
 
     let job_uuid = job.guid();
     scheduler.add(job).await?;
-    
-    tracing::debug!("Added peer sync job for {} with UUID {}", peer.sitename, job_uuid);
+
+    tracing::debug!(
+        "Added peer sync job for {} with UUID {}",
+        peer.sitename,
+        job_uuid
+    );
     Ok(job_uuid)
 }
 
@@ -482,17 +487,19 @@ async fn sync_peer_once(
     site_name: &str,
 ) -> PeerResult<()> {
     let last_sync = db.get_last_sync(&peer.sitename).await?;
-    let groups = storage.list_groups().await?;
+    let mut groups = storage.list_groups();
+    while let Some(result) = groups.next().await {
+        let group = result?;
 
-    for group in groups {
         if !peer.patterns.iter().any(|pattern| wildmat(pattern, &group)) {
             continue;
         }
 
-        let article_ids = match last_sync {
-            Some(timestamp) => storage.list_article_ids_since(&group, timestamp).await?,
-            None => storage.list_article_ids(&group).await?,
+        let article_ids_stream = match last_sync {
+            Some(timestamp) => storage.list_article_ids_since(&group, timestamp),
+            None => storage.list_article_ids(&group),
         };
+        let article_ids = article_ids_stream.try_collect::<Vec<String>>().await?;
 
         process_group_articles(peer, storage, site_name, &group, article_ids).await?;
     }

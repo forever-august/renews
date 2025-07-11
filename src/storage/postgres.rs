@@ -1,8 +1,10 @@
 use super::{
-    Message, Storage,
+    Message, Storage, StringStreamResult, GroupTimeStreamResult, NumberStreamResult,
     common::{Headers, extract_message_id},
 };
+use async_stream::stream;
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use sqlx::{
     PgPool, Row,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -206,98 +208,148 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let rows = sqlx::query("SELECT name FROM groups ORDER BY name")
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(|row| row.try_get::<String, _>("name").unwrap())
-            .collect())
+    fn list_groups(
+        &self,
+    ) -> StringStreamResult<'_> {
+        let pool = self.pool.clone();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT name FROM groups ORDER BY name")
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => match r.try_get::<String, _>("name") {
+                        Ok(name) => yield Ok(name),
+                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_groups_since(
+    fn list_groups_since(
         &self,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let rows = sqlx::query("SELECT name FROM groups WHERE created_at > $1 ORDER BY name")
-            .bind(since.timestamp())
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| r.try_get::<String, _>("name").unwrap())
-            .collect())
+    ) -> StringStreamResult<'_> {
+        let pool = self.pool.clone();
+        let timestamp = since.timestamp();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT name FROM groups WHERE created_at > $1 ORDER BY name")
+                .bind(timestamp)
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => match r.try_get::<String, _>("name") {
+                        Ok(name) => yield Ok(name),
+                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_groups_with_times(
+    fn list_groups_with_times(
         &self,
-    ) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>> {
-        let rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
-            .fetch_all(&self.pool)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| {
-                let name = r.try_get::<String, _>("name").unwrap();
-                let ts = r.try_get::<i64, _>("created_at").unwrap();
-                (name, ts)
-            })
-            .collect())
+    ) -> GroupTimeStreamResult<'_>
+    {
+        let pool = self.pool.clone();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => {
+                        match (r.try_get::<String, _>("name"), r.try_get::<i64, _>("created_at")) {
+                            (Ok(name), Ok(ts)) => yield Ok((name, ts)),
+                            (Err(e), _) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                            (_, Err(e)) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        }
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_article_numbers(
+    fn list_article_numbers(
         &self,
         group: &str,
-    ) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>> {
-        let rows =
-            sqlx::query("SELECT number FROM group_articles WHERE group_name = $1 ORDER BY number")
-                .bind(group)
-                .fetch_all(&self.pool)
-                .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| u64::try_from(r.try_get::<i64, _>("number").unwrap()).unwrap_or(0))
-            .collect())
+    ) -> NumberStreamResult<'_> {
+        let pool = self.pool.clone();
+        let group = group.to_string();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT number FROM group_articles WHERE group_name = $1 ORDER BY number")
+                .bind(&group)
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => match r.try_get::<i64, _>("number") {
+                        Ok(number) => yield Ok(u64::try_from(number).unwrap_or(0)),
+                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_article_ids(
+    fn list_article_ids(
         &self,
         group: &str,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let rows = sqlx::query(
-            "SELECT message_id FROM group_articles WHERE group_name = $1 ORDER BY number",
-        )
-        .bind(group)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| r.try_get::<String, _>("message_id").unwrap())
-            .collect())
+    ) -> StringStreamResult<'_> {
+        let pool = self.pool.clone();
+        let group = group.to_string();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT message_id FROM group_articles WHERE group_name = $1 ORDER BY number")
+                .bind(&group)
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => match r.try_get::<String, _>("message_id") {
+                        Ok(message_id) => yield Ok(message_id),
+                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn list_article_ids_since(
+    fn list_article_ids_since(
         &self,
         group: &str,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
-        let rows = sqlx::query(
-            "SELECT message_id FROM group_articles WHERE group_name = $1 AND inserted_at > $2 ORDER BY number",
-        )
-        .bind(group)
-        .bind(since.timestamp())
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(rows
-            .into_iter()
-            .map(|r| r.try_get::<String, _>("message_id").unwrap())
-            .collect())
+    ) -> StringStreamResult<'_> {
+        let pool = self.pool.clone();
+        let group = group.to_string();
+        let timestamp = since.timestamp();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT message_id FROM group_articles WHERE group_name = $1 AND inserted_at > $2 ORDER BY number")
+                .bind(&group)
+                .bind(timestamp)
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => match r.try_get::<String, _>("message_id") {
+                        Ok(message_id) => yield Ok(message_id),
+                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]

@@ -1,4 +1,5 @@
 use chrono::{Duration, Utc};
+use futures_util::StreamExt;
 #[path = "utils.rs"]
 mod utils;
 use renews::{parse_command, parse_message, parse_response};
@@ -833,10 +834,12 @@ async fn list_newsgroups_returns_groups() {
 async fn list_all_keywords() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let ts = storage
-        .list_groups_with_times()
-        .await
-        .unwrap()
+    let mut groups_with_times = Vec::new();
+    let mut stream = storage.list_groups_with_times();
+    while let Some(result) = stream.next().await {
+        groups_with_times.push(result.unwrap());
+    }
+    let ts = groups_with_times
         .into_iter()
         .find(|(g, _)| g == "misc.test")
         .unwrap()
@@ -878,7 +881,7 @@ async fn list_all_keywords() {
                 ".",
             ],
         )
-        .run(storage, auth)
+        .run(storage.clone(), auth)
         .await;
 }
 

@@ -1,5 +1,6 @@
 use crate::storage::DynStorage;
 use chrono::TimeZone;
+use futures_util::{TryStreamExt, future};
 use nom::IResult;
 use nom::{
     bytes::complete::{is_not, take_till, take_while1},
@@ -340,8 +341,12 @@ pub async fn parse_range(
     if let Some((start_s, end_s)) = spec.split_once('-') {
         let start: u64 = start_s.parse().map_err(|_| "invalid range")?;
         if end_s.is_empty() {
-            let nums = storage.list_article_numbers(group).await?;
-            Ok(nums.into_iter().filter(|n| *n >= start).collect())
+            let stream = storage.list_article_numbers(group);
+            let nums = stream
+                .try_filter(|n| future::ready(*n >= start))
+                .try_collect::<Vec<u64>>()
+                .await?;
+            Ok(nums)
         } else {
             let end: u64 = end_s.parse().map_err(|_| "invalid range")?;
             if end < start {

@@ -1,3 +1,4 @@
+use futures_util::StreamExt;
 use renews::control::canonical_text;
 use renews::parse_message;
 
@@ -165,12 +166,17 @@ async fn cross_post_different_moderators() {
     // Wait for queue processing
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-    assert_eq!(
-        storage.list_article_numbers("mod.one").await.unwrap(),
-        vec![1]
-    );
-    assert_eq!(
-        storage.list_article_numbers("mod.two").await.unwrap(),
-        vec![1]
-    );
+    let mut mod_one_nums = Vec::new();
+    let mut stream = storage.list_article_numbers("mod.one");
+    while let Some(result) = stream.next().await {
+        mod_one_nums.push(result.unwrap());
+    }
+    assert_eq!(mod_one_nums, vec![1]);
+    
+    let mut mod_two_nums = Vec::new();
+    let mut stream = storage.list_article_numbers("mod.two");
+    while let Some(result) = stream.next().await {
+        mod_two_nums.push(result.unwrap());
+    }
+    assert_eq!(mod_two_nums, vec![1]);
 }
