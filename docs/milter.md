@@ -8,26 +8,11 @@ The Milter (Mail Filter) protocol is an industry-standard interface originally d
 
 ## Configuration
 
-The Milter filter can be configured in two ways:
-
-### Global Milter Configuration
-
-You can specify a global Milter server configuration in the `[milter]` section:
-
-```toml
-[milter]
-address = "tcp://127.0.0.1:8888"
-timeout_secs = 30
-```
-
-### Filter Pipeline Configuration
-
-The Milter filter must be explicitly added to the filter pipeline:
+The Milter filter is configured by adding it to the filter pipeline:
 
 ```toml
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "tcp://127.0.0.1:8888"     # Milter server address with protocol scheme
 timeout_secs = 30                    # Connection timeout in seconds
 ```
@@ -46,14 +31,6 @@ timeout_secs = 30                    # Connection timeout in seconds
   - `"tcp://127.0.0.1:8888"` - Local Milter server over TCP
   - `"tls://milter.example.com:8889"` - Remote Milter server with TLS encryption
   - `"unix:///var/run/milter.sock"` - Unix socket connection
-
-### timeout_secs
-- **Type**: Integer
-- **Default**: `30`
-- **Description**: Connection timeout in seconds for establishing connections to the Milter server
-- **Examples**:
-  - `false` - Plain TCP connection
-  - `true` - TLS encrypted connection
 
 ### timeout_secs
 - **Type**: Integer
@@ -133,7 +110,6 @@ name = "SizeFilter"        # Check size limits
 
 [[filters]]
 name = "MilterFilter"      # External content filtering
-[filters.parameters]
 address = "tcp://127.0.0.1:8888"
 timeout_secs = 30
 
@@ -151,7 +127,6 @@ name = "ModerationFilter"      # Handle moderation
 ```toml
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "tcp://127.0.0.1:8888"
 timeout_secs = 30
 ```
@@ -161,7 +136,6 @@ timeout_secs = 30
 ```toml
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "tls://secure-milter.example.com:8889"
 timeout_secs = 60
 ```
@@ -171,7 +145,6 @@ timeout_secs = 60
 ```toml
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "unix:///var/run/milter.sock"
 timeout_secs = 30
 ```
@@ -184,14 +157,12 @@ You can configure multiple Milter filters in the pipeline for different purposes
 # Spam filtering
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "tcp://spamfilter.example.com:8888"
 timeout_secs = 30
 
 # Content scanning
 [[filters]]
 name = "MilterFilter"
-[filters.parameters]
 address = "tls://contentfilter.example.com:8889"
 timeout_secs = 45
 ```
