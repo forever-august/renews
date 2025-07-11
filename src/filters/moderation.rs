@@ -97,7 +97,13 @@ impl ArticleFilter for ModerationFilter {
                     };
 
                     crate::control::verify_pgp(
-                        &tmp_msg, auth, approved, version, signed, &sig_rest,
+                        &tmp_msg,
+                        auth,
+                        approved,
+                        version,
+                        signed,
+                        &sig_rest,
+                        &_cfg.pgp_key_servers,
                     )
                     .await?;
                 }

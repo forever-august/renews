@@ -129,9 +129,10 @@ pub async fn verify_pgp(
     version: &str,
     signed_headers: &str,
     sig_data: &str,
+    key_servers: &[String],
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Create PGP key discovery instance
-    let discovery = DefaultPgpKeyDiscovery::new();
+    // Create PGP key discovery instance with configured servers
+    let discovery = DefaultPgpKeyDiscovery::with_key_servers(key_servers.to_vec());
 
     // First try with existing stored key
     let stored_key = auth.get_pgp_key(user).await?;
@@ -214,6 +215,7 @@ pub async fn handle_control(
     msg: &Message,
     storage: &DynStorage,
     auth: &DynAuth,
+    config: &crate::config::Config,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
     let control_val = match msg
         .headers
@@ -269,7 +271,16 @@ pub async fn handle_control(
     let version = words.next().ok_or("bad signature")?;
     let signed = words.next().ok_or("bad signature")?;
     let sig_rest = words.collect::<Vec<_>>().join("\n");
-    verify_pgp(msg, auth, from, version, signed, &sig_rest).await?;
+    verify_pgp(
+        msg,
+        auth,
+        from,
+        version,
+        signed,
+        &sig_rest,
+        &config.pgp_key_servers,
+    )
+    .await?;
     match cmd {
         ControlCommand::Cancel(id) => {
             storage.delete_article_by_id(&id).await?;

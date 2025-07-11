@@ -38,6 +38,14 @@ fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
 
+pub fn default_pgp_key_servers() -> Vec<String> {
+    vec![
+        "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>".to_string(),
+        "hkps://pgp.mit.edu/pks/lookup?op=get&search=<email>".to_string(),
+        "hkps://keyserver.ubuntu.com/pks/lookup?op=get&search=<email>".to_string(),
+    ]
+}
+
 fn expand_placeholders(text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let env_re = Regex::new(r"\$ENV\{([^}]+)\}")?;
     let file_re = Regex::new(r"\$FILE\{([^}]+)\}")?;
@@ -173,6 +181,8 @@ pub struct Config {
     pub filters: Vec<FilterConfig>,
     #[serde(default)]
     pub milter: Option<MilterConfig>,
+    #[serde(default = "default_pgp_key_servers")]
+    pub pgp_key_servers: Vec<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -287,5 +297,97 @@ impl Config {
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
         self.ws_addr = other.ws_addr;
+        self.pgp_key_servers = other.pgp_key_servers;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_pgp_key_servers() {
+        let servers = default_pgp_key_servers();
+        assert_eq!(servers.len(), 3);
+        assert!(servers.iter().any(|s| s.contains("keys.openpgp.org")));
+        assert!(servers.iter().any(|s| s.contains("pgp.mit.edu")));
+        assert!(servers.iter().any(|s| s.contains("keyserver.ubuntu.com")));
+    }
+
+    #[test]
+    fn test_config_with_default_pgp_servers() {
+        let config_str = r#"
+            addr = ":119"
+            site_name = "test.com"
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+        assert_eq!(config.pgp_key_servers.len(), 3);
+        assert!(
+            config
+                .pgp_key_servers
+                .iter()
+                .any(|s| s.contains("keys.openpgp.org"))
+        );
+    }
+
+    #[test]
+    fn test_config_with_custom_pgp_servers() {
+        let config_str = r#"
+            addr = ":119"
+            site_name = "test.com"
+            pgp_key_servers = [
+                "hkps://custom1.example.com/pks/lookup?op=get&search=<email>",
+                "hkps://custom2.example.com/pks/lookup?op=get&search=<email>"
+            ]
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+        assert_eq!(config.pgp_key_servers.len(), 2);
+        assert!(
+            config
+                .pgp_key_servers
+                .iter()
+                .any(|s| s.contains("custom1.example.com"))
+        );
+        assert!(
+            config
+                .pgp_key_servers
+                .iter()
+                .any(|s| s.contains("custom2.example.com"))
+        );
+    }
+
+    #[test]
+    fn test_config_update_runtime_includes_pgp_servers() {
+        let mut config1: Config = toml::from_str(
+            r#"
+            addr = ":119"
+            site_name = "test.com"
+        "#,
+        )
+        .unwrap();
+
+        let config2: Config = toml::from_str(
+            r#"
+            addr = ":119"
+            site_name = "test.com"
+            pgp_key_servers = ["hkps://updated.example.com/pks/lookup?op=get&search=<email>"]
+        "#,
+        )
+        .unwrap();
+
+        config1.update_runtime(config2);
+        assert_eq!(config1.pgp_key_servers.len(), 1);
+        assert!(config1.pgp_key_servers[0].contains("updated.example.com"));
+    }
+
+    #[test]
+    fn test_config_empty_pgp_servers() {
+        let config_str = r#"
+            addr = ":119"
+            site_name = "test.com"
+            pgp_key_servers = []
+        "#;
+        let config: Config = toml::from_str(config_str).unwrap();
+        assert_eq!(config.pgp_key_servers.len(), 0);
     }
 }
