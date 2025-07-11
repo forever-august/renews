@@ -223,7 +223,7 @@ async fn test_over_command_invalid_range() {
     ClientMock::new()
         .expect("GROUP test.group", "211 0 0 0 test.group")
         .expect("OVER invalid-range", "423 no articles in that range")
-        .expect("OVER 999-1000", "423 no articles in that range")
+        .expect("OVER 999-1000", "423 no such article number in this group")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
