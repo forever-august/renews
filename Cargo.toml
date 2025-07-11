@@ -2,6 +2,14 @@
 name = "renews"
 version = "0.1.0"
 edition = "2024"
+description = "Modern NNTP (Network News Transfer Protocol) server implemented in Rust"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/Chemiseblanc/renews"
+repository = "https://github.com/Chemiseblanc/renews"
+authors = ["Renews development team"]
+keywords = ["nntp", "news", "server", "network", "protocol"]
+categories = ["network-programming", "command-line-utilities"]
 
 [dependencies]
 nom = "7"
@@ -50,3 +58,51 @@ tempfile = "3"
 rcgen = "0.14"
 tokio-test = "0.4"
 serial_test = "2"
+
+[package.metadata.deb]
+maintainer = "Renews development team <https://github.com/Chemiseblanc/renews>"
+copyright = "2024, Renews development team"
+license-file = ["LICENSE-MIT", "5"]
+changelog = "debian/changelog"
+extended-description = """\
+Renews is a modern, lightweight NNTP (Network News Transfer Protocol) server 
+implemented in Rust. It provides a complete newsgroup server solution with a focus 
+on performance, reliability, and ease of administration.
+
+Renews implements the NNTP protocol as defined in RFC 3977, storing articles in a 
+database and supporting configurable newsgroups with flexible retention policies. 
+The server is designed for both standalone operation and distributed newsgroup 
+synchronization with peer servers."""
+depends = "$auto, systemd"
+section = "net"
+priority = "optional"
+assets = [
+    ["target/release/renews", "usr/bin/", "755"],
+    ["man/renews.1", "usr/share/man/man1/", "644"],
+    ["examples/systemd/renews.service", "lib/systemd/system/", "644"],
+    ["config.toml", "etc/renews/config.toml.example", "644"],
+]
+conf-files = ["/etc/renews/config.toml.example"]
+systemd-units = { unit-name = "renews", enable = false }
+
+[package.metadata.generate-rpm]
+license = "MIT OR Apache-2.0"
+summary = "Modern NNTP server implemented in Rust"
+description = """\
+Renews is a modern, lightweight NNTP (Network News Transfer Protocol) server 
+implemented in Rust. It provides a complete newsgroup server solution with a focus 
+on performance, reliability, and ease of administration.
+
+Renews implements the NNTP protocol as defined in RFC 3977, storing articles in a 
+database and supporting configurable newsgroups with flexible retention policies. 
+The server is designed for both standalone operation and distributed newsgroup 
+synchronization with peer servers."""
+url = "https://github.com/Chemiseblanc/renews"
+group = "Applications/Internet"
+requires = { systemd = "*" }
+assets = [
+    { source = "target/release/renews", dest = "/usr/bin/renews", mode = "755" },
+    { source = "man/renews.1", dest = "/usr/share/man/man1/renews.1", mode = "644" },
+    { source = "examples/systemd/renews.service", dest = "/usr/lib/systemd/system/renews.service", mode = "644" },
+    { source = "config.toml", dest = "/etc/renews/config.toml.example", mode = "644", config = true },
+]

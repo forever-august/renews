@@ -1,0 +1,21 @@
+#!/bin/bash
+set -e
+
+# Create renews user if it doesn't exist
+if ! id "renews" &>/dev/null; then
+    useradd --system --no-create-home --shell /bin/false renews
+fi
+
+# Create directories with proper ownership
+mkdir -p /var/renews
+chown renews:renews /var/renews
+
+# Set permissions on config file
+if [ -f /etc/renews/config.toml.example ]; then
+    chmod 644 /etc/renews/config.toml.example
+fi
+
+# Reload systemd daemon
+systemctl daemon-reload >/dev/null 2>&1 || true
+
+exit 0
