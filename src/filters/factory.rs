@@ -124,8 +124,7 @@ mod tests {
         let config = FilterConfig {
             name: "MilterFilter".to_string(),
             parameters: json!({
-                "address": "127.0.0.1:8888",
-                "use_tls": false,
+                "address": "tcp://127.0.0.1:8888",
                 "timeout_secs": 30
             }),
         };

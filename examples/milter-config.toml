@@ -12,9 +12,8 @@ auth_db_path = "sqlite:///var/renews/auth.db"
 # Optional Milter server configuration
 # The Milter server address can be specified globally here
 [milter]
-address = "127.0.0.1:8888"          # Address of the Milter server
-use_tls = false                     # Use TLS for connection to Milter server
-timeout_secs = 30                   # Connection timeout in seconds
+address = "tcp://127.0.0.1:8888"        # Address of the Milter server with protocol scheme
+timeout_secs = 30                       # Connection timeout in seconds
 
 # Filter pipeline configuration
 # Filters are applied in the order specified below
@@ -27,8 +26,7 @@ name = "SizeFilter"                 # Validates article size limits
 [[filters]]
 name = "MilterFilter"               # Apply external Milter filtering
 [filters.parameters]
-address = "127.0.0.1:8888"         # Override global Milter address if needed
-use_tls = false                     # Override global TLS setting if needed
+address = "tcp://127.0.0.1:8888"   # Override global Milter address if needed
 timeout_secs = 30                   # Override global timeout if needed
 
 [[filters]]
@@ -37,13 +35,18 @@ name = "GroupExistenceFilter"       # Validates that target newsgroups exist
 [[filters]]
 name = "ModerationFilter"           # Handle moderated newsgroups
 
-# Alternative TLS Milter configuration example
+# Alternative TLS and Unix socket Milter configuration examples
 # [[filters]]
 # name = "MilterFilter"
 # [filters.parameters]
-# address = "milter.example.com:8889"
-# use_tls = true
+# address = "tls://milter.example.com:8889"   # TLS-encrypted TCP connection
 # timeout_secs = 60
+#
+# [[filters]]
+# name = "MilterFilter"
+# [filters.parameters]
+# address = "unix:///var/run/milter.sock"     # Unix socket connection
+# timeout_secs = 30
 
 # TLS configuration (optional)
 # tls_addr = ":563"

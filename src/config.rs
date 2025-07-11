@@ -205,11 +205,12 @@ pub struct FilterConfig {
 
 #[derive(Deserialize, Clone)]
 pub struct MilterConfig {
-    /// Address of the Milter server (e.g., "127.0.0.1:8888" or "unix:/var/run/milter.sock")
+    /// Address of the Milter server with protocol scheme
+    /// Supported formats:
+    /// - "tcp://127.0.0.1:8888" for plain TCP connection
+    /// - "tls://milter.example.com:8889" for TLS-encrypted TCP connection  
+    /// - "unix:///var/run/milter.sock" for Unix socket connection
     pub address: String,
-    /// Whether to use TLS for the connection
-    #[serde(default)]
-    pub use_tls: bool,
     /// Connection timeout in seconds
     #[serde(default = "default_milter_timeout")]
     pub timeout_secs: u64,

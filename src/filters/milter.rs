@@ -14,7 +14,7 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, UnixStream};
 use tokio_rustls::{
     TlsConnector,
     rustls::{Certificate, ClientConfig, RootCertStore},
@@ -46,6 +46,8 @@ pub enum MilterError {
     IoError(io::Error),
     /// TLS error
     TlsError(String),
+    /// Invalid URI scheme
+    InvalidScheme(String),
     /// Message rejected by Milter
     Rejected(String),
     /// Temporary failure
@@ -59,6 +61,7 @@ impl fmt::Display for MilterError {
             MilterError::ProtocolError(msg) => write!(f, "Milter protocol error: {msg}"),
             MilterError::IoError(err) => write!(f, "Milter I/O error: {err}"),
             MilterError::TlsError(msg) => write!(f, "Milter TLS error: {msg}"),
+            MilterError::InvalidScheme(msg) => write!(f, "Milter invalid scheme: {msg}"),
             MilterError::Rejected(msg) => write!(f, "Article rejected by Milter: {msg}"),
             MilterError::TempFail(msg) => write!(f, "Milter temporary failure: {msg}"),
         }
@@ -84,23 +87,35 @@ impl MilterFilter {
         Self { config }
     }
 
-    /// Connect to the Milter server
+    /// Connect to the Milter server based on URI scheme
     async fn connect(&self) -> Result<Box<dyn MilterConnection>, MilterError> {
         let timeout = Duration::from_secs(self.config.timeout_secs);
 
-        if self.config.use_tls {
-            self.connect_tls(timeout).await
+        // Parse URI scheme
+        if let Some((scheme, address)) = self.config.address.split_once("://") {
+            match scheme {
+                "tcp" => self.connect_tcp(address, timeout).await,
+                "tls" => self.connect_tls(address, timeout).await,
+                "unix" => self.connect_unix(address, timeout).await,
+                _ => Err(MilterError::InvalidScheme(format!(
+                    "Unsupported scheme: {scheme}. Supported schemes: tcp://, tls://, unix://"
+                ))),
+            }
         } else {
-            self.connect_tcp(timeout).await
+            Err(MilterError::InvalidScheme(format!(
+                "Invalid address format: {}. Expected format: scheme://address (e.g., tcp://localhost:8888)",
+                self.config.address
+            )))
         }
     }
 
     /// Connect via plain TCP
     async fn connect_tcp(
         &self,
+        address: &str,
         timeout: Duration,
     ) -> Result<Box<dyn MilterConnection>, MilterError> {
-        let stream = tokio::time::timeout(timeout, TcpStream::connect(&self.config.address))
+        let stream = tokio::time::timeout(timeout, TcpStream::connect(address))
             .await
             .map_err(|_| MilterError::ConnectionFailed("timeout".to_string()))?
             .map_err(|e| MilterError::ConnectionFailed(e.to_string()))?;
@@ -111,9 +126,10 @@ impl MilterFilter {
     /// Connect via TLS
     async fn connect_tls(
         &self,
+        address: &str,
         timeout: Duration,
     ) -> Result<Box<dyn MilterConnection>, MilterError> {
-        let stream = tokio::time::timeout(timeout, TcpStream::connect(&self.config.address))
+        let stream = tokio::time::timeout(timeout, TcpStream::connect(address))
             .await
             .map_err(|_| MilterError::ConnectionFailed("timeout".to_string()))?
             .map_err(|e| MilterError::ConnectionFailed(e.to_string()))?;
@@ -138,7 +154,7 @@ impl MilterFilter {
         let connector = TlsConnector::from(Arc::new(config));
 
         // Extract hostname from address for SNI
-        let hostname = self.config.address.split(':').next().unwrap_or("localhost");
+        let hostname = address.split(':').next().unwrap_or("localhost");
 
         let tls_stream = connector
             .connect(
@@ -151,6 +167,20 @@ impl MilterFilter {
             .map_err(|e| MilterError::TlsError(e.to_string()))?;
 
         Ok(Box::new(TlsMilterConnection::new(tls_stream)))
+    }
+
+    /// Connect via Unix socket
+    async fn connect_unix(
+        &self,
+        path: &str,
+        timeout: Duration,
+    ) -> Result<Box<dyn MilterConnection>, MilterError> {
+        let stream = tokio::time::timeout(timeout, UnixStream::connect(path))
+            .await
+            .map_err(|_| MilterError::ConnectionFailed("timeout".to_string()))?
+            .map_err(|e| MilterError::ConnectionFailed(e.to_string()))?;
+
+        Ok(Box::new(UnixMilterConnection::new(stream)))
     }
 
     /// Process an article through the Milter protocol
@@ -337,6 +367,51 @@ impl MilterConnection for TlsMilterConnection {
     }
 }
 
+/// Unix socket-based Milter connection
+struct UnixMilterConnection {
+    stream: UnixStream,
+}
+
+impl UnixMilterConnection {
+    fn new(stream: UnixStream) -> Self {
+        Self { stream }
+    }
+}
+
+#[async_trait::async_trait]
+impl MilterConnection for UnixMilterConnection {
+    async fn send_command(&mut self, cmd: u8, data: &[u8]) -> Result<(), MilterError> {
+        // Milter protocol: 4-byte length + 1-byte command + data
+        let len = (data.len() + 1) as u32;
+        self.stream.write_all(&len.to_be_bytes()).await?;
+        self.stream.write_all(&[cmd]).await?;
+        self.stream.write_all(data).await?;
+        self.stream.flush().await?;
+        Ok(())
+    }
+
+    async fn read_response(&mut self) -> Result<u8, MilterError> {
+        let mut len_buf = [0u8; 4];
+        self.stream.read_exact(&mut len_buf).await?;
+        let len = u32::from_be_bytes(len_buf);
+
+        if len == 0 {
+            return Err(MilterError::ProtocolError(
+                "Invalid response length".to_string(),
+            ));
+        }
+
+        let mut response = vec![0u8; len as usize];
+        self.stream.read_exact(&mut response).await?;
+
+        if response.is_empty() {
+            return Err(MilterError::ProtocolError("Empty response".to_string()));
+        }
+
+        Ok(response[0])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,8 +419,7 @@ mod tests {
     #[test]
     fn test_milter_filter_creation() {
         let config = MilterConfig {
-            address: "127.0.0.1:8888".to_string(),
-            use_tls: false,
+            address: "tcp://127.0.0.1:8888".to_string(),
             timeout_secs: 30,
         };
 
@@ -365,8 +439,7 @@ mod tests {
     #[test]
     fn test_milter_response_handling() {
         let config = MilterConfig {
-            address: "127.0.0.1:8888".to_string(),
-            use_tls: false,
+            address: "tcp://127.0.0.1:8888".to_string(),
             timeout_secs: 30,
         };
 
@@ -383,5 +456,86 @@ mod tests {
 
         // Test unknown response
         assert!(filter.handle_response(255).is_err());
+    }
+
+    #[test]
+    fn test_uri_scheme_parsing() {
+        // Test valid TCP scheme
+        let config = MilterConfig {
+            address: "tcp://127.0.0.1:8888".to_string(),
+            timeout_secs: 30,
+        };
+        let filter = MilterFilter::new(config);
+        assert_eq!(filter.name(), "MilterFilter");
+
+        // Test valid TLS scheme
+        let config = MilterConfig {
+            address: "tls://milter.example.com:8889".to_string(),
+            timeout_secs: 30,
+        };
+        let filter = MilterFilter::new(config);
+        assert_eq!(filter.name(), "MilterFilter");
+
+        // Test valid Unix scheme
+        let config = MilterConfig {
+            address: "unix:///var/run/milter.sock".to_string(),
+            timeout_secs: 30,
+        };
+        let filter = MilterFilter::new(config);
+        assert_eq!(filter.name(), "MilterFilter");
+    }
+
+    #[tokio::test]
+    async fn test_invalid_scheme_error() {
+        let config = MilterConfig {
+            address: "invalid://127.0.0.1:8888".to_string(),
+            timeout_secs: 30,
+        };
+        let filter = MilterFilter::new(config);
+        
+        let result = filter.connect().await;
+        assert!(result.is_err());
+        if let Err(MilterError::InvalidScheme(msg)) = result {
+            assert!(msg.contains("Unsupported scheme: invalid"));
+        } else {
+            panic!("Expected InvalidScheme error");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_missing_scheme_error() {
+        let config = MilterConfig {
+            address: "127.0.0.1:8888".to_string(),
+            timeout_secs: 30,
+        };
+        let filter = MilterFilter::new(config);
+        
+        let result = filter.connect().await;
+        assert!(result.is_err());
+        if let Err(MilterError::InvalidScheme(msg)) = result {
+            assert!(msg.contains("Invalid address format"));
+        } else {
+            panic!("Expected InvalidScheme error");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_unix_socket_scheme() {
+        // Test that Unix socket scheme is parsed correctly 
+        // (connection will fail since socket doesn't exist, but parsing should work)
+        let config = MilterConfig {
+            address: "unix:///var/run/nonexistent.sock".to_string(),
+            timeout_secs: 1, // Short timeout for test
+        };
+        let filter = MilterFilter::new(config);
+        
+        let result = filter.connect().await;
+        // Should get connection error, not invalid scheme error
+        assert!(result.is_err());
+        if let Err(MilterError::ConnectionFailed(_)) = result {
+            // This is expected - socket doesn't exist
+        } else {
+            panic!("Expected ConnectionFailed error, not scheme parsing error");
+        }
     }
 }

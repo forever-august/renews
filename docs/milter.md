@@ -16,8 +16,7 @@ You can specify a global Milter server configuration in the `[milter]` section:
 
 ```toml
 [milter]
-address = "127.0.0.1:8888"
-use_tls = false
+address = "tcp://127.0.0.1:8888"
 timeout_secs = 30
 ```
 
@@ -29,9 +28,8 @@ The Milter filter must be explicitly added to the filter pipeline:
 [[filters]]
 name = "MilterFilter"
 [filters.parameters]
-address = "127.0.0.1:8888"         # Milter server address
-use_tls = false                     # Whether to use TLS
-timeout_secs = 30                   # Connection timeout in seconds
+address = "tcp://127.0.0.1:8888"     # Milter server address with protocol scheme
+timeout_secs = 30                    # Connection timeout in seconds
 ```
 
 ## Configuration Options
@@ -39,15 +37,20 @@ timeout_secs = 30                   # Connection timeout in seconds
 ### address
 - **Type**: String
 - **Required**: Yes
-- **Description**: The address of the Milter server in the format `host:port`
+- **Description**: The address of the Milter server with protocol scheme
+- **Supported Schemes**:
+  - `tcp://` - Plain TCP connection
+  - `tls://` - TLS-encrypted TCP connection  
+  - `unix://` - Unix socket connection
 - **Examples**: 
-  - `"127.0.0.1:8888"` - Local Milter server
-  - `"milter.example.com:8889"` - Remote Milter server
+  - `"tcp://127.0.0.1:8888"` - Local Milter server over TCP
+  - `"tls://milter.example.com:8889"` - Remote Milter server with TLS encryption
+  - `"unix:///var/run/milter.sock"` - Unix socket connection
 
-### use_tls
-- **Type**: Boolean
-- **Default**: `false`
-- **Description**: Whether to use TLS encryption for the connection to the Milter server
+### timeout_secs
+- **Type**: Integer
+- **Default**: `30`
+- **Description**: Connection timeout in seconds for establishing connections to the Milter server
 - **Examples**:
   - `false` - Plain TCP connection
   - `true` - TLS encrypted connection
@@ -80,13 +83,32 @@ The Milter server can respond with various actions:
 - **Discard** (`d`): Article is silently discarded
 - **Temporary Failure** (`t`): Temporary failure, retry later
 
-## TLS Support
+## Protocol Support
 
-When `use_tls = true`, the filter establishes a TLS connection to the Milter server:
+The Milter filter supports three connection types through URI schemes:
 
+### TCP Connections
+Plain TCP connections for basic communication:
+```toml
+address = "tcp://127.0.0.1:8888"
+```
+
+### TLS Connections  
+TLS-encrypted connections for secure communication:
+```toml
+address = "tls://milter.example.com:8889"
+```
+
+When using TLS, the filter:
 - Uses the system's certificate store for server validation
 - Supports SNI (Server Name Indication) for hostname verification
 - Compatible with standard TLS configurations
+
+### Unix Socket Connections
+Unix socket connections for local communication:
+```toml
+address = "unix:///var/run/milter.sock"
+```
 
 ## Error Handling
 
@@ -112,8 +134,7 @@ name = "SizeFilter"        # Check size limits
 [[filters]]
 name = "MilterFilter"      # External content filtering
 [filters.parameters]
-address = "127.0.0.1:8888"
-use_tls = false
+address = "tcp://127.0.0.1:8888"
 timeout_secs = 30
 
 [[filters]]
@@ -131,8 +152,7 @@ name = "ModerationFilter"      # Handle moderation
 [[filters]]
 name = "MilterFilter"
 [filters.parameters]
-address = "127.0.0.1:8888"
-use_tls = false
+address = "tcp://127.0.0.1:8888"
 timeout_secs = 30
 ```
 
@@ -142,9 +162,18 @@ timeout_secs = 30
 [[filters]]
 name = "MilterFilter"
 [filters.parameters]
-address = "secure-milter.example.com:8889"
-use_tls = true
+address = "tls://secure-milter.example.com:8889"
 timeout_secs = 60
+```
+
+### Unix Socket Milter
+
+```toml
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "unix:///var/run/milter.sock"
+timeout_secs = 30
 ```
 
 ### Multiple Milter Servers
@@ -156,16 +185,14 @@ You can configure multiple Milter filters in the pipeline for different purposes
 [[filters]]
 name = "MilterFilter"
 [filters.parameters]
-address = "spamfilter.example.com:8888"
-use_tls = true
+address = "tcp://spamfilter.example.com:8888"
 timeout_secs = 30
 
 # Content scanning
 [[filters]]
 name = "MilterFilter"
 [filters.parameters]
-address = "contentfilter.example.com:8889"
-use_tls = true
+address = "tls://contentfilter.example.com:8889"
 timeout_secs = 45
 ```
 
