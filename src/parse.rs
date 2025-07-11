@@ -10,6 +10,9 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use sha1::{Digest, Sha1};
+use smallvec::SmallVec;
+#[cfg(test)]
+use smallvec::smallvec;
 use std::fmt::Write;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -72,7 +75,7 @@ pub fn parse_response(input: &str) -> IResult<&str, Response> {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Message {
-    pub headers: Vec<(String, String)>,
+    pub headers: SmallVec<[(String, String); 8]>,
     pub body: String,
 }
 
@@ -231,8 +234,8 @@ fn parse_header_line(mut input: &str) -> IResult<&str, (String, String)> {
 /// Parse the header block of an article until the blank line
 /// separating headers from the body, as specified in RFC 3977
 /// Section 3.6.
-fn parse_headers(mut input: &str) -> IResult<&str, Vec<(String, String)>> {
-    let mut headers = Vec::new();
+fn parse_headers(mut input: &str) -> IResult<&str, SmallVec<[(String, String); 8]>> {
+    let mut headers = SmallVec::new();
     loop {
         if let Some(rest) = input.strip_prefix("\r\n") {
             input = rest;
@@ -408,7 +411,9 @@ mod tests {
         assert_eq!(cmd.name, "POST");
         assert!(cmd.args.is_empty());
         let (_, msg) = parse_message(rest).unwrap();
-        assert_eq!(msg.headers, vec![("Subject".into(), "Example".into())]);
+        let expected_headers: SmallVec<[(String, String); 8]> =
+            smallvec![("Subject".to_string(), "Example".to_string())];
+        assert_eq!(msg.headers, expected_headers);
         assert_eq!(msg.body, "Body text");
     }
 

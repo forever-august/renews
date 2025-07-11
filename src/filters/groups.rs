@@ -8,6 +8,7 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
 use futures_util::TryStreamExt;
+use smallvec::SmallVec;
 use std::error::Error;
 
 /// Filter that validates newsgroups exist in the server
@@ -24,7 +25,7 @@ impl ArticleFilter for GroupExistenceFilter {
         _size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Get newsgroups from the article
-        let newsgroups: Vec<String> = article
+        let newsgroups: SmallVec<[String; 4]> = article
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
@@ -33,7 +34,7 @@ impl ArticleFilter for GroupExistenceFilter {
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(std::string::ToString::to_string)
-                    .collect::<Vec<_>>()
+                    .collect::<SmallVec<[String; 4]>>()
             })
             .unwrap_or_default();
 

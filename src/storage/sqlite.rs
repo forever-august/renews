@@ -1,10 +1,11 @@
 use super::{
-    Message, Storage, StringStreamResult, GroupTimeStreamResult, NumberStreamResult,
+    Message, Storage, StringStream, StringTimestampStream, U64Stream,
     common::{Headers, extract_message_id},
 };
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use smallvec::SmallVec;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use std::error::Error;
 
@@ -77,7 +78,7 @@ impl Storage for SqliteStorage {
         .await?;
 
         // Extract newsgroups from headers
-        let newsgroups: Vec<String> = article
+        let newsgroups: SmallVec<[String; 4]> = article
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
@@ -86,7 +87,7 @@ impl Storage for SqliteStorage {
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(std::string::ToString::to_string)
-                    .collect::<Vec<_>>()
+                    .collect::<SmallVec<[String; 4]>>()
             })
             .unwrap_or_default();
 
@@ -207,9 +208,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn list_groups(
-        &self,
-    ) -> StringStreamResult<'_> {
+    fn list_groups(&self) -> StringStream<'_> {
         let pool = self.pool.clone();
         Box::pin(stream! {
             let mut rows = sqlx::query("SELECT name FROM groups ORDER BY name")
@@ -228,10 +227,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn list_groups_since(
-        &self,
-        since: chrono::DateTime<chrono::Utc>,
-    ) -> StringStreamResult<'_> {
+    fn list_groups_since(&self, since: chrono::DateTime<chrono::Utc>) -> StringStream<'_> {
         let pool = self.pool.clone();
         let timestamp = since.timestamp();
         Box::pin(stream! {
@@ -252,10 +248,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn list_groups_with_times(
-        &self,
-    ) -> GroupTimeStreamResult<'_>
-    {
+    fn list_groups_with_times(&self) -> StringTimestampStream<'_> {
         let pool = self.pool.clone();
         Box::pin(stream! {
             let mut rows = sqlx::query("SELECT name, created_at FROM groups ORDER BY name")
@@ -277,10 +270,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn list_article_numbers(
-        &self,
-        group: &str,
-    ) -> NumberStreamResult<'_> {
+    fn list_article_numbers(&self, group: &str) -> U64Stream<'_> {
         let pool = self.pool.clone();
         let group = group.to_string();
         Box::pin(stream! {
@@ -301,10 +291,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    fn list_article_ids(
-        &self,
-        group: &str,
-    ) -> StringStreamResult<'_> {
+    fn list_article_ids(&self, group: &str) -> StringStream<'_> {
         let pool = self.pool.clone();
         let group = group.to_string();
         Box::pin(stream! {
@@ -329,7 +316,7 @@ impl Storage for SqliteStorage {
         &self,
         group: &str,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> StringStreamResult<'_> {
+    ) -> StringStream<'_> {
         let pool = self.pool.clone();
         let group = group.to_string();
         let timestamp = since.timestamp();

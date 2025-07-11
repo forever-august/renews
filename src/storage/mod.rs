@@ -5,10 +5,10 @@ use std::error::Error;
 use std::pin::Pin;
 use std::sync::Arc;
 
-// Type aliases for complex stream types to improve readability
-type StringStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type GroupTimeStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type NumberStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+// Type aliases for complex stream return types
+type StringStream<'a> = Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type U64Stream<'a> = Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type StringTimestampStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -40,39 +40,29 @@ pub trait Storage: Send + Sync {
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Retrieve all newsgroups carried by the server
-    fn list_groups(
-        &self,
-    ) -> StringStreamResult<'_>;
+    fn list_groups(&self) -> StringStream<'_>;
 
     /// Retrieve newsgroups created after the specified time
     fn list_groups_since(
         &self,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> StringStreamResult<'_>;
+    ) -> StringStream<'_>;
 
     /// Retrieve all newsgroups with their creation timestamps
-    fn list_groups_with_times(
-        &self,
-    ) -> GroupTimeStreamResult<'_>;
+    fn list_groups_with_times(&self) -> StringTimestampStream<'_>;
 
     /// List all article numbers for a group
-    fn list_article_numbers(
-        &self,
-        group: &str,
-    ) -> NumberStreamResult<'_>;
+    fn list_article_numbers(&self, group: &str) -> U64Stream<'_>;
 
     /// List all message-ids for a group
-    fn list_article_ids(
-        &self,
-        group: &str,
-    ) -> StringStreamResult<'_>;
+    fn list_article_ids(&self, group: &str) -> StringStream<'_>;
 
     /// List message-ids for a group added after the specified time
     fn list_article_ids_since(
         &self,
         group: &str,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> StringStreamResult<'_>;
+    ) -> StringStream<'_>;
 
     /// Remove articles in `group` that were inserted before `before`
     async fn purge_group_before(

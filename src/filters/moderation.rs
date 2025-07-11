@@ -7,6 +7,7 @@ use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
+use smallvec::SmallVec;
 use std::error::Error;
 
 /// Filter that validates moderated group requirements
@@ -23,7 +24,7 @@ impl ArticleFilter for ModerationFilter {
         _size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Get newsgroups from the article
-        let newsgroups: Vec<String> = article
+        let newsgroups: SmallVec<[String; 4]> = article
             .headers
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
@@ -32,19 +33,19 @@ impl ArticleFilter for ModerationFilter {
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
                     .map(std::string::ToString::to_string)
-                    .collect::<Vec<_>>()
+                    .collect::<SmallVec<[String; 4]>>()
             })
             .unwrap_or_default();
 
         // Get all approved values and signatures
-        let approved_values: Vec<String> = article
+        let approved_values: SmallVec<[String; 2]> = article
             .headers
             .iter()
             .filter(|(k, _)| k.eq_ignore_ascii_case("Approved"))
             .map(|(_, v)| v.trim().to_string())
             .collect();
 
-        let sig_headers: Vec<String> = article
+        let sig_headers: SmallVec<[String; 2]> = article
             .headers
             .iter()
             .filter(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
@@ -55,8 +56,8 @@ impl ArticleFilter for ModerationFilter {
         for group in &newsgroups {
             if storage.is_group_moderated(group).await? {
                 // Find moderators for this specific group
-                let mut group_moderators = Vec::new();
-                let mut group_signatures = Vec::new();
+                let mut group_moderators = SmallVec::<[String; 2]>::new();
+                let mut group_signatures = SmallVec::<[String; 2]>::new();
 
                 for (i, approved) in approved_values.iter().enumerate() {
                     if auth.is_moderator(approved, group).await? {
@@ -83,7 +84,7 @@ impl ArticleFilter for ModerationFilter {
                     let signed = words.next().ok_or("bad signature")?;
                     let sig_rest = words.collect::<Vec<_>>().join("\n");
 
-                    let mut tmp_headers: Vec<(String, String)> = article
+                    let mut tmp_headers: SmallVec<[(String, String); 8]> = article
                         .headers
                         .iter()
                         .filter(|(k, _)| !k.eq_ignore_ascii_case("Approved"))
