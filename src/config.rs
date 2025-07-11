@@ -179,8 +179,7 @@ pub struct Config {
     pub group_settings: Vec<GroupRule>,
     #[serde(default, alias = "filter")]
     pub filters: Vec<FilterConfig>,
-    #[serde(default)]
-    pub milter: Option<MilterConfig>,
+
     #[serde(default = "default_pgp_key_servers")]
     pub pgp_key_servers: Vec<String>,
 }
@@ -209,26 +208,11 @@ pub struct PeerRule {
 #[derive(Deserialize, Clone)]
 pub struct FilterConfig {
     pub name: String,
-    #[serde(default)]
-    pub parameters: serde_json::Value,
+    #[serde(flatten)]
+    pub parameters: serde_json::Map<String, serde_json::Value>,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct MilterConfig {
-    /// Address of the Milter server with protocol scheme
-    /// Supported formats:
-    /// - "tcp://127.0.0.1:8888" for plain TCP connection
-    /// - "tls://milter.example.com:8889" for TLS-encrypted TCP connection  
-    /// - "unix:///var/run/milter.sock" for Unix socket connection
-    pub address: String,
-    /// Connection timeout in seconds
-    #[serde(default = "default_milter_timeout")]
-    pub timeout_secs: u64,
-}
 
-fn default_milter_timeout() -> u64 {
-    30
-}
 
 impl Config {
     /// Load configuration from a TOML file.

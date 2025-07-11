@@ -6,8 +6,9 @@
 use super::ArticleFilter;
 use crate::Message;
 use crate::auth::DynAuth;
-use crate::config::{Config, MilterConfig};
+use crate::config::Config;
 use crate::storage::DynStorage;
+use serde::Deserialize;
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -34,6 +35,24 @@ const MILTER_REJECT: u8 = b'r';
 const MILTER_DISCARD: u8 = b'd';
 const MILTER_TEMPFAIL: u8 = b't';
 const MILTER_CONTINUE: u8 = b'c';
+
+/// Configuration for Milter filter
+#[derive(Deserialize, Clone)]
+pub struct MilterConfig {
+    /// Address of the Milter server with protocol scheme
+    /// Supported formats:
+    /// - "tcp://127.0.0.1:8888" for plain TCP connection
+    /// - "tls://milter.example.com:8889" for TLS-encrypted TCP connection  
+    /// - "unix:///var/run/milter.sock" for Unix socket connection
+    pub address: String,
+    /// Connection timeout in seconds
+    #[serde(default = "default_milter_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_milter_timeout() -> u64 {
+    30
+}
 
 /// Errors that can occur during Milter operations
 #[derive(Debug)]

@@ -40,8 +40,8 @@ pub fn create_filter(config: &FilterConfig) -> Result<Box<dyn ArticleFilter>, Fi
         "ModerationFilter" => Ok(Box::new(super::moderation::ModerationFilter)),
         "MilterFilter" => {
             // Extract Milter configuration from parameters
-            let milter_config: crate::config::MilterConfig =
-                serde_json::from_value(config.parameters.clone()).map_err(|e| {
+            let milter_config: super::milter::MilterConfig =
+                serde_json::from_value(serde_json::Value::Object(config.parameters.clone())).map_err(|e| {
                     FilterFactoryError::InvalidParameters(format!(
                         "MilterFilter configuration error: {e}"
                     ))
@@ -79,7 +79,7 @@ mod tests {
     fn test_create_header_filter() {
         let config = FilterConfig {
             name: "HeaderFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         };
 
         let filter = create_filter(&config).unwrap();
@@ -90,7 +90,7 @@ mod tests {
     fn test_create_size_filter() {
         let config = FilterConfig {
             name: "SizeFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         };
 
         let filter = create_filter(&config).unwrap();
@@ -101,7 +101,7 @@ mod tests {
     fn test_create_group_existence_filter() {
         let config = FilterConfig {
             name: "GroupExistenceFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         };
 
         let filter = create_filter(&config).unwrap();
@@ -112,7 +112,7 @@ mod tests {
     fn test_create_moderation_filter() {
         let config = FilterConfig {
             name: "ModerationFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         };
 
         let filter = create_filter(&config).unwrap();
@@ -121,12 +121,13 @@ mod tests {
 
     #[test]
     fn test_create_milter_filter() {
+        let mut parameters = serde_json::Map::new();
+        parameters.insert("address".to_string(), json!("tcp://127.0.0.1:8888"));
+        parameters.insert("timeout_secs".to_string(), json!(30));
+        
         let config = FilterConfig {
             name: "MilterFilter".to_string(),
-            parameters: json!({
-                "address": "tcp://127.0.0.1:8888",
-                "timeout_secs": 30
-            }),
+            parameters,
         };
 
         let filter = create_filter(&config).unwrap();
@@ -137,7 +138,7 @@ mod tests {
     fn test_unknown_filter() {
         let config = FilterConfig {
             name: "UnknownFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         };
 
         let result = create_filter(&config);
@@ -162,11 +163,11 @@ mod tests {
         let configs = vec![
             FilterConfig {
                 name: "HeaderFilter".to_string(),
-                parameters: json!({}),
+                parameters: serde_json::Map::new(),
             },
             FilterConfig {
                 name: "SizeFilter".to_string(),
-                parameters: json!({}),
+                parameters: serde_json::Map::new(),
             },
         ];
 
@@ -182,11 +183,11 @@ mod tests {
         let configs = vec![
             FilterConfig {
                 name: "HeaderFilter".to_string(),
-                parameters: json!({}),
+                parameters: serde_json::Map::new(),
             },
             FilterConfig {
                 name: "UnknownFilter".to_string(),
-                parameters: json!({}),
+                parameters: serde_json::Map::new(),
             },
         ];
 
