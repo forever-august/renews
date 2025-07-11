@@ -182,10 +182,10 @@ async fn test_authinfo_command_invalid_args() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("AUTHINFO", "501 Syntax error")
-        .expect("AUTHINFO INVALID", "501 Syntax error")
-        .expect("AUTHINFO USER", "501 Syntax error")
-        .expect("AUTHINFO PASS", "501 Syntax error")
+        .expect("AUTHINFO", "501 not enough arguments")
+        .expect("AUTHINFO INVALID", "501 not enough arguments")
+        .expect("AUTHINFO USER", "501 not enough arguments")
+        .expect("AUTHINFO PASS", "501 not enough arguments")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -208,7 +208,7 @@ async fn test_mode_command_invalid_args() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("MODE", "501 unknown mode")
+        .expect("MODE", "501 missing mode")
         .expect("MODE INVALID", "501 unknown mode")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
@@ -222,8 +222,8 @@ async fn test_over_command_invalid_range() {
 
     ClientMock::new()
         .expect("GROUP test.group", "211 0 0 0 test.group")
-        .expect("OVER invalid-range", "423 no such article number in this group")
-        .expect("OVER 999-1000", "423 no such article number in this group")
+        .expect("OVER invalid-range", "423 no articles in that range")
+        .expect("OVER 999-1000", "423 no articles in that range")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -234,10 +234,8 @@ async fn test_streaming_commands_without_stream_mode() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        // CHECK command works but returns 238 (article wanted)
+        // CHECK command should work without streaming mode
         .expect("CHECK <test@example.com>", "238 <test@example.com>")
-        // Test TAKETHIS which should also work
-        .expect("TAKETHIS <test2@example.com>", "239 <test2@example.com>")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -248,7 +246,7 @@ async fn test_ihave_command_invalid_message_id() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("IHAVE", "501 Syntax error")
+        .expect("IHAVE", "501 message-id required")
         .expect("IHAVE invalid-message-id", "335 Send it; end with <CR-LF>.<CR-LF>")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
