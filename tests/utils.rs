@@ -45,6 +45,60 @@ pub async fn create_test_queue_with_workers(
     queue
 }
 
+/// Create a test configuration with minimal settings
+pub fn create_minimal_config() -> Config {
+    Config {
+        addr: "127.0.0.1:0".to_string(),
+        site_name: "test".to_string(),
+        db_path: "sqlite::memory:".to_string(),
+        auth_db_path: "sqlite::memory:".to_string(),
+        peer_db_path: "sqlite::memory:".to_string(),
+        peer_sync_schedule: "0 0 * * * *".to_string(),
+        idle_timeout_secs: 600,
+        peers: vec![],
+        tls_addr: None,
+        tls_cert: None,
+        tls_key: None,
+        ws_addr: None,
+        default_retention_days: None,
+        default_max_article_bytes: None,
+        article_queue_capacity: 10,
+        article_worker_count: 2,
+        group_settings: vec![],
+        filters: vec![],
+        pgp_key_servers: renews::config::default_pgp_key_servers(),
+    }
+}
+
+/// Create a test configuration with specific limits for failure testing
+pub fn create_failure_test_config(
+    max_article_bytes: Option<u64>,
+    queue_capacity: usize,
+    idle_timeout_secs: u64,
+) -> Config {
+    Config {
+        addr: "127.0.0.1:0".to_string(),
+        site_name: "test".to_string(),
+        db_path: "sqlite::memory:".to_string(),
+        auth_db_path: "sqlite::memory:".to_string(),
+        peer_db_path: "sqlite::memory:".to_string(),
+        peer_sync_schedule: "0 0 * * * *".to_string(),
+        idle_timeout_secs,
+        peers: vec![],
+        tls_addr: None,
+        tls_cert: None,
+        tls_key: None,
+        ws_addr: None,
+        default_retention_days: None,
+        default_max_article_bytes: max_article_bytes,
+        article_queue_capacity: queue_capacity,
+        article_worker_count: 1,
+        group_settings: vec![],
+        filters: vec![],
+        pgp_key_servers: renews::config::default_pgp_key_servers(),
+    }
+}
+
 /// Create a test article queue (legacy function - does not start workers)
 pub fn create_test_queue() -> ArticleQueue {
     ArticleQueue::new(10) // Small capacity for tests
@@ -443,6 +497,14 @@ impl ClientMock {
         self
     }
 
+    /// Expect a command that should fail with a specific error code.
+    pub fn expect_failure(mut self, cmd: &str, error_code: u16) -> Self {
+        let error_msg = format!("{} command failed", error_code);
+        self.steps
+            .push((vec![cmd.to_string()], vec![error_msg]));
+        self
+    }
+
     /// Expect a command with a multi-line response.
     pub fn expect_multi<S: Into<String>>(mut self, cmd: &str, resp: Vec<S>) -> Self {
         self.steps.push((
@@ -499,4 +561,30 @@ impl ClientMock {
         let (reader, writer) = connect_tls(addr, cert).await;
         self.drive(reader, writer).await;
     }
+}
+
+/// Create a malformed article for testing parser failures
+pub fn create_malformed_article(malformation_type: &str) -> String {
+    match malformation_type {
+        "no_headers" => "\r\nBody without headers\r\n.\r\n".to_string(),
+        "missing_from" => "Subject: Test\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n".to_string(),
+        "missing_subject" => "From: test@example.com\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n".to_string(),
+        "missing_newsgroups" => "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n.\r\n".to_string(),
+        "invalid_header" => "InvalidHeader\r\nFrom: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n.\r\n".to_string(),
+        "extremely_long" => {
+            let long_subject = "x".repeat(10000);
+            format!("From: test@example.com\r\nSubject: {}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n", long_subject)
+        },
+        "binary_content" => "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody with \0 binary\r\n.\r\n".to_string(),
+        _ => "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nNormal body\r\n.\r\n".to_string(),
+    }
+}
+
+/// Create a large article that exceeds size limits
+pub fn create_large_article(size_kb: usize) -> String {
+    let body = "x".repeat(size_kb * 1024);
+    format!(
+        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{}\r\n.\r\n",
+        body
+    )
 }

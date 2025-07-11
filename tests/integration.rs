@@ -14,6 +14,8 @@ mod max_size;
 mod moderated;
 #[path = "integration/peers.rs"]
 mod peers;
+#[path = "integration/resource_exhaustion.rs"]
+mod resource_exhaustion;
 #[path = "integration/retention.rs"]
 mod retention;
 #[path = "integration/storage.rs"]
