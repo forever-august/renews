@@ -37,7 +37,8 @@ impl CommandHandler for IHaveHandler {
 
             // Handle control messages immediately without comprehensive validation
             if is_control {
-                if control::handle_control(&article, &ctx.storage, &ctx.auth).await? {
+                let cfg_guard = ctx.config.read().await;
+                if control::handle_control(&article, &ctx.storage, &ctx.auth, &cfg_guard).await? {
                     write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
                     return Ok(());
                 } else {
@@ -134,7 +135,8 @@ impl CommandHandler for TakeThisHandler {
 
             // Handle control messages immediately without comprehensive validation
             if is_control {
-                if control::handle_control(&article, &ctx.storage, &ctx.auth).await? {
+                let cfg_guard = ctx.config.read().await;
+                if control::handle_control(&article, &ctx.storage, &ctx.auth, &cfg_guard).await? {
                     write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
                     return Ok(());
                 } else {
