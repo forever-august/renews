@@ -39,8 +39,8 @@ if ! id "renews" &>/dev/null; then
 fi
 
 # Create data directories
-mkdir -p /opt/renews /var/renews
-chown renews:renews /opt/renews /var/renews
+mkdir -p /var/renews
+chown renews:renews /var/renews
 
 # Reload systemd
 systemctl daemon-reload
