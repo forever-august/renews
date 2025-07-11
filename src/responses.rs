@@ -51,6 +51,7 @@ pub const RESP_335_SEND_IT: &str = "335 Send it; end with <CR-LF>.<CR-LF>\r\n";
 pub const RESP_381_PASSWORD_REQ: &str = "381 password required\r\n";
 
 // 4xx error responses
+pub const RESP_411_NO_SUCH_GROUP: &str = "411 no such newsgroup\r\n";
 pub const RESP_412_NO_GROUP: &str = "412 no newsgroup selected\r\n";
 pub const RESP_420_NO_CURRENT: &str = "420 no current article selected\r\n";
 pub const RESP_421_NO_NEXT: &str = "421 no next article\r\n";

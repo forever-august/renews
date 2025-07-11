@@ -91,8 +91,8 @@ async fn test_group_command_nonexistent_group() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        // GROUP command in this implementation appears to create the group if it doesn't exist
-        .expect("GROUP nonexistent.group", "211 0 0 0 nonexistent.group")
+        // GROUP command should now return 411 for non-existent groups
+        .expect("GROUP nonexistent.group", "411 no such newsgroup")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
