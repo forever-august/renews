@@ -137,6 +137,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_key_servers_from_config() {
+        let config_servers = vec![
+            "hkps://config.example.com/pks/lookup?op=get&search=<email>".to_string(),
+            "hkps://another.example.com/pks/lookup?op=get&search=<email>".to_string(),
+        ];
+        let discovery = DefaultPgpKeyDiscovery::with_key_servers(config_servers.clone());
+        assert_eq!(discovery.key_servers, config_servers);
+        assert_ne!(
+            discovery.key_servers,
+            crate::config::default_pgp_key_servers()
+        );
+    }
+
+    #[tokio::test]
     async fn test_default_key_servers() {
         let discovery = DefaultPgpKeyDiscovery::default();
         assert!(!discovery.key_servers.is_empty());

@@ -453,8 +453,12 @@ pub async fn add_peer_job(
 
     let job_uuid = job.guid();
     scheduler.add(job).await?;
-    
-    tracing::debug!("Added peer sync job for {} with UUID {}", peer.sitename, job_uuid);
+
+    tracing::debug!(
+        "Added peer sync job for {} with UUID {}",
+        peer.sitename,
+        job_uuid
+    );
     Ok(job_uuid)
 }
 

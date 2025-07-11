@@ -121,6 +121,9 @@ following keys are recognised:
 - `default_retention_days` - default number of days to keep articles.
 - `default_max_article_bytes` - default maximum article size in bytes. A `K`,
   `M` or `G` suffix may be used to specify kilobytes, megabytes or gigabytes.
+- `pgp_key_servers` - list of PGP key discovery servers used for looking up public keys
+  when verifying signed control messages. Defaults to well-known public key servers
+  if not specified.
 - `group_settings` - list of per-group rules which can match a `group` exactly or a
   `pattern` using wildmat syntax to override retention and size defaults.
 
@@ -145,6 +148,12 @@ tls_key = "key.pem"
 ws_addr = ":8080"
 default_retention_days = 30
 default_max_article_bytes = "1M"
+
+pgp_key_servers = [
+    "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>",
+    "hkps://pgp.mit.edu/pks/lookup?op=get&search=<email>",
+    "hkps://keyserver.ubuntu.com/pks/lookup?op=get&search=<email>"
+]
 
 [[group_settings]]
 pattern = "short.*"

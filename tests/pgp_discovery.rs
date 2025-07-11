@@ -21,6 +21,7 @@ async fn test_pgp_discovery_with_missing_key() {
     };
 
     // Try verification with a non-existent user (will attempt discovery)
+    let default_servers = renews::config::default_pgp_key_servers();
     let result = verify_pgp(
         &msg,
         &auth,
@@ -28,6 +29,7 @@ async fn test_pgp_discovery_with_missing_key() {
         "1",
         "From,Subject",
         "test_signature_data",
+        &default_servers,
     )
     .await;
 
@@ -148,6 +150,7 @@ async fn test_verify_pgp_with_discovery_fallback() {
     };
 
     // Test with user that has no stored key - should attempt discovery
+    let default_servers = renews::config::default_pgp_key_servers();
     let result = verify_pgp(
         &msg,
         &auth,
@@ -155,6 +158,7 @@ async fn test_verify_pgp_with_discovery_fallback() {
         "1",
         "From,Subject",
         "invalid_sig",
+        &default_servers,
     )
     .await;
 

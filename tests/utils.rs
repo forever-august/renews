@@ -92,11 +92,7 @@ pub fn build_sig(data: &str) -> (String, Vec<String>) {
         Vec::new(),
     );
     let sig = cfg
-        .sign(
-            &key.primary_key,
-            String::new,
-            Cursor::new(data.as_bytes()),
-        )
+        .sign(&key.primary_key, String::new, Cursor::new(data.as_bytes()))
         .unwrap();
     let armored = StandaloneSignature::new(sig)
         .to_armored_string(Default::default())

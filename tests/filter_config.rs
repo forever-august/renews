@@ -48,15 +48,15 @@ name = "GroupExistenceFilter"
 
     let mut temp_file = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut temp_file, config_content.as_bytes()).unwrap();
-    
+
     let config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
-    
+
     // Check that filter pipeline was parsed correctly
     assert_eq!(config.filters.len(), 3);
     assert_eq!(config.filters[0].name, "HeaderFilter");
     assert_eq!(config.filters[1].name, "SizeFilter");
     assert_eq!(config.filters[2].name, "GroupExistenceFilter");
-    
+
     // Test creating filter chain from this config
     let chain = create_filter_chain(&config.filters).unwrap();
     let names = chain.filter_names();
@@ -82,10 +82,10 @@ name = "SizeFilter"
 
     let mut temp_file = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut temp_file, initial_config_content.as_bytes()).unwrap();
-    
+
     let mut config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
     assert_eq!(config.filters.len(), 2);
-    
+
     // Create new config with different filter pipeline
     let new_config_content = r#"
 addr = ":119"
@@ -106,19 +106,19 @@ name = "ModerationFilter"
 
     let mut new_temp_file = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut new_temp_file, new_config_content.as_bytes()).unwrap();
-    
+
     let new_config = Config::from_file(new_temp_file.path().to_str().unwrap()).unwrap();
-    
+
     // Update runtime config
     config.update_runtime(new_config);
-    
+
     // Verify that filter pipeline was updated
     assert_eq!(config.filters.len(), 4);
     assert_eq!(config.filters[0].name, "HeaderFilter");
     assert_eq!(config.filters[1].name, "SizeFilter");
     assert_eq!(config.filters[2].name, "GroupExistenceFilter");
     assert_eq!(config.filters[3].name, "ModerationFilter");
-    
+
     // Test that the new filter chain can be created
     let chain = create_filter_chain(&config.filters).unwrap();
     let names = chain.filter_names();
@@ -146,9 +146,9 @@ parameters = { max_size = 1048576 }
 
     let mut temp_file = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut temp_file, config_content.as_bytes()).unwrap();
-    
+
     let config = Config::from_file(temp_file.path().to_str().unwrap()).unwrap();
-    
+
     // Check that parameters were parsed correctly
     assert_eq!(config.filters.len(), 2);
     assert_eq!(config.filters[0].name, "HeaderFilter");
@@ -171,10 +171,10 @@ async fn test_invalid_filter_fallback() {
             parameters: json!({}),
         },
     ];
-    
+
     let result = create_filter_chain(&config_with_invalid_filter);
     assert!(result.is_err());
-    
+
     // The error should be handled gracefully in the queue processing,
     // falling back to the default filter chain
 }
@@ -195,7 +195,7 @@ name = "SizeFilter"
 
     let mut temp_file1 = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut temp_file1, config_content_filters.as_bytes()).unwrap();
-    
+
     let config1 = Config::from_file(temp_file1.path().to_str().unwrap()).unwrap();
     assert_eq!(config1.filters.len(), 2);
 
@@ -213,10 +213,10 @@ name = "SizeFilter"
 
     let mut temp_file2 = NamedTempFile::new().unwrap();
     std::io::Write::write_all(&mut temp_file2, config_content_filter.as_bytes()).unwrap();
-    
+
     let config2 = Config::from_file(temp_file2.path().to_str().unwrap()).unwrap();
     assert_eq!(config2.filters.len(), 2);
-    
+
     // Both should parse the same way
     assert_eq!(config1.filters[0].name, config2.filters[0].name);
     assert_eq!(config1.filters[1].name, config2.filters[1].name);

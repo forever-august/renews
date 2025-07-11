@@ -51,3 +51,12 @@ name = "GroupExistenceFilter"
 
 [[filters]]
 name = "ModerationFilter"
+
+# PGP key discovery servers for signature verification
+# These servers are queried when looking up PGP public keys for admin control messages
+# Default servers are included if this section is omitted
+# pgp_key_servers = [
+#     "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>",
+#     "hkps://pgp.mit.edu/pks/lookup?op=get&search=<email>",
+#     "hkps://keyserver.ubuntu.com/pks/lookup?op=get&search=<email>"
+# ]
