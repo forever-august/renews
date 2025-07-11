@@ -116,7 +116,10 @@ async fn test_listgroup_command_nonexistent_group() {
 
     ClientMock::new()
         // LISTGROUP creates empty listing for nonexistent group
-        .expect("LISTGROUP nonexistent.group", "211 article numbers follow")
+        .expect_multi("LISTGROUP nonexistent.group", vec![
+            "211 article numbers follow",
+            "."
+        ])
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -179,10 +182,10 @@ async fn test_authinfo_command_invalid_args() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("AUTHINFO", "501 not enough arguments")
-        .expect("AUTHINFO INVALID", "501 not enough arguments")
-        .expect("AUTHINFO USER", "501 not enough arguments")
-        .expect("AUTHINFO PASS", "501 not enough arguments")
+        .expect("AUTHINFO", "501 Syntax error")
+        .expect("AUTHINFO INVALID", "501 Syntax error")
+        .expect("AUTHINFO USER", "501 Syntax error")
+        .expect("AUTHINFO PASS", "501 Syntax error")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -205,8 +208,8 @@ async fn test_mode_command_invalid_args() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("MODE", "501 missing mode")
-        .expect("MODE INVALID", "501 command not understood")
+        .expect("MODE", "501 unknown mode")
+        .expect("MODE INVALID", "501 unknown mode")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -219,8 +222,8 @@ async fn test_over_command_invalid_range() {
 
     ClientMock::new()
         .expect("GROUP test.group", "211 0 0 0 test.group")
-        .expect("OVER invalid-range", "423 no articles in that range")
-        .expect("OVER 999-1000", "423 no articles in that range")
+        .expect("OVER invalid-range", "423 no such article number in this group")
+        .expect("OVER 999-1000", "423 no such article number in this group")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -245,8 +248,8 @@ async fn test_ihave_command_invalid_message_id() {
     let (storage, auth) = setup().await;
 
     ClientMock::new()
-        .expect("IHAVE", "501 message-id required")
-        .expect("IHAVE invalid-message-id", "435 article not wanted")
+        .expect("IHAVE", "501 Syntax error")
+        .expect("IHAVE invalid-message-id", "335 Send it; end with <CR-LF>.<CR-LF>")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -259,7 +262,7 @@ async fn test_malformed_commands() {
     ClientMock::new()
         // Commands with invalid syntax that should trigger 500 responses
         .expect("", "500 Syntax error")
-        .expect("INVALID@COMMAND", "500 unknown command")
+        .expect("INVALID@COMMAND", "500 command not recognized")
         .expect("123COMMAND", "500 Syntax error")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)

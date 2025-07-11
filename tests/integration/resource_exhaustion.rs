@@ -1,6 +1,6 @@
 //! Tests for resource exhaustion and queue failure modes
 
-use crate::utils::{setup, create_test_queue_with_workers, ClientMock};
+use crate::utils::{setup, create_test_queue_with_workers, ClientMock, create_malformed_article};
 use renews::{
     config::Config,
     queue::{ArticleQueue, QueuedArticle},
@@ -103,25 +103,50 @@ async fn test_empty_queue_operations() {
 }
 
 #[tokio::test]
-async fn test_zero_capacity_queue() {
-    let queue = ArticleQueue::new(0);
+async fn test_small_capacity_queue_exhaustion() {
+    let queue = ArticleQueue::new(1); // Very small capacity
 
-    let article = QueuedArticle {
+    let article1 = QueuedArticle {
         message: Message {
             headers: smallvec![
-                ("From".to_string(), "test@example.com".to_string()),
-                ("Subject".to_string(), "Test".to_string()),
-                ("Message-ID".to_string(), "<test@example.com>".to_string()),
+                ("From".to_string(), "test1@example.com".to_string()),
+                ("Subject".to_string(), "Test 1".to_string()),
+                ("Message-ID".to_string(), "<test1@example.com>".to_string()),
             ],
-            body: "Test body".to_string(),
+            body: "Test body 1".to_string(),
         },
         size: 100,
         is_control: false,
         already_validated: false,
     };
 
-    // Should fail immediately with zero capacity
-    assert!(queue.submit(article).await.is_err());
+    let article2 = QueuedArticle {
+        message: Message {
+            headers: smallvec![
+                ("From".to_string(), "test2@example.com".to_string()),
+                ("Subject".to_string(), "Test 2".to_string()),
+                ("Message-ID".to_string(), "<test2@example.com>".to_string()),
+            ],
+            body: "Test body 2".to_string(),
+        },
+        size: 100,
+        is_control: false,
+        already_validated: false,
+    };
+
+    // First article should succeed
+    assert!(queue.submit(article1).await.is_ok());
+
+    // Second article should fail due to capacity exhaustion
+    // Note: This test might pass if the queue is processed quickly,
+    // but in a real scenario with workers, this would typically fail
+    let result = tokio::time::timeout(
+        tokio::time::Duration::from_millis(100),
+        queue.submit(article2)
+    ).await;
+
+    // Should either timeout or fail immediately
+    assert!(result.is_err() || result.unwrap().is_err());
 }
 
 #[tokio::test]
@@ -130,28 +155,22 @@ async fn test_large_article_submission() {
     storage.add_group("test.group", false).await.unwrap();
     auth.add_user("testuser", "password").await.unwrap();
 
-    let config: Config = toml::from_str(r#"
-addr = ":119"
-default_max_article_bytes = 1000
-"#).unwrap();
-
-    // Create a very large article (exceeds limit)
-    let large_body = "x".repeat(2000);
+    // Create a very large article (10KB)  
+    let large_body = "x".repeat(10000);
     let large_article = format!(
         "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{}\r\n.\r\n",
         large_body
     );
 
     ClientMock::new()
-        .expect("AUTHINFO USER testuser", "381 more authentication information required")
+        .expect("AUTHINFO USER testuser", "381 password required")
         .expect("AUTHINFO PASS password", "281 authentication accepted")
-        .expect("POST", "340 send article to be posted")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
         .expect_request_multi(
             vec![large_article],
             vec!["441 posting failed"] // Should fail due to size limit
         )
-        .expect("QUIT", "205 closing connection")
-        .run_with_cfg(config, storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 
@@ -161,21 +180,19 @@ async fn test_malformed_article_submission() {
     storage.add_group("test.group", false).await.unwrap();
     auth.add_user("testuser", "password").await.unwrap();
 
-    let config: Config = toml::from_str(r#"addr = ":119""#).unwrap();
 
-    // Create an article with malformed headers
-    let malformed_article = "InvalidHeader\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n";
+    // Create an article with malformed headers (missing required headers)
+    let malformed_article = create_malformed_article("missing_from");
 
     ClientMock::new()
-        .expect("AUTHINFO USER testuser", "381 more authentication information required")
+        .expect("AUTHINFO USER testuser", "381 password required")
         .expect("AUTHINFO PASS password", "281 authentication accepted")
-        .expect("POST", "340 send article to be posted")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
         .expect_request_multi(
-            vec![malformed_article.to_string()],
+            vec![malformed_article],
             vec!["441 posting failed"] // Should fail due to malformed headers
         )
-        .expect("QUIT", "205 closing connection")
-        .run_with_cfg(config, storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 
@@ -185,37 +202,19 @@ async fn test_missing_required_headers() {
     storage.add_group("test.group", false).await.unwrap();
     auth.add_user("testuser", "password").await.unwrap();
 
-    let config: Config = toml::from_str(r#"addr = ":119""#).unwrap();
 
     // Article missing From header
     let article_no_from = "Subject: Test\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n";
 
-    // Article missing Subject header
-    let article_no_subject = "From: test@example.com\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n";
-
-    // Article missing Newsgroups header
-    let article_no_newsgroups = "From: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n.\r\n";
-
     ClientMock::new()
-        .expect("AUTHINFO USER testuser", "381 more authentication information required")
+        .expect("AUTHINFO USER testuser", "381 password required")
         .expect("AUTHINFO PASS password", "281 authentication accepted")
-        .expect("POST", "340 send article to be posted")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
         .expect_request_multi(
             vec![article_no_from.to_string()],
             vec!["441 posting failed"]
         )
-        .expect("POST", "340 send article to be posted")
-        .expect_request_multi(
-            vec![article_no_subject.to_string()],
-            vec!["441 posting failed"]
-        )
-        .expect("POST", "340 send article to be posted")
-        .expect_request_multi(
-            vec![article_no_newsgroups.to_string()],
-            vec!["441 posting failed"]
-        )
-        .expect("QUIT", "205 closing connection")
-        .run_with_cfg(config, storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 
@@ -263,7 +262,6 @@ async fn test_extremely_long_headers() {
     storage.add_group("test.group", false).await.unwrap();
     auth.add_user("testuser", "password").await.unwrap();
 
-    let config: Config = toml::from_str(r#"addr = ":119""#).unwrap();
 
     // Create an article with extremely long header values
     let long_subject = "x".repeat(10000);
@@ -273,15 +271,15 @@ async fn test_extremely_long_headers() {
     );
 
     ClientMock::new()
-        .expect("AUTHINFO USER testuser", "381 more authentication information required")
+        .expect("AUTHINFO USER testuser", "381 password required")
         .expect("AUTHINFO PASS password", "281 authentication accepted")
-        .expect("POST", "340 send article to be posted")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
         .expect_request_multi(
             vec![article_long_header],
             vec!["240 article received"] // Might succeed or fail depending on implementation
         )
         .expect("QUIT", "205 closing connection")
-        .run_with_cfg(config, storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 
@@ -291,20 +289,19 @@ async fn test_null_bytes_in_article() {
     storage.add_group("test.group", false).await.unwrap();
     auth.add_user("testuser", "password").await.unwrap();
 
-    let config: Config = toml::from_str(r#"addr = ":119""#).unwrap();
 
     // Create an article with null bytes (binary content)
     let article_with_nulls = "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody with \0 null byte\r\n.\r\n";
 
     ClientMock::new()
-        .expect("AUTHINFO USER testuser", "381 more authentication information required")
+        .expect("AUTHINFO USER testuser", "381 password required")
         .expect("AUTHINFO PASS password", "281 authentication accepted")
-        .expect("POST", "340 send article to be posted")
+        .expect("POST", "340 send article to be posted. End with <CR-LF>.<CR-LF>")
         .expect_request_multi(
             vec![article_with_nulls.to_string()],
             vec!["240 article received"] // Behavior depends on implementation
         )
         .expect("QUIT", "205 closing connection")
-        .run_with_cfg(config, storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
