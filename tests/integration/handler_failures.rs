@@ -183,7 +183,7 @@ async fn test_authinfo_command_invalid_args() {
 
     ClientMock::new()
         .expect("AUTHINFO", "501 not enough arguments")
-        .expect("AUTHINFO INVALID", "501 not enough arguments")
+        .expect("AUTHINFO INVALID", "501 Syntax error")
         .expect("AUTHINFO USER", "501 not enough arguments")
         .expect("AUTHINFO PASS", "501 not enough arguments")
         .expect("QUIT", "205 closing connection")
@@ -248,6 +248,7 @@ async fn test_ihave_command_invalid_message_id() {
     ClientMock::new()
         .expect("IHAVE", "501 message-id required")
         .expect("IHAVE invalid-message-id", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect("Invalid article content\r\n.", "437 article rejected")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
