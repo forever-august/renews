@@ -244,7 +244,10 @@ renews --init --config /opt/renews/config.toml
 
 For detailed information about Renews architecture, configuration, and deployment:
 
+- **[Manual Page](man/renews.1)** - Complete command line and configuration reference
 - **[Architecture Guide](docs/architecture.md)** - System design and component overview
 - **[Configuration Guide](docs/configuration.md)** - Complete configuration reference  
 - **[Deployment Guide](docs/deployment.md)** - Installation and production deployment
 - **[Task Interactions](docs/task-interactions.md)** - System flows and task coordination
+
+The manual page can be viewed with: `man ./man/renews.1`
