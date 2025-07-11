@@ -8,6 +8,7 @@ use renews::auth::DynAuth;
 use renews::config::Config;
 use renews::filters::{ArticleFilter, FilterChain};
 use renews::storage::DynStorage;
+use smallvec::smallvec;
 use std::error::Error;
 
 /// Example custom filter that blocks articles with certain words in the subject
@@ -121,7 +122,7 @@ pub async fn example_usage() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Example article that should fail profanity filter
     let bad_article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".to_string(), "user@example.com".to_string()),
             ("Subject".to_string(), "This is spam content".to_string()),
             ("Newsgroups".to_string(), "alt.test".to_string()),
@@ -140,7 +141,7 @@ pub async fn example_usage() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Example article that should pass
     let good_article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".to_string(), "user@example.com".to_string()),
             ("Subject".to_string(), "This is a good article".to_string()),
             ("Newsgroups".to_string(), "alt.test".to_string()),

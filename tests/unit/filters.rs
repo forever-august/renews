@@ -3,6 +3,7 @@ use renews::filters::size::SizeFilter;
 use renews::filters::{ArticleFilter, FilterChain};
 use renews::{Message, config::Config};
 use std::sync::Arc;
+use smallvec::smallvec;
 
 #[tokio::test]
 async fn test_header_filter_valid() {
@@ -12,7 +13,7 @@ async fn test_header_filter_valid() {
     let cfg = create_test_config();
 
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".to_string(), "test@example.com".to_string()),
             ("Subject".to_string(), "Test Article".to_string()),
             ("Newsgroups".to_string(), "alt.test".to_string()),
@@ -32,7 +33,7 @@ async fn test_header_filter_missing_from() {
     let cfg = create_test_config();
 
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("Subject".to_string(), "Test Article".to_string()),
             ("Newsgroups".to_string(), "alt.test".to_string()),
         ],
@@ -53,7 +54,7 @@ async fn test_size_filter_within_limit() {
     cfg.default_max_article_bytes = Some(1000);
 
     let article = Message {
-        headers: vec![],
+        headers: smallvec![],
         body: "Test body".to_string(),
     };
 
@@ -70,7 +71,7 @@ async fn test_size_filter_exceeds_limit() {
     cfg.default_max_article_bytes = Some(1000);
 
     let article = Message {
-        headers: vec![],
+        headers: smallvec![],
         body: "Test body".to_string(),
     };
 
@@ -112,7 +113,7 @@ async fn test_comprehensive_validation_compatibility() {
     let cfg = create_test_config();
 
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".to_string(), "test@example.com".to_string()),
             ("Subject".to_string(), "Test Article".to_string()),
             ("Newsgroups".to_string(), "alt.test".to_string()),

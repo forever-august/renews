@@ -1,9 +1,10 @@
 use super::Message;
 use serde::{Deserialize, Serialize};
+use smallvec::SmallVec;
 
 /// Serializable wrapper for message headers.
 #[derive(Serialize, Deserialize)]
-pub struct Headers(pub Vec<(String, String)>);
+pub struct Headers(pub SmallVec<[(String, String); 8]>);
 
 /// Extract the Message-ID header from an article.
 ///

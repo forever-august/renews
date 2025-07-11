@@ -1,10 +1,11 @@
 use renews::Message;
 use renews::storage::common::{Headers, extract_message_id};
+use smallvec::smallvec;
 
 #[test]
 fn test_extract_message_id_present() {
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".into(), "test@example.com".into()),
             ("Message-ID".into(), "<test123@example.com>".into()),
             ("Subject".into(), "Test subject".into()),
@@ -19,7 +20,7 @@ fn test_extract_message_id_present() {
 #[test]
 fn test_extract_message_id_case_insensitive() {
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".into(), "test@example.com".into()),
             ("message-id".into(), "<test123@example.com>".into()),
             ("Subject".into(), "Test subject".into()),
@@ -34,7 +35,7 @@ fn test_extract_message_id_case_insensitive() {
 #[test]
 fn test_extract_message_id_missing() {
     let article = Message {
-        headers: vec![
+        headers: smallvec![
             ("From".into(), "test@example.com".into()),
             ("Subject".into(), "Test subject".into()),
         ],
@@ -48,7 +49,7 @@ fn test_extract_message_id_missing() {
 #[test]
 fn test_extract_message_id_empty_headers() {
     let article = Message {
-        headers: vec![],
+        headers: smallvec![],
         body: "Test body".into(),
     };
 
@@ -58,7 +59,7 @@ fn test_extract_message_id_empty_headers() {
 
 #[test]
 fn test_headers_serialization() {
-    let headers = Headers(vec![
+    let headers = Headers(smallvec![
         ("From".into(), "test@example.com".into()),
         ("Subject".into(), "Test subject".into()),
     ]);
