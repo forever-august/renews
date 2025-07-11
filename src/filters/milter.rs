@@ -492,7 +492,7 @@ mod tests {
             timeout_secs: 30,
         };
         let filter = MilterFilter::new(config);
-        
+
         let result = filter.connect().await;
         assert!(result.is_err());
         if let Err(MilterError::InvalidScheme(msg)) = result {
@@ -509,7 +509,7 @@ mod tests {
             timeout_secs: 30,
         };
         let filter = MilterFilter::new(config);
-        
+
         let result = filter.connect().await;
         assert!(result.is_err());
         if let Err(MilterError::InvalidScheme(msg)) = result {
@@ -521,14 +521,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_unix_socket_scheme() {
-        // Test that Unix socket scheme is parsed correctly 
+        // Test that Unix socket scheme is parsed correctly
         // (connection will fail since socket doesn't exist, but parsing should work)
         let config = MilterConfig {
             address: "unix:///var/run/nonexistent.sock".to_string(),
             timeout_secs: 1, // Short timeout for test
         };
         let filter = MilterFilter::new(config);
-        
+
         let result = filter.connect().await;
         // Should get connection error, not invalid scheme error
         assert!(result.is_err());
