@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  create-release:
+    name: Create release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+  build-packages:
+    name: Build packages
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install packaging tools
+        run: |
+          cargo install cargo-deb
+          cargo install cargo-generate-rpm
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Create DEB package
+        run: cargo deb --no-build
+
+      - name: Create RPM package
+        run: cargo generate-rpm
+
+      - name: Create tarball
+        run: |
+          mkdir -p renews-${{ github.ref_name }}/usr/bin
+          mkdir -p renews-${{ github.ref_name }}/usr/share/man/man1
+          mkdir -p renews-${{ github.ref_name }}/lib/systemd/system
+          mkdir -p renews-${{ github.ref_name }}/etc/renews
+          
+          cp target/release/renews renews-${{ github.ref_name }}/usr/bin/
+          cp man/renews.1 renews-${{ github.ref_name }}/usr/share/man/man1/
+          cp examples/systemd/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
+          cp config.toml renews-${{ github.ref_name }}/etc/renews/config.toml.example
+          cp LICENSE-MIT renews-${{ github.ref_name }}/
+          cp README.md renews-${{ github.ref_name }}/
+          cp install.sh renews-${{ github.ref_name }}/
+          cp uninstall.sh renews-${{ github.ref_name }}/
+          
+          tar -czf renews-${{ github.ref_name }}-linux-x86_64.tar.gz renews-${{ github.ref_name }}/
+
+      - name: Upload DEB package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: target/debian/renews_0.1.0-1_amd64.deb
+          asset_name: renews_0.1.0-1_amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+
+      - name: Upload RPM package
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: target/generate-rpm/renews-0.1.0-1.x86_64.rpm
+          asset_name: renews-0.1.0-1.x86_64.rpm
+          asset_content_type: application/x-rpm
+
+      - name: Upload tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: renews-${{ github.ref_name }}-linux-x86_64.tar.gz
+          asset_name: renews-${{ github.ref_name }}-linux-x86_64.tar.gz
+          asset_content_type: application/gzip
