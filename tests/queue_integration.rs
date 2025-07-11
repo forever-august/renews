@@ -42,6 +42,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         article_worker_count: 2,
         group_settings: vec![],
         filters: vec![],
+        milter: None,
     };
 
     // Since we can't easily test with TLS in this setup, we'll create a simplified server

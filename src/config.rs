@@ -171,6 +171,8 @@ pub struct Config {
     pub group_settings: Vec<GroupRule>,
     #[serde(default, alias = "filter")]
     pub filters: Vec<FilterConfig>,
+    #[serde(default)]
+    pub milter: Option<MilterConfig>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -199,6 +201,22 @@ pub struct FilterConfig {
     pub name: String,
     #[serde(default)]
     pub parameters: serde_json::Value,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct MilterConfig {
+    /// Address of the Milter server (e.g., "127.0.0.1:8888" or "unix:/var/run/milter.sock")
+    pub address: String,
+    /// Whether to use TLS for the connection
+    #[serde(default)]
+    pub use_tls: bool,
+    /// Connection timeout in seconds
+    #[serde(default = "default_milter_timeout")]
+    pub timeout_secs: u64,
+}
+
+fn default_milter_timeout() -> u64 {
+    30
 }
 
 impl Config {

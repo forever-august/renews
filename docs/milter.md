@@ -1,0 +1,210 @@
+# Milter Protocol Support
+
+This document describes the Milter protocol support in Renews NNTP server, which allows integration with external content filtering systems.
+
+## Overview
+
+The Milter (Mail Filter) protocol is an industry-standard interface originally developed for Sendmail to communicate with external filter programs. Renews implements a Milter client that can send news articles to external Milter servers for validation, spam filtering, content scanning, or other processing.
+
+## Configuration
+
+The Milter filter can be configured in two ways:
+
+### Global Milter Configuration
+
+You can specify a global Milter server configuration in the `[milter]` section:
+
+```toml
+[milter]
+address = "127.0.0.1:8888"
+use_tls = false
+timeout_secs = 30
+```
+
+### Filter Pipeline Configuration
+
+The Milter filter must be explicitly added to the filter pipeline:
+
+```toml
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "127.0.0.1:8888"         # Milter server address
+use_tls = false                     # Whether to use TLS
+timeout_secs = 30                   # Connection timeout in seconds
+```
+
+## Configuration Options
+
+### address
+- **Type**: String
+- **Required**: Yes
+- **Description**: The address of the Milter server in the format `host:port`
+- **Examples**: 
+  - `"127.0.0.1:8888"` - Local Milter server
+  - `"milter.example.com:8889"` - Remote Milter server
+
+### use_tls
+- **Type**: Boolean
+- **Default**: `false`
+- **Description**: Whether to use TLS encryption for the connection to the Milter server
+- **Examples**:
+  - `false` - Plain TCP connection
+  - `true` - TLS encrypted connection
+
+### timeout_secs
+- **Type**: Integer
+- **Default**: `30`
+- **Description**: Connection timeout in seconds for connecting to the Milter server
+- **Range**: 1-600 seconds
+
+## Milter Protocol Implementation
+
+The implementation follows the standard Milter protocol with the following message flow:
+
+1. **Connect**: Sends connection information to the Milter server
+2. **Headers**: Sends each article header individually
+3. **End of Headers**: Signals the end of header transmission
+4. **Body**: Sends the article body content
+5. **End of Message**: Signals the end of message transmission
+6. **Response Processing**: Processes the Milter server's decision
+7. **Quit**: Closes the connection
+
+## Response Handling
+
+The Milter server can respond with various actions:
+
+- **Accept** (`a`): Article is accepted and processing continues
+- **Continue** (`c`): Continue processing (intermediate response)
+- **Reject** (`r`): Article is rejected with an error
+- **Discard** (`d`): Article is silently discarded
+- **Temporary Failure** (`t`): Temporary failure, retry later
+
+## TLS Support
+
+When `use_tls = true`, the filter establishes a TLS connection to the Milter server:
+
+- Uses the system's certificate store for server validation
+- Supports SNI (Server Name Indication) for hostname verification
+- Compatible with standard TLS configurations
+
+## Error Handling
+
+The Milter filter handles various error conditions:
+
+- **Connection failures**: Network connectivity issues
+- **Protocol errors**: Invalid Milter protocol responses
+- **TLS errors**: Certificate validation or encryption issues
+- **Timeouts**: Connection or response timeouts
+- **Article rejection**: When the Milter server rejects an article
+
+## Filter Pipeline Integration
+
+The MilterFilter integrates seamlessly with other filters in the pipeline:
+
+```toml
+[[filters]]
+name = "HeaderFilter"      # Validate required headers first
+
+[[filters]]
+name = "SizeFilter"        # Check size limits
+
+[[filters]]
+name = "MilterFilter"      # External content filtering
+[filters.parameters]
+address = "127.0.0.1:8888"
+use_tls = false
+timeout_secs = 30
+
+[[filters]]
+name = "GroupExistenceFilter"  # Validate newsgroups exist
+
+[[filters]]
+name = "ModerationFilter"      # Handle moderation
+```
+
+## Example Configurations
+
+### Basic TCP Milter
+
+```toml
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "127.0.0.1:8888"
+use_tls = false
+timeout_secs = 30
+```
+
+### TLS Milter with Custom Timeout
+
+```toml
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "secure-milter.example.com:8889"
+use_tls = true
+timeout_secs = 60
+```
+
+### Multiple Milter Servers
+
+You can configure multiple Milter filters in the pipeline for different purposes:
+
+```toml
+# Spam filtering
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "spamfilter.example.com:8888"
+use_tls = true
+timeout_secs = 30
+
+# Content scanning
+[[filters]]
+name = "MilterFilter"
+[filters.parameters]
+address = "contentfilter.example.com:8889"
+use_tls = true
+timeout_secs = 45
+```
+
+## Milter Server Compatibility
+
+This implementation should be compatible with most standard Milter servers, including:
+
+- SpamAssassin with milter interface
+- ClamAV milter
+- OpenDKIM
+- Custom Milter implementations
+
+## Performance Considerations
+
+- Milter filtering adds latency to article processing
+- Configure appropriate timeouts based on your Milter server performance
+- Consider using connection pooling in your Milter server for better performance
+- TLS connections have additional overhead but provide security
+
+## Troubleshooting
+
+### Connection Issues
+- Verify the Milter server is running and accessible
+- Check firewall rules and network connectivity
+- Verify the address and port configuration
+
+### TLS Issues
+- Ensure the Milter server supports TLS
+- Check certificate validity and trust chain
+- Verify hostname matches certificate
+
+### Performance Issues
+- Increase timeout values if the Milter server is slow
+- Monitor Milter server performance and resources
+- Consider load balancing multiple Milter servers
+
+## Security Considerations
+
+- Use TLS when connecting to remote Milter servers
+- Ensure Milter servers are properly secured and updated
+- Monitor Milter server logs for suspicious activity
+- Consider network segmentation for Milter servers

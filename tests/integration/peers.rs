@@ -32,11 +32,11 @@ async fn peer_task_updates_last_sync() {
         patterns: vec![],
         sync_schedule: Some("* * * * * *".into()), // Every second for testing
     };
-    
+
     // Create shared scheduler
     let scheduler = JobScheduler::new().await.unwrap();
     scheduler.start().await.unwrap();
-    
+
     // Add peer job to shared scheduler
     let _job_uuid = add_peer_job(
         &scheduler,
@@ -45,8 +45,10 @@ async fn peer_task_updates_last_sync() {
         db.clone(),
         storage,
         "local".into(),
-    ).await.unwrap();
-    
+    )
+    .await
+    .unwrap();
+
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
     let last = db.get_last_sync("127.0.0.1:9").await.unwrap();
     assert!(last.is_some());
@@ -55,27 +57,29 @@ async fn peer_task_updates_last_sync() {
 #[tokio::test]
 async fn shared_scheduler_handles_multiple_peers() {
     let db = PeerDb::new("sqlite::memory:").await.unwrap();
-    db.sync_config(&["peer1:9".into(), "peer2:9".into()]).await.unwrap();
+    db.sync_config(&["peer1:9".into(), "peer2:9".into()])
+        .await
+        .unwrap();
     let storage = SqliteStorage::new("sqlite::memory:").await.unwrap();
     let storage: Arc<dyn Storage> = Arc::new(storage);
-    
+
     // Create shared scheduler
     let scheduler = JobScheduler::new().await.unwrap();
     scheduler.start().await.unwrap();
-    
+
     // Add multiple peer jobs to the same shared scheduler
     let peer1 = PeerConfig {
         sitename: "peer1:9".into(),
         patterns: vec![],
         sync_schedule: Some("* * * * * *".into()), // Every second for testing
     };
-    
+
     let peer2 = PeerConfig {
         sitename: "peer2:9".into(),
         patterns: vec![],
         sync_schedule: Some("* * * * * *".into()), // Every second for testing
     };
-    
+
     let _job1_uuid = add_peer_job(
         &scheduler,
         peer1,
@@ -83,8 +87,10 @@ async fn shared_scheduler_handles_multiple_peers() {
         db.clone(),
         storage.clone(),
         "local".into(),
-    ).await.unwrap();
-    
+    )
+    .await
+    .unwrap();
+
     let _job2_uuid = add_peer_job(
         &scheduler,
         peer2,
@@ -92,11 +98,13 @@ async fn shared_scheduler_handles_multiple_peers() {
         db.clone(),
         storage,
         "local".into(),
-    ).await.unwrap();
-    
+    )
+    .await
+    .unwrap();
+
     // Wait for both peers to execute at least once
     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-    
+
     // Both peers should have updated their last sync times
     let last1 = db.get_last_sync("peer1:9").await.unwrap();
     let last2 = db.get_last_sync("peer2:9").await.unwrap();
@@ -164,11 +172,11 @@ async fn peer_transfer_helper(schedule: &str) {
         patterns: vec!["*".into()],
         sync_schedule: Some(schedule.to_string()),
     };
-    
+
     // Create shared scheduler
     let scheduler = JobScheduler::new().await.unwrap();
     scheduler.start().await.unwrap();
-    
+
     // Add peer job to shared scheduler
     let _job_uuid = add_peer_job(
         &scheduler,
@@ -177,7 +185,9 @@ async fn peer_transfer_helper(schedule: &str) {
         db.clone(),
         storage_a.clone(),
         "A".into(),
-    ).await.unwrap();
+    )
+    .await
+    .unwrap();
 
     tokio::time::sleep(tokio::time::Duration::from_millis(1500)).await;
     handle_b.await.unwrap();

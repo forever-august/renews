@@ -38,6 +38,16 @@ pub fn create_filter(config: &FilterConfig) -> Result<Box<dyn ArticleFilter>, Fi
         "SizeFilter" => Ok(Box::new(super::size::SizeFilter)),
         "GroupExistenceFilter" => Ok(Box::new(super::groups::GroupExistenceFilter)),
         "ModerationFilter" => Ok(Box::new(super::moderation::ModerationFilter)),
+        "MilterFilter" => {
+            // Extract Milter configuration from parameters
+            let milter_config: crate::config::MilterConfig =
+                serde_json::from_value(config.parameters.clone()).map_err(|e| {
+                    FilterFactoryError::InvalidParameters(format!(
+                        "MilterFilter configuration error: {e}"
+                    ))
+                })?;
+            Ok(Box::new(super::milter::MilterFilter::new(milter_config)))
+        }
         _ => Err(FilterFactoryError::UnknownFilter(config.name.clone())),
     }
 }
@@ -46,9 +56,7 @@ pub fn create_filter(config: &FilterConfig) -> Result<Box<dyn ArticleFilter>, Fi
 ///
 /// If the configuration is empty, returns the default filter chain.
 /// Otherwise, creates a custom chain with the specified filters in order.
-pub fn create_filter_chain(
-    configs: &[FilterConfig],
-) -> Result<FilterChain, FilterFactoryError> {
+pub fn create_filter_chain(configs: &[FilterConfig]) -> Result<FilterChain, FilterFactoryError> {
     if configs.is_empty() {
         // If no filter configuration is provided, use the default chain
         return Ok(FilterChain::default());
@@ -73,7 +81,7 @@ mod tests {
             name: "HeaderFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "HeaderFilter");
     }
@@ -84,7 +92,7 @@ mod tests {
             name: "SizeFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "SizeFilter");
     }
@@ -95,7 +103,7 @@ mod tests {
             name: "GroupExistenceFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "GroupExistenceFilter");
     }
@@ -106,9 +114,24 @@ mod tests {
             name: "ModerationFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let filter = create_filter(&config).unwrap();
         assert_eq!(filter.name(), "ModerationFilter");
+    }
+
+    #[test]
+    fn test_create_milter_filter() {
+        let config = FilterConfig {
+            name: "MilterFilter".to_string(),
+            parameters: json!({
+                "address": "127.0.0.1:8888",
+                "use_tls": false,
+                "timeout_secs": 30
+            }),
+        };
+
+        let filter = create_filter(&config).unwrap();
+        assert_eq!(filter.name(), "MilterFilter");
     }
 
     #[test]
@@ -117,7 +140,7 @@ mod tests {
             name: "UnknownFilter".to_string(),
             parameters: json!({}),
         };
-        
+
         let result = create_filter(&config);
         assert!(result.is_err());
         if let Err(FilterFactoryError::UnknownFilter(name)) = result {
@@ -147,7 +170,7 @@ mod tests {
                 parameters: json!({}),
             },
         ];
-        
+
         let chain = create_filter_chain(&configs).unwrap();
         let names = chain.filter_names();
         assert_eq!(names.len(), 2);
@@ -167,7 +190,7 @@ mod tests {
                 parameters: json!({}),
             },
         ];
-        
+
         let result = create_filter_chain(&configs);
         assert!(result.is_err());
     }
