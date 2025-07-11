@@ -16,11 +16,11 @@ async fn test_filter_pipeline_configuration() {
     let custom_config = vec![
         FilterConfig {
             name: "HeaderFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         },
         FilterConfig {
             name: "SizeFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         },
     ];
     let chain = create_filter_chain(&custom_config).unwrap();
@@ -141,7 +141,7 @@ name = "HeaderFilter"
 
 [[filters]]
 name = "SizeFilter"
-parameters = { max_size = 1048576 }
+max_size = 1048576
 "#;
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -152,10 +152,10 @@ parameters = { max_size = 1048576 }
     // Check that parameters were parsed correctly
     assert_eq!(config.filters.len(), 2);
     assert_eq!(config.filters[0].name, "HeaderFilter");
-    // Default parameters should be null when not specified
-    assert_eq!(config.filters[0].parameters, json!(null));
+    // Default parameters should be empty when not specified
+    assert!(config.filters[0].parameters.is_empty());
     assert_eq!(config.filters[1].name, "SizeFilter");
-    assert_eq!(config.filters[1].parameters, json!({"max_size": 1048576}));
+    assert_eq!(config.filters[1].parameters.get("max_size").unwrap(), &json!(1048576));
 }
 
 #[tokio::test]
@@ -164,11 +164,11 @@ async fn test_invalid_filter_fallback() {
     let config_with_invalid_filter = vec![
         FilterConfig {
             name: "HeaderFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         },
         FilterConfig {
             name: "InvalidFilter".to_string(),
-            parameters: json!({}),
+            parameters: serde_json::Map::new(),
         },
     ];
 

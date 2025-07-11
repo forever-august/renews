@@ -13,6 +13,7 @@ use std::error::Error;
 pub mod factory;
 pub mod groups;
 pub mod header;
+pub mod milter;
 pub mod moderation;
 pub mod size;
 

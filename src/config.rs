@@ -179,6 +179,7 @@ pub struct Config {
     pub group_settings: Vec<GroupRule>,
     #[serde(default, alias = "filter")]
     pub filters: Vec<FilterConfig>,
+
     #[serde(default = "default_pgp_key_servers")]
     pub pgp_key_servers: Vec<String>,
 }
@@ -207,9 +208,11 @@ pub struct PeerRule {
 #[derive(Deserialize, Clone)]
 pub struct FilterConfig {
     pub name: String,
-    #[serde(default)]
-    pub parameters: serde_json::Value,
+    #[serde(flatten)]
+    pub parameters: serde_json::Map<String, serde_json::Value>,
 }
+
+
 
 impl Config {
     /// Load configuration from a TOML file.
