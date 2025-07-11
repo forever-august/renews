@@ -1,7 +1,14 @@
 use crate::Message;
 use async_trait::async_trait;
+use futures_core::Stream;
 use std::error::Error;
+use std::pin::Pin;
 use std::sync::Arc;
+
+// Type aliases for complex stream types to improve readability
+type StringStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type GroupTimeStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type NumberStreamResult<'a> = Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -33,37 +40,39 @@ pub trait Storage: Send + Sync {
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Retrieve all newsgroups carried by the server
-    async fn list_groups(&self) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+    fn list_groups(
+        &self,
+    ) -> StringStreamResult<'_>;
 
     /// Retrieve newsgroups created after the specified time
-    async fn list_groups_since(
+    fn list_groups_since(
         &self,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+    ) -> StringStreamResult<'_>;
 
     /// Retrieve all newsgroups with their creation timestamps
-    async fn list_groups_with_times(
+    fn list_groups_with_times(
         &self,
-    ) -> Result<Vec<(String, i64)>, Box<dyn Error + Send + Sync>>;
+    ) -> GroupTimeStreamResult<'_>;
 
     /// List all article numbers for a group
-    async fn list_article_numbers(
+    fn list_article_numbers(
         &self,
         group: &str,
-    ) -> Result<Vec<u64>, Box<dyn Error + Send + Sync>>;
+    ) -> NumberStreamResult<'_>;
 
     /// List all message-ids for a group
-    async fn list_article_ids(
+    fn list_article_ids(
         &self,
         group: &str,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+    ) -> StringStreamResult<'_>;
 
     /// List message-ids for a group added after the specified time
-    async fn list_article_ids_since(
+    fn list_article_ids_since(
         &self,
         group: &str,
         since: chrono::DateTime<chrono::Utc>,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+    ) -> StringStreamResult<'_>;
 
     /// Remove articles in `group` that were inserted before `before`
     async fn purge_group_before(

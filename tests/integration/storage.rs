@@ -1,3 +1,4 @@
+use futures_util::StreamExt;
 use renews::{
     parse_message,
     storage::{Storage, sqlite::SqliteStorage},
@@ -83,14 +84,30 @@ async fn numbering_is_per_group() {
 #[tokio::test]
 async fn add_and_list_groups() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
-    assert!(storage.list_groups().await.unwrap().is_empty());
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.unwrap());
+    }
+    assert!(groups.is_empty());
+    
     storage.add_group("g1", false).await.unwrap();
     storage.add_group("g2", false).await.unwrap();
-    let groups = storage.list_groups().await.unwrap();
+    
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.unwrap());
+    }
     assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
 
     storage.remove_group("g1").await.unwrap();
-    let groups = storage.list_groups().await.unwrap();
+    
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.unwrap());
+    }
     assert_eq!(groups, vec!["g2".to_string()]);
 }
 

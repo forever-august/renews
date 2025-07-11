@@ -1,5 +1,6 @@
 use renews::control::canonical_text;
 use renews::parse_message;
+use futures_util::StreamExt;
 
 use crate::utils::{self, ClientMock, build_sig};
 
@@ -45,13 +46,12 @@ async fn control_newgroup_and_rmgroup() {
         )
         .run(storage.clone(), auth.clone())
         .await;
-    assert!(
-        storage
-            .list_groups()
-            .await
-            .unwrap()
-            .contains(&"test.group".to_string())
-    );
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.unwrap());
+    }
+    assert!(groups.contains(&"test.group".to_string()));
 
     let article = build_control_article("rmgroup test.group", "rm body\n");
     ClientMock::new()
@@ -65,13 +65,12 @@ async fn control_newgroup_and_rmgroup() {
         )
         .run(storage.clone(), auth.clone())
         .await;
-    assert!(
-        !storage
-            .list_groups()
-            .await
-            .unwrap()
-            .contains(&"test.group".to_string())
-    );
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.unwrap());
+    }
+    assert!(!groups.contains(&"test.group".to_string()));
 }
 
 #[tokio::test]

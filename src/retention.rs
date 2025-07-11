@@ -2,6 +2,7 @@ use crate::Message;
 use crate::config::Config;
 use crate::storage::Storage;
 use chrono::{DateTime, Utc};
+use futures_util::StreamExt;
 use std::error::Error;
 use tracing::{debug, info, warn};
 
@@ -19,35 +20,32 @@ pub async fn cleanup_expired_articles(
     cfg: &Config,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("Starting retention cleanup");
-
-    let groups = storage.list_groups().await?;
     let now = Utc::now();
-
-    // Apply time-based retention policies for each group
-    for group in &groups {
-        if let Err(e) = cleanup_group_by_retention(storage, cfg, group, now).await {
+    let mut groups = storage.list_groups();
+    while let Some(result) = groups.next().await {
+        let group = result?;
+        // Apply time-based retention policies for  group
+        if let Err(e) = cleanup_group_by_retention(storage, cfg, group.as_str(), now).await {
             warn!(
                 "Failed to apply retention policy for group '{}': {}",
                 group, e
             );
         }
-    }
-
-    // Remove articles with expired Expires headers
-    for group in &groups {
-        if let Err(e) = cleanup_group_by_expires_header(storage, group, now).await {
+        // Remove articles with expired Expires headers
+        if let Err(e) = cleanup_group_by_expires_header(storage, group.as_str(), now).await {
             warn!(
                 "Failed to clean up expired articles in group '{}': {}",
                 group, e
             );
         }
+        info!("Finished cleanup for group {}", group);
     }
 
     // Clean up orphaned messages that are no longer referenced by any group
-    debug!("Cleaning up orphaned messages");
+    info!("Cleaning up orphaned messages");
     storage.purge_orphan_messages().await?;
 
-    info!("Retention cleanup completed for {} groups", groups.len());
+    info!("Finished cleaning up expired articles");
     Ok(())
 }
 
@@ -90,14 +88,11 @@ async fn cleanup_group_by_expires_header(
     group: &str,
     now: DateTime<Utc>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let article_ids = storage
-        .list_article_ids(group)
-        .await
-        .map_err(|e| format!("Failed to list article IDs for group '{group}': {e}"))?;
+    let mut stream = storage.list_article_ids(group);
 
     let mut expired_count = 0;
-
-    for id in article_ids {
+    while let Some(result) = stream.next().await {
+        let id = result?;
         match storage.get_article_by_id(&id).await {
             Ok(Some(article)) => {
                 if let Some(expires_time) = parse_expires_header(&article) {

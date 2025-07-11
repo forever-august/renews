@@ -7,6 +7,7 @@ use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
+use futures_util::TryStreamExt;
 use std::error::Error;
 
 /// Filter that validates newsgroups exist in the server
@@ -37,7 +38,8 @@ impl ArticleFilter for GroupExistenceFilter {
             .unwrap_or_default();
 
         // Check that all groups exist
-        let all_groups = storage.list_groups().await?;
+        let stream = storage.list_groups();
+        let all_groups = stream.try_collect::<Vec<String>>().await?;
         for group in &newsgroups {
             if !all_groups.contains(group) {
                 return Err("group does not exist".into());
