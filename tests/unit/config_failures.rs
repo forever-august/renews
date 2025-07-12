@@ -87,7 +87,7 @@ fn test_file_substitution_missing_file() {
     let result: Result<Config, _> = toml::from_str(config_with_file);
     // This should parse but substitution would fail later
     if let Ok(config) = result {
-        assert!(config.tls_cert.as_ref().map_or(false, |s| s.contains("$FILE{")));
+        assert!(config.tls_cert.as_ref().is_some_and(|s| s.contains("$FILE{")));
     }
 }
 
@@ -130,8 +130,8 @@ fn test_file_substitution_valid() {
     
     let config_with_file = format!(r#"
         addr = ":119"
-        tls_cert = "$FILE{{{}}}"
-    "#, temp_path);
+        tls_cert = "$FILE{{{temp_path}}}"
+    "#);
     
     let result: Result<Config, _> = toml::from_str(&config_with_file);
     

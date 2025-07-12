@@ -139,8 +139,7 @@ async fn test_large_article_handling() {
     // Create a very large article (10KB) to test server's handling of large content
     let large_body = "x".repeat(10000);
     let large_article = format!(
-        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{}\r\n.\r\n",
-        large_body
+        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{large_body}\r\n.\r\n"
     );
 
     ClientMock::new()
@@ -212,11 +211,11 @@ async fn test_concurrent_queue_access() {
             let article = QueuedArticle {
                 message: Message {
                     headers: smallvec![
-                        ("From".to_string(), format!("test{}@example.com", i)),
-                        ("Subject".to_string(), format!("Test {}", i)),
-                        ("Message-ID".to_string(), format!("<test{}@example.com>", i)),
+                        ("From".to_string(), format!("test{i}@example.com")),
+                        ("Subject".to_string(), format!("Test {i}")),
+                        ("Message-ID".to_string(), format!("<test{i}@example.com>")),
                     ],
-                    body: format!("Test body {}", i),
+                    body: format!("Test body {i}"),
                 },
                 size: 100,
                 is_control: false,
@@ -247,8 +246,7 @@ async fn test_extremely_long_headers() {
     // Create an article with extremely long header values
     let long_subject = "x".repeat(10000);
     let article_long_header = format!(
-        "From: test@example.com\r\nSubject: {}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n",
-        long_subject
+        "From: test@example.com\r\nSubject: {long_subject}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n"
     );
 
     ClientMock::new()

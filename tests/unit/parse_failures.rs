@@ -62,9 +62,8 @@ fn test_parse_response_malformed() {
     // Response code too short (2 digits might be accepted by digit1)
     let result = parse_response("12");
     // Check if nom accepts 2-digit codes
-    match result {
-        Ok((_, resp)) => assert_eq!(resp.code, 12),
-        Err(_) => {} // Also acceptable
+    if let Ok((_, resp)) = result {
+        assert_eq!(resp.code, 12);
     }
     
     // Response code too long (digit1 will take all digits)
@@ -89,7 +88,7 @@ fn test_parse_response_edge_cases() {
     
     // Very long response text
     let long_text = "A".repeat(10000);
-    let input = format!("200 {}", long_text);
+    let input = format!("200 {long_text}");
     let (_, resp) = parse_response(&input).unwrap();
     assert_eq!(resp.text, long_text);
 }
@@ -108,12 +107,9 @@ fn test_parse_message_malformed_headers() {
     let malformed = "From\x01: test@example.com\r\nSubject: Test\r\n\r\nBody";
     // This might succeed but parse only "From" as the header name
     let result = parse_message(malformed);
-    match result {
-        Ok((_, msg)) => {
-            // Should have parsed "From" header but not the control char
-            assert!(!msg.headers.is_empty());
-        }
-        Err(_) => {} // Also acceptable for malformed input
+    if let Ok((_, msg)) = result {
+        // Should have parsed "From" header but not the control char
+        assert!(!msg.headers.is_empty());
     }
 }
 
@@ -126,7 +122,7 @@ fn test_parse_message_edge_cases() {
     
     // Message with extremely long header value
     let long_value = "A".repeat(10000);
-    let input = format!("Subject: {}\r\n\r\nBody", long_value);
+    let input = format!("Subject: {long_value}\r\n\r\nBody");
     let (_, msg) = parse_message(&input).unwrap();
     assert_eq!(msg.headers[0].1, long_value);
     
@@ -208,7 +204,7 @@ fn test_parse_message_binary_content() {
     // Message with binary data in body
     let binary_body = vec![0u8, 1, 2, 255, 254, 253];
     let binary_str = String::from_utf8_lossy(&binary_body);
-    let input = format!("Subject: Binary\r\n\r\n{}", binary_str);
+    let input = format!("Subject: Binary\r\n\r\n{binary_str}");
     
     // Should handle binary content gracefully
     let result = parse_message(&input);

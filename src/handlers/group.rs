@@ -17,11 +17,8 @@ impl CommandHandler for GroupHandler {
         W: AsyncWrite + Unpin,
     {
         if let Some(group_name) = args.first() {
-            // Check if the group exists by checking if it's in the list of groups
-            let groups_stream = ctx.storage.list_groups();
-            let all_groups = groups_stream.try_collect::<Vec<String>>().await?;
-            
-            if !all_groups.contains(group_name) {
+            // Check if the group exists using the storage interface
+            if !ctx.storage.group_exists(group_name).await? {
                 write_simple(&mut ctx.writer, RESP_411_NO_SUCH_GROUP).await?;
                 return Ok(());
             }

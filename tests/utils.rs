@@ -499,7 +499,7 @@ impl ClientMock {
 
     /// Expect a command that should fail with a specific error code.
     pub fn expect_failure(mut self, cmd: &str, error_code: u16) -> Self {
-        let error_msg = format!("{} command failed", error_code);
+        let error_msg = format!("{error_code} command failed");
         self.steps
             .push((vec![cmd.to_string()], vec![error_msg]));
         self
@@ -573,7 +573,7 @@ pub fn create_malformed_article(malformation_type: &str) -> String {
         "invalid_header" => "InvalidHeader\r\nFrom: test@example.com\r\nSubject: Test\r\n\r\nBody\r\n.\r\n".to_string(),
         "extremely_long" => {
             let long_subject = "x".repeat(10000);
-            format!("From: test@example.com\r\nSubject: {}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n", long_subject)
+            format!("From: test@example.com\r\nSubject: {long_subject}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n")
         },
         "binary_content" => "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody with \0 binary\r\n.\r\n".to_string(),
         _ => "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nNormal body\r\n.\r\n".to_string(),
@@ -584,7 +584,6 @@ pub fn create_malformed_article(malformation_type: &str) -> String {
 pub fn create_large_article(size_kb: usize) -> String {
     let body = "x".repeat(size_kb * 1024);
     format!(
-        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{}\r\n.\r\n",
-        body
+        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{body}\r\n.\r\n"
     )
 }

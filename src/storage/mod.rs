@@ -88,6 +88,9 @@ pub trait Storage: Send + Sync {
 
     /// Check if a group is moderated.
     async fn is_group_moderated(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+
+    /// Check if a group exists.
+    async fn group_exists(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
