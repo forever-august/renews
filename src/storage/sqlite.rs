@@ -48,18 +48,48 @@ impl SqliteStorage {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let options = SqliteConnectOptions::from_str(path)?
+        let options = SqliteConnectOptions::from_str(path).map_err(|e| {
+            format!(
+                "Invalid SQLite connection URI '{}': {}
+
+Please ensure the URI is in the correct format:
+- File database: sqlite:///path/to/database.db
+- In-memory database: sqlite::memory:
+- Relative path: sqlite://relative/path.db",
+                path, e
+            )
+        })?
             .create_if_missing(true);
         
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
-            .await?;
+            .await
+            .map_err(|e| {
+                format!(
+                    "Failed to connect to SQLite database '{}': {}
+
+Possible causes:
+- Parent directory does not exist and cannot be created
+- Permission denied accessing the database file or directory
+- Database file is corrupted or not a valid SQLite database
+- Path contains invalid characters for the filesystem
+- Disk space is full
+- Database is locked by another process",
+                    path, e
+                )
+            })?;
 
         // Create database schema
-        sqlx::query(MESSAGES_TABLE).execute(&pool).await?;
-        sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await?;
-        sqlx::query(GROUPS_TABLE).execute(&pool).await?;
+        sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
+            format!("Failed to create messages table in SQLite database '{}': {}", path, e)
+        })?;
+        sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
+            format!("Failed to create group_articles table in SQLite database '{}': {}", path, e)
+        })?;
+        sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
+            format!("Failed to create groups table in SQLite database '{}': {}", path, e)
+        })?;
 
         Ok(Self { pool })
     }
