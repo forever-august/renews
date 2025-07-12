@@ -473,23 +473,21 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::Serv
             match e.kind() {
                 std::io::ErrorKind::NotFound => {
                     format!(
-                        "TLS certificate file not found: '{}'
+                        "TLS certificate file not found: '{cert_path}'
 
 Please ensure the certificate file exists at the specified path.
-For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/fullchain.pem'.",
-                        cert_path
+For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/fullchain.pem'."
                     )
                 }
                 std::io::ErrorKind::PermissionDenied => {
                     format!(
-                        "Permission denied reading TLS certificate file: '{}'
+                        "Permission denied reading TLS certificate file: '{cert_path}'
 
 Please ensure the file is readable by the current user.
-You may need to run as root or adjust file permissions.",
-                        cert_path
+You may need to run as root or adjust file permissions."
                     )
                 }
-                _ => format!("Failed to open TLS certificate file '{}': {}", cert_path, e)
+                _ => format!("Failed to open TLS certificate file '{cert_path}': {e}")
             }
         })?
     );
@@ -498,35 +496,32 @@ You may need to run as root or adjust file permissions.",
             match e.kind() {
                 std::io::ErrorKind::NotFound => {
                     format!(
-                        "TLS private key file not found: '{}'
+                        "TLS private key file not found: '{key_path}'
 
 Please ensure the private key file exists at the specified path.
-For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/privkey.pem'.",
-                        key_path
+For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/privkey.pem'."
                     )
                 }
                 std::io::ErrorKind::PermissionDenied => {
                     format!(
-                        "Permission denied reading TLS private key file: '{}'
+                        "Permission denied reading TLS private key file: '{key_path}'
 
 Please ensure the file is readable by the current user.
 You may need to run as root or adjust file permissions.
-Note: Private key files should be protected (mode 600).",
-                        key_path
+Note: Private key files should be protected (mode 600)."
                     )
                 }
-                _ => format!("Failed to open TLS private key file '{}': {}", key_path, e)
+                _ => format!("Failed to open TLS private key file '{key_path}': {e}")
             }
         })?
     );
 
     let certs = certs(cert_file).map_err(|e| {
         format!(
-            "Failed to parse TLS certificate file '{}': {}
+            "Failed to parse TLS certificate file '{cert_path}': {e}
 
 Please ensure the certificate file is in valid PEM format.
-The file should contain one or more certificates starting with '-----BEGIN CERTIFICATE-----'.",
-            cert_path, e
+The file should contain one or more certificates starting with '-----BEGIN CERTIFICATE-----'."
         )
     })?
         .into_iter()
@@ -535,24 +530,22 @@ The file should contain one or more certificates starting with '-----BEGIN CERTI
 
     let mut keys = pkcs8_private_keys(key_file).map_err(|e| {
         format!(
-            "Failed to parse TLS private key file '{}': {}
+            "Failed to parse TLS private key file '{key_path}': {e}
 
 Please ensure the private key file is in valid PKCS#8 PEM format.
 The file should contain a private key starting with '-----BEGIN PRIVATE KEY-----'.
 If your key is in a different format, you may need to convert it:
 - For RSA keys: openssl rsa -in old_key.pem -out new_key.pem
-- For EC keys: openssl ec -in old_key.pem -out new_key.pem",
-            key_path, e
+- For EC keys: openssl ec -in old_key.pem -out new_key.pem"
         )
     })?;
     
     if keys.is_empty() {
         return Err(format!(
-            "No valid private key found in TLS key file '{}'
+            "No valid private key found in TLS key file '{key_path}'
 
 Please ensure the file contains a valid PKCS#8 private key.
-The file should have content starting with '-----BEGIN PRIVATE KEY-----'.",
-            key_path
+The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
         ).into());
     }
 
@@ -563,7 +556,7 @@ The file should have content starting with '-----BEGIN PRIVATE KEY-----'.",
         .with_single_cert(certs, key)
         .map_err(|e| {
             format!(
-                "Failed to create TLS configuration: {}
+                "Failed to create TLS configuration: {e}
 
 This error typically occurs when:
 - The certificate and private key don't match
@@ -571,8 +564,7 @@ This error typically occurs when:
 - The certificate has expired
 - The certificate format is invalid
 
-Please verify that your certificate and key files are correct and match each other.",
-                e
+Please verify that your certificate and key files are correct and match each other."
             )
         })?;
 
