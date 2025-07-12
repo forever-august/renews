@@ -75,8 +75,8 @@ Create a basic configuration file (`renews.toml`):
 ```toml
 addr = ":119"
 site_name = "news.example.com" 
-db_path = "sqlite:///var/renews/news.db"
-auth_db_path = "sqlite:///var/renews/auth.db"
+db_path = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"
 ```
 
 ### Initialize and Run
@@ -101,14 +101,14 @@ following keys are recognised:
 - `site_name` - hostname advertised by the server. Defaults to the `HOSTNAME`
   environment variable or `localhost` when unset.
 - `db_path` - database connection string for storing articles. Defaults to
-  `sqlite:///var/renews/news.db`.
+  `sqlite:///var/lib/renews/news.db`.
 - `auth_db_path` - authentication database connection string such as
-  `sqlite:///var/renews/auth.db` or `postgres://user:pass@127.0.0.1:5432`.
+  `sqlite:///var/lib/renews/auth.db` or `postgres://user:pass@127.0.0.1:5432`.
   When a PostgreSQL URI includes a username and password these are used for
   authentication. Defaults to
-  `sqlite:///var/renews/auth.db` when unset.
+  `sqlite:///var/lib/renews/auth.db` when unset.
 - `peer_db_path` - connection string for the peer state database. Defaults to
-  `sqlite:///var/renews/peers.db`.
+  `sqlite:///var/lib/renews/peers.db`.
 - `peer_sync_secs` - default seconds between synchronizing with peers.
 - `idle_timeout_secs` - idle timeout in seconds for client connections. Defaults to 600 (10 minutes).
 - `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. The `sitename` may include credentials in the form `user:pass@host:port` which are used for `AUTHINFO` when connecting.
@@ -137,9 +137,9 @@ An example configuration is provided in the repository:
 ```toml
 addr = ":119"
 site_name = "example.com"
-db_path = "sqlite:///var/renews/news.db"
-auth_db_path = "sqlite:///var/renews/auth.db"
-peer_db_path = "sqlite:///var/renews/peers.db"
+db_path = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"
+peer_db_path = "sqlite:///var/lib/renews/peers.db"
 peer_sync_secs = 3600
 idle_timeout_secs = 600
 tls_addr = ":563"

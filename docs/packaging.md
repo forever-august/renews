@@ -31,7 +31,7 @@ All packages install files to the following standard locations:
 | Man page | `/usr/share/man/man1/renews.1` |
 | Systemd service | `/lib/systemd/system/renews.service` |
 | Config example | `/etc/renews/config.toml.example` |
-| Data directory | `/var/renews/` (created during installation) |
+| Data directory | `/var/lib/renews/` (created during installation) |
 
 
 ## System User
@@ -39,7 +39,7 @@ All packages install files to the following standard locations:
 All packages create a system user `renews` with:
 - No login shell (`/bin/false`)
 - No home directory
-- Ownership of `/var/renews/`
+- Ownership of `/var/lib/renews/`
 
 ## Systemd Integration
 
