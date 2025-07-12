@@ -5,6 +5,7 @@ PartOf=renews.service
 [Socket]
 ListenStream=563
 BindIPv6Only=both
+FDName=nntps
 
 [Install]
 WantedBy=sockets.target

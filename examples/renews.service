@@ -1,7 +1,7 @@
 [Unit]
 Description=Renews NNTP server
 After=network.target
-Requires=renews-nntp.socket
+Wants=renews-nntp.socket
 Wants=renews-nntps.socket
 
 [Service]

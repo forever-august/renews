@@ -158,6 +158,7 @@ PartOf=renews.service
 [Socket]
 ListenStream=119
 BindIPv6Only=both
+FDName=nntp
 
 [Install]
 WantedBy=sockets.target
@@ -172,6 +173,7 @@ PartOf=renews.service
 [Socket]
 ListenStream=563
 BindIPv6Only=both
+FDName=nntps
 
 [Install]
 WantedBy=sockets.target
@@ -186,7 +188,7 @@ Update `/etc/systemd/system/renews.service`:
 Description=Renews NNTP Server
 Documentation=https://github.com/Chemiseblanc/renews
 After=network.target
-Requires=renews-nntp.socket
+Wants=renews-nntp.socket
 Wants=renews-nntps.socket
 
 [Service]
