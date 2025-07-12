@@ -86,6 +86,12 @@ async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
+    
+    // Initialize systemd socket support
+    if let Err(e) = systemd_socket::init() {
+        eprintln!("Warning: Failed to initialize systemd socket support: {}", e);
+    }
+    
     let args = Args::parse();
     let cfg_path = args.config.clone();
     

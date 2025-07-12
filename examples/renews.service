@@ -1,6 +1,8 @@
 [Unit]
 Description=Renews NNTP server
 After=network.target
+Wants=renews-nntp.socket
+Wants=renews-nntps.socket
 
 [Service]
 Type=simple
@@ -10,6 +12,8 @@ WorkingDirectory=/var/lib/renews
 Restart=on-failure
 User=renews
 Group=renews
+# Don't restart if we exit due to configuration reload
+RestartPreventExitStatus=1
 
 [Install]
 WantedBy=multi-user.target

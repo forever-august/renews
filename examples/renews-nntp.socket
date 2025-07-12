@@ -1,0 +1,11 @@
+[Unit]
+Description=Renews NNTP Server Socket
+PartOf=renews.service
+
+[Socket]
+ListenStream=119
+BindIPv6Only=both
+FDName=nntp
+
+[Install]
+WantedBy=sockets.target

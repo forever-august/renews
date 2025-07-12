@@ -1,9 +1,18 @@
 # General Settings
 site_name = "example.com"
-addr      = ":119"
+
+# Address configuration - supports regular addresses and systemd socket activation
+# For systemd socket activation, use systemd://<socket_name> format
+addr = "systemd://renews-nntp.socket"
+# Alternative direct binding (comment out the above and uncomment below if not using systemd)
+# addr = ":119"
+
 idle_timeout_secs = 600 # How long to wait between commands before disconnecting a client
 
 # TLS Settings
+# For systemd socket activation, use systemd://<socket_name> format
+tls_addr = "systemd://renews-nntps.socket"
+# Alternative direct binding (comment out the above and uncomment below if not using systemd)
 # tls_addr = ":563"
 # tls_cert = "/etc/letsencrypt/fullchain.pem"
 # tls_key  = "/etc/letsencrypt/privkey.pem"
