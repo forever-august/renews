@@ -209,6 +209,15 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    async fn group_exists(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+        let row = sqlx::query("SELECT 1 FROM groups WHERE name = $1 LIMIT 1")
+            .bind(group)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(row.is_some())
+    }
+
+    #[tracing::instrument(skip_all)]
     fn list_groups(&self) -> StringStream<'_> {
         let pool = self.pool.clone();
         Box::pin(stream! {
