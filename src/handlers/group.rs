@@ -311,21 +311,17 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    write_lines(
-        &mut ctx.writer,
-        &[
-            RESP_215_OVERVIEW_FMT,
-            RESP_SUBJECT,
-            RESP_FROM,
-            RESP_DATE,
-            RESP_MESSAGE_ID,
-            RESP_REFERENCES,
-            RESP_BYTES,
-            RESP_LINES,
-            RESP_DOT_CRLF,
-        ],
-    )
-    .await
+    use crate::overview::get_overview_format_lines;
+    
+    ctx.writer.write_all(RESP_215_OVERVIEW_FMT.as_bytes()).await?;
+    
+    let format_lines = get_overview_format_lines();
+    for line in format_lines {
+        ctx.writer.write_all(line.as_bytes()).await?;
+    }
+    
+    ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
+    Ok(())
 }
 
 async fn handle_list_headers<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
