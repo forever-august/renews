@@ -1,6 +1,7 @@
 use std::error::Error;
 
 use clap::{Parser, Subcommand};
+use tokio::runtime::Runtime;
 
 use renews::auth;
 use renews::config::Config;
@@ -83,13 +84,12 @@ async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 #[allow(clippy::too_many_lines)]
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
     
     // Initialize systemd socket support
     if let Err(e) = systemd_socket::init() {
-        eprintln!("Warning: Failed to initialize systemd socket support: {}", e);
+        eprintln!("Warning: Failed to initialize systemd socket support: {e}");
     }
     
     let args = Args::parse();
@@ -98,7 +98,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut cfg_initial = match Config::from_file(&cfg_path) {
         Ok(config) => config,
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
@@ -108,30 +108,50 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         cfg_initial.allow_posting_insecure_connections = true;
     }
 
-    if args.init {
-        if let Err(e) = run_init(&cfg_initial).await {
-            eprintln!("Error: {}", e);
+    // Create the runtime based on the configuration
+    let runtime_threads = match cfg_initial.get_runtime_threads() {
+        Ok(threads) => threads,
+        Err(e) => {
+            eprintln!("Error determining runtime threads: {e}");
             std::process::exit(1);
         }
-        return Ok(());
-    }
+    };
 
-    if let Some(cmd) = args.command {
-        match cmd {
-            Command::Admin(c) => {
-                if let Err(e) = run_admin(c, &cfg_initial).await {
-                    eprintln!("Error: {}", e);
-                    std::process::exit(1);
+    let runtime = if runtime_threads == 1 {
+        Runtime::new()?
+    } else {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(runtime_threads)
+            .enable_all()
+            .build()?
+    };
+
+    runtime.block_on(async {
+        if args.init {
+            if let Err(e) = run_init(&cfg_initial).await {
+                eprintln!("Error: {e}");
+                std::process::exit(1);
+            }
+            return Ok(());
+        }
+
+        if let Some(cmd) = args.command {
+            match cmd {
+                Command::Admin(c) => {
+                    if let Err(e) = run_admin(c, &cfg_initial).await {
+                        eprintln!("Error: {e}");
+                        std::process::exit(1);
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             }
         }
-    }
 
-    if let Err(e) = server::run(cfg_initial, cfg_path).await {
-        eprintln!("Error: {}", e);
-        std::process::exit(1);
-    }
-    
-    Ok(())
+        if let Err(e) = server::run(cfg_initial, cfg_path).await {
+            eprintln!("Error: {e}");
+            std::process::exit(1);
+        }
+        
+        Ok(())
+    })
 }

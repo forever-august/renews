@@ -9,6 +9,10 @@ addr = "systemd://renews-nntp.socket"
 
 idle_timeout_secs = 600 # How long to wait between commands before disconnecting a client
 
+# Runtime configuration
+# runtime_threads = 1     # Number of runtime threads (default: 1 for single-threaded)
+                          # Set to 0 to use all available CPU cores
+
 # TLS Settings
 # For systemd socket activation, use systemd://<socket_name> format
 tls_addr = "systemd://renews-nntps.socket"

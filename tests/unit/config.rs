@@ -203,3 +203,53 @@ retention_days = 90
     assert_eq!(cfg.retention_for_group("comp.lang.rust").unwrap().num_days(), 90);
     assert_eq!(cfg.max_size_for_group("comp.lang.rust"), Some(5 * 1024 * 1024));
 }
+
+#[test]
+fn default_runtime_threads() {
+    let cfg: Config = toml::from_str("addr=\":119\"").unwrap();
+    assert_eq!(cfg.runtime_threads, 1);
+}
+
+#[test]
+fn runtime_threads_configuration() {
+    let toml = r#"addr = ":119"
+runtime_threads = 4
+"#;
+    let cfg: Config = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.runtime_threads, 4);
+}
+
+#[test]
+fn runtime_threads_zero_means_all_cores() {
+    let toml = r#"addr = ":119"
+runtime_threads = 0
+"#;
+    let cfg: Config = toml::from_str(toml).unwrap();
+    assert_eq!(cfg.runtime_threads, 0);
+    
+    // Test that get_runtime_threads returns the number of cores
+    let actual_threads = cfg.get_runtime_threads().unwrap();
+    assert!(actual_threads > 0);
+    // Should be equal to the number of cores on the system
+    let expected_cores = std::thread::available_parallelism().unwrap().get();
+    assert_eq!(actual_threads, expected_cores);
+}
+
+#[test]
+fn runtime_threads_runtime_update() {
+    let initial = r#"addr = ":119"
+runtime_threads = 1
+"#;
+    let mut cfg: Config = toml::from_str(initial).unwrap();
+
+    let updated = r#"addr = ":42"
+runtime_threads = 8
+"#;
+    let new_cfg: Config = toml::from_str(updated).unwrap();
+    cfg.update_runtime(new_cfg);
+
+    // Addr should be preserved (immutable)
+    assert_eq!(cfg.addr, ":119");
+    // Runtime threads should be updated (runtime-adjustable)
+    assert_eq!(cfg.runtime_threads, 8);
+}
