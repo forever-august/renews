@@ -96,7 +96,7 @@ if unset).
 .TP
 .B db_path
 Database connection string for storing articles (default:
-.IR sqlite:///var/renews/news.db ).
+.IR sqlite:///var/lib/renews/news.db ).
 Supports SQLite format:
 .I sqlite:///path/to/database.db
 or PostgreSQL format:
@@ -104,13 +104,13 @@ or PostgreSQL format:
 .TP
 .B auth_db_path
 Authentication database connection string (default:
-.IR sqlite:///var/renews/auth.db ).
+.IR sqlite:///var/lib/renews/auth.db ).
 Uses the same format as
 .BR db_path .
 .TP
 .B peer_db_path
 Peer state database connection string (default:
-.IR sqlite:///var/renews/peers.db ).
+.IR sqlite:///var/lib/renews/peers.db ).
 Used for tracking synchronization state with peer servers.
 .SS Network and Security Settings
 .TP
@@ -248,13 +248,13 @@ Replaced with the contents of the file at
 .I /etc/renews.toml
 Default configuration file location.
 .TP
-.I /var/renews/news.db
+.I /var/lib/renews/news.db
 Default article database location (SQLite).
 .TP
-.I /var/renews/auth.db
+.I /var/lib/renews/auth.db
 Default authentication database location (SQLite).
 .TP
-.I /var/renews/peers.db
+.I /var/lib/renews/peers.db
 Default peer state database location (SQLite).
 .SH ENVIRONMENT
 .TP
@@ -276,8 +276,8 @@ Initialize and start a basic NNTP server:
 cat > /etc/renews.toml << EOF
 addr = ":119"
 site_name = "news.example.com"
-db_path = "sqlite:///var/renews/news.db"
-auth_db_path = "sqlite:///var/renews/auth.db"
+db_path = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"
 EOF
 
 # Initialize databases

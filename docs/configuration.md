@@ -14,8 +14,8 @@ Renews uses TOML format for configuration. The default location is `/etc/renews.
 # Basic server settings
 addr = ":119"                    # Listen address for NNTP
 site_name = "news.example.com"   # Server hostname
-db_path = "sqlite:///var/renews/news.db"     # Article database
-auth_db_path = "sqlite:///var/renews/auth.db" # User database
+db_path = "sqlite:///var/lib/renews/news.db"     # Article database
+auth_db_path = "sqlite:///var/lib/renews/auth.db" # User database
 ```
 
 ### Complete Example
@@ -26,9 +26,9 @@ addr = ":119"                    # NNTP listen address
 site_name = "news.example.com"   # Server hostname
 
 # Database paths
-db_path = "sqlite:///var/renews/news.db"
-auth_db_path = "sqlite:///var/renews/auth.db"  
-peer_db_path = "sqlite:///var/renews/peers.db"
+db_path = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"  
+peer_db_path = "sqlite:///var/lib/renews/peers.db"
 
 # Connection settings
 idle_timeout_secs = 600          # Client idle timeout (10 minutes)
@@ -85,9 +85,9 @@ sync_interval_secs = 7200       # Sync every 2 hours
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `db_path` | Article database URI | `sqlite:///var/renews/news.db` |
-| `auth_db_path` | Authentication database URI | `sqlite:///var/renews/auth.db` |
-| `peer_db_path` | Peer state database URI | `sqlite:///var/renews/peers.db` |
+| `db_path` | Article database URI | `sqlite:///var/lib/renews/news.db` |
+| `auth_db_path` | Authentication database URI | `sqlite:///var/lib/renews/auth.db` |
+| `peer_db_path` | Peer state database URI | `sqlite:///var/lib/renews/peers.db` |
 
 #### Database URI Formats
 

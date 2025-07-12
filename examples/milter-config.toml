@@ -6,8 +6,8 @@
 # Basic server configuration
 addr = ":119"
 site_name = "news.example.com"
-db_path = "sqlite:///var/renews/news.db"
-auth_db_path = "sqlite:///var/renews/auth.db"
+db_path = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"
 
 # Filter pipeline configuration
 # Filters are applied in the order specified below

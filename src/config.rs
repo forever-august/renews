@@ -7,15 +7,15 @@ use std::error::Error;
 use std::fmt;
 
 fn default_db_path() -> String {
-    "sqlite:///var/renews/news.db".into()
+    "sqlite:///var/lib/renews/news.db".into()
 }
 
 fn default_auth_db_path() -> String {
-    "sqlite:///var/renews/auth.db".into()
+    "sqlite:///var/lib/renews/auth.db".into()
 }
 
 fn default_peer_db_path() -> String {
-    "sqlite:///var/renews/peers.db".into()
+    "sqlite:///var/lib/renews/peers.db".into()
 }
 
 fn default_peer_sync_schedule() -> String {

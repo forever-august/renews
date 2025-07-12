@@ -33,8 +33,8 @@ systemctl daemon-reload
 
 echo "Uninstallation complete!"
 echo ""
-echo "Note: User data in /var/renews was preserved."
+echo "Note: User data in /var/lib/renews was preserved."
 echo "The 'renews' system user was also preserved."
 echo "To completely remove all data, run:"
-echo "  rm -rf /var/renews"
+echo "  rm -rf /var/lib/renews"
 echo "  userdel renews"
