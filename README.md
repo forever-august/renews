@@ -21,6 +21,7 @@ Renews implements the NNTP protocol as defined in RFC 3977, storing articles in 
 - **Control Messages** - Support for newgroup/rmgroup/cancel control messages
 - **Administrative CLI** - Built-in commands for user and group management
 - **Hot Configuration Reload** - Runtime configuration updates via SIGHUP
+- **Systemd Socket Activation** - Run as non-root while listening on privileged ports
 
 ## Building
 
@@ -97,7 +98,8 @@ otherwise `/etc/renews.toml` is assumed. The
 following keys are recognised:
 
 - `addr` - listen address for plain NNTP connections. If the host portion is
-  omitted the server listens on all interfaces.
+  omitted the server listens on all interfaces. For systemd socket activation,
+  use `systemd://socket_name` format (e.g., `systemd://renews-nntp.socket`).
 - `site_name` - hostname advertised by the server. Defaults to the `HOSTNAME`
   environment variable or `localhost` when unset.
 - `db_path` - database connection string for storing articles. Defaults to
@@ -113,7 +115,8 @@ following keys are recognised:
 - `idle_timeout_secs` - idle timeout in seconds for client connections. Defaults to 600 (10 minutes).
 - `peers` - list of peer entries with `sitename`, optional `sync_interval_secs` and `patterns` controlling which groups are exchanged. The `sitename` may include credentials in the form `user:pass@host:port` which are used for `AUTHINFO` when connecting.
 - `tls_addr` - optional listen address for NNTP over TLS. Omitting the host
-  portion listens on all interfaces.
+  portion listens on all interfaces. For systemd socket activation,
+  use `systemd://socket_name` format (e.g., `systemd://renews-nntps.socket`).
 - `tls_cert` - path to the TLS certificate in PEM format.
 - `tls_key` - path to the TLS private key in PEM format.
 - `ws_addr` - optional listen address for the WebSocket bridge (requires the
@@ -176,6 +179,10 @@ compiled with the `websocket` feature.
 
 ## Deployment with systemd
 
+For production deployment, Renews supports both traditional direct binding and systemd socket activation.
+
+### Traditional Deployment
+
 By default the service reads `/etc/renews.toml`. A different path can be
 provided with `--config`. A simple systemd unit may look like this:
 
@@ -197,8 +204,42 @@ Group=renews
 WantedBy=multi-user.target
 ```
 
-Install the file as `/etc/systemd/system/renews.service` and run
-`systemctl enable --now renews` to start the server at boot.
+### Systemd Socket Activation (Recommended)
+
+Socket activation allows Renews to listen on privileged ports without running as root:
+
+```ini
+# /etc/systemd/system/renews.service
+[Unit]
+Description=Renews NNTP server
+After=network.target
+Requires=renews-nntp.socket
+Wants=renews-nntps.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/renews --config /opt/renews/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
+WorkingDirectory=/opt/renews
+Restart=on-failure
+User=renews
+Group=renews
+
+[Install]
+WantedBy=multi-user.target
+```
+
+With corresponding socket files for NNTP (port 119) and NNTPS (port 563). Configuration uses `systemd://` URLs:
+
+```toml
+addr = "systemd://renews-nntp.socket"
+tls_addr = "systemd://renews-nntps.socket"
+```
+
+Install the files and run `systemctl enable --now renews-nntp.socket renews-nntps.socket renews.service`
+to start the server at boot.
+
+For complete setup instructions, see the [Deployment Guide](docs/deployment.md).
 
 Sending `SIGHUP` to the process (for example with `systemctl reload`) reloads
 the configuration. Retention, group, and TLS settings are updated at runtime;

@@ -135,6 +135,190 @@ sudo systemctl start renews
 sudo systemctl status renews
 ```
 
+## Systemd Socket Activation
+
+Systemd socket activation allows Renews to listen on privileged ports (like 119 and 563) without running as root. The systemd daemon listens on the ports and passes connections to Renews when they arrive.
+
+### Benefits
+
+- **Security**: Run Renews as a non-root user while listening on privileged ports
+- **Flexibility**: Start/stop the service without losing active connections
+- **Resource Efficiency**: Sockets are created only when needed
+
+### Socket Configuration
+
+Create socket unit files for NNTP and NNTPS:
+
+**`/etc/systemd/system/renews-nntp.socket`:**
+```ini
+[Unit]
+Description=Renews NNTP Server Socket
+PartOf=renews.service
+
+[Socket]
+ListenStream=119
+BindIPv6Only=both
+
+[Install]
+WantedBy=sockets.target
+```
+
+**`/etc/systemd/system/renews-nntps.socket`:**
+```ini
+[Unit]
+Description=Renews NNTPS Server Socket  
+PartOf=renews.service
+
+[Socket]
+ListenStream=563
+BindIPv6Only=both
+
+[Install]
+WantedBy=sockets.target
+```
+
+### Service Configuration for Socket Activation
+
+Update `/etc/systemd/system/renews.service`:
+
+```ini
+[Unit]
+Description=Renews NNTP Server
+Documentation=https://github.com/Chemiseblanc/renews
+After=network.target
+Requires=renews-nntp.socket
+Wants=renews-nntps.socket
+
+[Service]
+Type=simple
+User=renews
+Group=renews
+ExecStart=/usr/local/bin/renews --config /etc/renews/config.toml
+ExecReload=/bin/kill -HUP $MAINPID
+WorkingDirectory=/opt/renews
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=1
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/renews
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=renews
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### Application Configuration
+
+Update `/etc/renews/config.toml` to use systemd sockets:
+
+```toml
+# Use systemd socket activation
+addr = "systemd://renews-nntp.socket"
+tls_addr = "systemd://renews-nntps.socket"
+
+# Traditional direct binding (comment out when using socket activation)
+# addr = ":119"
+# tls_addr = ":563"
+
+site_name = "news.example.com"
+tls_cert = "/etc/renews/server.crt"
+tls_key = "/etc/renews/server.key"
+```
+
+### Activate Socket Services
+
+```bash
+# Enable and start socket units
+sudo systemctl daemon-reload
+sudo systemctl enable renews-nntp.socket renews-nntps.socket
+sudo systemctl start renews-nntp.socket renews-nntps.socket
+
+# Enable the main service (will be started on demand)
+sudo systemctl enable renews.service
+
+# Check socket status
+sudo systemctl status renews-nntp.socket renews-nntps.socket
+```
+
+### Verify Socket Activation
+
+Test that sockets are listening:
+```bash
+# Check listening sockets
+sudo ss -tlnp | grep -E ':(119|563)'
+
+# Test connection triggers service start
+telnet localhost 119
+# Service should start automatically
+
+# Check service status
+sudo systemctl status renews.service
+```
+
+### Migration from Direct Binding
+
+If migrating from direct binding to socket activation:
+
+1. **Stop the existing service:**
+   ```bash
+   sudo systemctl stop renews
+   ```
+
+2. **Update configuration** to use `systemd://` addresses
+
+3. **Install socket unit files** as shown above
+
+4. **Start socket services:**
+   ```bash
+   sudo systemctl start renews-nntp.socket renews-nntps.socket
+   ```
+
+5. **Test the setup** - the service will start automatically on first connection
+
+### Troubleshooting Socket Activation
+
+Common issues and solutions:
+
+1. **Socket not found error:**
+   ```bash
+   # Check socket unit status
+   sudo systemctl status renews-nntp.socket
+   
+   # Ensure socket is active
+   sudo systemctl start renews-nntp.socket
+   ```
+
+2. **Permission denied on socket:**
+   ```bash
+   # Check that the service runs as the correct user
+   sudo systemctl edit renews.service
+   # Ensure User=renews is set
+   ```
+
+3. **Service fails to start with socket:**
+   ```bash
+   # Check service logs
+   sudo journalctl -u renews.service -f
+   
+   # Verify socket configuration in Renews config
+   # Ensure systemd:// URLs match socket unit names
+   ```
+
+4. **Test socket activation manually:**
+   ```bash
+   # Check what systemd passes to the service
+   sudo systemd-socket-activate -l 119 /usr/local/bin/renews --config /etc/renews/config.toml
+   ```
+
 ## TLS Configuration
 
 ### Generate Self-Signed Certificate (Testing)
