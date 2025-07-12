@@ -9,7 +9,12 @@ async fn ihave_rejects_large_article() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
-        toml::from_str("addr=\":119\"\ndefault_max_article_bytes=10\n").unwrap(),
+        toml::from_str(r#"
+addr = ":119"
+[[group_settings]]
+pattern = "*"
+max_article_bytes = 10
+"#).unwrap(),
     ));
     let cfg_val = cfg.read().await.clone();
     ClientMock::new()
@@ -34,7 +39,12 @@ async fn ihave_rejects_large_article_with_suffix() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(
-        toml::from_str("addr=\":119\"\ndefault_max_article_bytes=\"1K\"\n").unwrap(),
+        toml::from_str(r#"
+addr = ":119"
+[[group_settings]]
+pattern = "*"
+max_article_bytes = "1K"
+"#).unwrap(),
     ));
     let cfg_val = cfg.read().await.clone();
     ClientMock::new()

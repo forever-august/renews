@@ -3,8 +3,6 @@ use renews::config::Config;
 #[test]
 fn retention_rules_match() {
     let toml = r#"addr = ":119"
-default_retention_days = 10
-default_max_article_bytes = "1K"
 [[group_settings]]
 pattern = "foo.*"
 retention_days = 1
@@ -12,6 +10,10 @@ retention_days = 1
 group = "foo.bar"
 retention_days = 5
 max_article_bytes = "20K"
+[[group_settings]]
+pattern = "*"
+retention_days = 10
+max_article_bytes = "1K"
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
     assert_eq!(cfg.retention_for_group("misc").unwrap().num_days(), 10);
@@ -33,8 +35,6 @@ idle_timeout_secs = 600
 tls_addr = ":563"
 tls_cert = "old.pem"
 tls_key = "old.key"
-default_retention_days = 10
-default_max_article_bytes = 100
 [[group_settings]]
 group = "misc.news"
 retention_days = 5
@@ -50,8 +50,6 @@ idle_timeout_secs = 1200
 tls_addr = ":9999"
 tls_cert = "new.pem"
 tls_key = "new.key"
-default_retention_days = 1
-default_max_article_bytes = 200
 [[group_settings]]
 group = "misc.news"
 retention_days = 1
@@ -67,8 +65,7 @@ retention_days = 1
     assert_eq!(cfg.tls_addr.as_deref(), Some(":563"));
     assert_eq!(cfg.tls_cert.as_deref(), Some("new.pem"));
     assert_eq!(cfg.tls_key.as_deref(), Some("new.key"));
-    assert_eq!(cfg.default_retention_days, Some(1));
-    assert_eq!(cfg.default_max_article_bytes, Some(200));
+
     assert_eq!(cfg.group_settings[0].retention_days, Some(1));
 }
 
@@ -173,4 +170,36 @@ patterns = ["misc.*"]
     );
     assert_eq!(cfg.peers[1].sitename, "peer2.example.com");
     assert_eq!(cfg.peers[1].sync_schedule, None);
+}
+
+#[test]
+fn group_pattern_specificity_with_non_overlapping_settings() {
+    let toml = r#"addr = ":119"
+[[group_settings]]
+pattern = "comp.*"
+retention_days = 30
+
+[[group_settings]]
+pattern = "comp.lang.*"
+max_article_bytes = "5M"
+
+[[group_settings]]
+group = "comp.lang.rust"
+retention_days = 90
+"#;
+    let cfg: Config = toml::from_str(toml).unwrap();
+    
+    // Test that comp.misc gets only the broad pattern settings
+    assert_eq!(cfg.retention_for_group("comp.misc").unwrap().num_days(), 30);
+    assert_eq!(cfg.max_size_for_group("comp.misc"), None);
+    
+    // Test that comp.lang.python gets the more specific pattern settings for both
+    // retention (from comp.*) and size (from comp.lang.*)
+    assert_eq!(cfg.retention_for_group("comp.lang.python").unwrap().num_days(), 30);
+    assert_eq!(cfg.max_size_for_group("comp.lang.python"), Some(5 * 1024 * 1024));
+    
+    // Test that comp.lang.rust gets the most specific exact match for retention
+    // and inherits size from comp.lang.* pattern
+    assert_eq!(cfg.retention_for_group("comp.lang.rust").unwrap().num_days(), 90);
+    assert_eq!(cfg.max_size_for_group("comp.lang.rust"), Some(5 * 1024 * 1024));
 }

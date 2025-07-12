@@ -157,7 +157,7 @@ pub struct Config {
     pub peer_sync_schedule: String,
     #[serde(default = "default_idle_timeout_secs")]
     pub idle_timeout_secs: u64,
-    #[serde(default)]
+    #[serde(default, alias = "peer")]
     pub peers: Vec<PeerRule>,
     #[serde(default)]
     pub tls_addr: Option<String>,
@@ -167,15 +167,11 @@ pub struct Config {
     pub tls_key: Option<String>,
     #[serde(default)]
     pub ws_addr: Option<String>,
-    #[serde(default)]
-    pub default_retention_days: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_size")]
-    pub default_max_article_bytes: Option<u64>,
     #[serde(default = "default_article_queue_capacity")]
     pub article_queue_capacity: usize,
     #[serde(default = "default_article_worker_count")]
     pub article_worker_count: usize,
-    #[serde(default)]
+    #[serde(default, alias = "group")]
     pub group_settings: Vec<GroupRule>,
     #[serde(default, alias = "filter")]
     pub filters: Vec<FilterConfig>,
@@ -235,23 +231,14 @@ impl Config {
         Ok(cfg)
     }
 
-    fn rule_for_group(&self, group: &str) -> Option<&GroupRule> {
+    #[must_use]
+    pub fn retention_for_group(&self, group: &str) -> Option<Duration> {
+        // First check for exact group matches
         if let Some(rule) = self
             .group_settings
             .iter()
             .find(|r| r.group.as_deref() == Some(group))
         {
-            return Some(rule);
-        }
-        self.group_settings
-            .iter()
-            .filter(|r| r.group.is_none())
-            .find(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
-    }
-
-    #[must_use]
-    pub fn retention_for_group(&self, group: &str) -> Option<Duration> {
-        if let Some(rule) = self.rule_for_group(group) {
             if let Some(days) = rule.retention_days {
                 if days > 0 {
                     return Some(Duration::days(days));
@@ -259,22 +246,81 @@ impl Config {
                 return None;
             }
         }
-        self.default_retention_days
-            .and_then(|d| if d > 0 { Some(Duration::days(d)) } else { None })
+        
+        // Then check for pattern matches, looking for the most specific pattern that has retention_days
+        let mut matches: Vec<_> = self
+            .group_settings
+            .iter()
+            .filter(|r| r.group.is_none())
+            .filter(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
+            .filter(|r| r.retention_days.is_some())
+            .collect();
+            
+        if matches.is_empty() {
+            return None;
+        }
+        
+        // Sort by pattern specificity (fewer wildcards = more specific)
+        matches.sort_by_key(|r| {
+            let pattern = r.pattern.as_ref().unwrap();
+            // Count wildcards - fewer wildcards means more specific
+            let wildcard_count = pattern.chars().filter(|c| *c == '*' || *c == '?').count();
+            // Also consider pattern length - longer patterns with same wildcard count are more specific
+            (wildcard_count, -(pattern.len() as i32))
+        });
+        
+        if let Some(rule) = matches.first() {
+            if let Some(days) = rule.retention_days {
+                if days > 0 {
+                    return Some(Duration::days(days));
+                }
+            }
+        }
+        
+        None
     }
 
     #[must_use]
     pub fn max_size_for_group(&self, group: &str) -> Option<u64> {
-        self.rule_for_group(group)
-            .and_then(|r| r.max_article_bytes)
-            .or(self.default_max_article_bytes)
+        // First check for exact group matches
+        if let Some(rule) = self
+            .group_settings
+            .iter()
+            .find(|r| r.group.as_deref() == Some(group))
+        {
+            if rule.max_article_bytes.is_some() {
+                return rule.max_article_bytes;
+            }
+        }
+        
+        // Then check for pattern matches, looking for the most specific pattern that has max_article_bytes
+        let mut matches: Vec<_> = self
+            .group_settings
+            .iter()
+            .filter(|r| r.group.is_none())
+            .filter(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
+            .filter(|r| r.max_article_bytes.is_some())
+            .collect();
+            
+        if matches.is_empty() {
+            return None;
+        }
+        
+        // Sort by pattern specificity (fewer wildcards = more specific)
+        matches.sort_by_key(|r| {
+            let pattern = r.pattern.as_ref().unwrap();
+            // Count wildcards - fewer wildcards means more specific
+            let wildcard_count = pattern.chars().filter(|c| *c == '*' || *c == '?').count();
+            // Also consider pattern length - longer patterns with same wildcard count are more specific
+            (wildcard_count, -(pattern.len() as i32))
+        });
+        
+        matches.first().and_then(|r| r.max_article_bytes)
     }
 
     /// Update runtime-adjustable values from a new configuration.
     /// Only retention, group, filter pipeline, and TLS settings are changed.
     pub fn update_runtime(&mut self, other: Config) {
-        self.default_retention_days = other.default_retention_days;
-        self.default_max_article_bytes = other.default_max_article_bytes;
         self.group_settings = other.group_settings;
         self.filters = other.filters;
 

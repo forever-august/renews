@@ -51,10 +51,15 @@ async fn test_size_filter_within_limit() {
     let storage = create_mock_storage().await;
     let auth = create_mock_auth().await;
     let mut cfg = create_test_config();
-    cfg.default_max_article_bytes = Some(1000);
+    cfg.group_settings.push(renews::config::GroupRule {
+        group: None,
+        pattern: Some("*".to_string()),
+        retention_days: None,
+        max_article_bytes: Some(1000),
+    });
 
     let article = Message {
-        headers: smallvec![],
+        headers: smallvec![("Newsgroups".to_string(), "test.group".to_string())],
         body: "Test body".to_string(),
     };
 
@@ -68,16 +73,21 @@ async fn test_size_filter_exceeds_limit() {
     let storage = create_mock_storage().await;
     let auth = create_mock_auth().await;
     let mut cfg = create_test_config();
-    cfg.default_max_article_bytes = Some(1000);
+    cfg.group_settings.push(renews::config::GroupRule {
+        group: None,
+        pattern: Some("*".to_string()),
+        retention_days: None,
+        max_article_bytes: Some(1000),
+    });
 
     let article = Message {
-        headers: smallvec![],
+        headers: smallvec![("Newsgroups".to_string(), "test.group".to_string())],
         body: "Test body".to_string(),
     };
 
     let result = filter.validate(&storage, &auth, &cfg, &article, 1500).await;
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().to_string(), "article too large");
+    assert_eq!(result.unwrap_err().to_string(), "article too large for group test.group");
 }
 
 #[tokio::test]

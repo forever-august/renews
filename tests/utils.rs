@@ -60,8 +60,6 @@ pub fn create_minimal_config() -> Config {
         tls_cert: None,
         tls_key: None,
         ws_addr: None,
-        default_retention_days: None,
-        default_max_article_bytes: None,
         article_queue_capacity: 10,
         article_worker_count: 2,
         group_settings: vec![],
@@ -80,7 +78,7 @@ pub fn create_insecure_posting_config() -> Config {
 
 /// Create a test configuration with specific limits for failure testing
 pub fn create_failure_test_config(
-    max_article_bytes: Option<u64>,
+    _max_article_bytes: Option<u64>,
     queue_capacity: usize,
     idle_timeout_secs: u64,
 ) -> Config {
@@ -97,8 +95,6 @@ pub fn create_failure_test_config(
         tls_cert: None,
         tls_key: None,
         ws_addr: None,
-        default_retention_days: None,
-        default_max_article_bytes: max_article_bytes,
         article_queue_capacity: queue_capacity,
         article_worker_count: 1,
         group_settings: vec![],

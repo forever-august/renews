@@ -382,13 +382,6 @@ pub async fn basic_validate_article(
         return Err("missing required headers".into());
     }
 
-    // Check size limit
-    if let Some(max_size) = cfg.default_max_article_bytes {
-        if size > max_size {
-            return Err("article too large".into());
-        }
-    }
-
     Ok(())
 }
 
