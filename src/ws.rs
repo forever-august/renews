@@ -50,7 +50,23 @@ pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<(), Box<dyn Error
     };
     let addr = listen_addr(&ws_addr_raw);
     info!("listening WebSocket on {addr}");
-    let listener = TcpListener::bind(&addr).await?;
+    let listener = TcpListener::bind(&addr).await.map_err(|e| {
+        format!(
+            "Failed to bind to WebSocket address '{}': {}
+
+This error typically occurs when:
+- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
+- The port number is invalid (must be 1-65535)
+- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
+- The address format is incorrect (should be 'host:port', ':port', or just 'port')
+
+You can change the WebSocket listen address in your configuration file using the 'ws_addr' setting
+or disable the WebSocket bridge by removing the 'ws_addr' configuration.",
+            addr, e,
+            addr.split(':').last().unwrap_or("8080"),
+            addr.split(':').last().unwrap_or("8080")
+        )
+    })?;
     let nntp_addr = format!("127.0.0.1:{nntp_port}");
     loop {
         let (stream, _) = listener.accept().await?;

@@ -88,7 +88,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
     let cfg_path = args.config.clone();
-    let mut cfg_initial = Config::from_file(&cfg_path)?;
+    
+    let mut cfg_initial = match Config::from_file(&cfg_path) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
     
     // Override config with CLI flag if provided
     if args.allow_posting_insecure_connections {
@@ -96,18 +103,29 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     if args.init {
-        run_init(&cfg_initial).await?;
+        if let Err(e) = run_init(&cfg_initial).await {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
         return Ok(());
     }
 
     if let Some(cmd) = args.command {
         match cmd {
             Command::Admin(c) => {
-                run_admin(c, &cfg_initial).await?;
+                if let Err(e) = run_admin(c, &cfg_initial).await {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
                 return Ok(());
             }
         }
     }
 
-    server::run(cfg_initial, cfg_path).await
+    if let Err(e) = server::run(cfg_initial, cfg_path).await {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
+    
+    Ok(())
 }

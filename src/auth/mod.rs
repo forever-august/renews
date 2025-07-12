@@ -58,17 +58,76 @@ pub mod sqlite;
 /// Create an authentication backend from a connection URI.
 pub async fn open(uri: &str) -> Result<DynAuth, Box<dyn Error + Send + Sync>> {
     if uri.starts_with("sqlite:") {
-        Ok(Arc::new(sqlite::SqliteAuth::new(uri).await?))
+        sqlite::SqliteAuth::new(uri).await
+            .map(|a| Arc::new(a) as DynAuth)
+            .map_err(|e| {
+                format!(
+                    "Failed to connect to SQLite authentication database '{}': {}
+
+Common SQLite connection issues:
+- Directory does not exist (SQLite will create the file but not directories)
+- Permission denied accessing the database file or directory
+- Database file is corrupted
+- Path contains invalid characters
+- Database is locked by another process
+
+For SQLite URIs:
+- Use format: sqlite:///path/to/database.db
+- For in-memory database: sqlite::memory:
+- Relative paths are relative to the working directory
+
+You can change the authentication database path in your configuration file using the 'auth_db_path' setting.",
+                    uri, e
+                ).into()
+            })
     } else if uri.starts_with("postgres:") {
         #[cfg(feature = "postgres")]
         {
-            Ok(Arc::new(postgres::PostgresAuth::new(uri).await?))
+            postgres::PostgresAuth::new(uri).await
+                .map(|a| Arc::new(a) as DynAuth)
+                .map_err(|e| {
+                    format!(
+                        "Failed to connect to PostgreSQL authentication database '{}': {}
+
+Common PostgreSQL connection issues:
+- PostgreSQL server is not running
+- Incorrect hostname, port, database name, username, or password
+- Database does not exist (must be created manually)
+- Network connectivity issues
+- Authentication method not supported
+- Connection limit exceeded
+- SSL/TLS configuration issues
+
+For PostgreSQL URIs, use format:
+postgres://username:password@host:port/database
+
+You can change the authentication database URI in your configuration file using the 'auth_db_path' setting.",
+                        uri, e
+                    ).into()
+                })
         }
         #[cfg(not(feature = "postgres"))]
         {
-            Err("postgres backend not enabled".into())
+            Err(format!(
+                "PostgreSQL backend not enabled: '{}'
+
+The renews server was compiled without PostgreSQL support.
+To use PostgreSQL:
+1. Rebuild with: cargo build --features postgres
+2. Or use SQLite instead by changing 'auth_db_path' to a sqlite:// URI in your configuration",
+                uri
+            ).into())
         }
     } else {
-        Err("unknown auth backend".into())
+        Err(format!(
+            "Unknown authentication backend: '{}'
+
+Supported database backends:
+- SQLite: sqlite:///path/to/database.db
+- PostgreSQL: postgres://user:pass@host:port/database (requires --features postgres)
+
+You can change the authentication database URI in your configuration file using the 'auth_db_path' setting.",
+            uri
+        ).into())
     }
 }

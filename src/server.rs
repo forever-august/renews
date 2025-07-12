@@ -132,8 +132,24 @@ impl Server {
         };
 
         info!("listening on {addr}");
-        let listener = TcpListener::bind(&addr).await?;
+        let listener = TcpListener::bind(&addr).await.map_err(|e| {
+            format!(
+                "Failed to bind to address '{}': {}
 
+This error typically occurs when:
+- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
+- The port number is invalid (must be 1-65535)
+- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
+- The address format is incorrect (should be 'host:port', ':port', or just 'port')
+
+You can change the listen address in your configuration file using the 'addr' setting.",
+                addr, e, 
+                addr.split(':').last().unwrap_or("119"),
+                addr.split(':').last().unwrap_or("119")
+            )
+        })?;
+
+        // ...existing code...
         let storage = self.components.storage.clone();
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
@@ -179,7 +195,22 @@ impl Server {
         let tls_addr = listen_addr(tls_addr_raw);
         info!("listening TLS on {tls_addr}");
 
-        let tls_listener = TcpListener::bind(&tls_addr).await?;
+        let tls_listener = TcpListener::bind(&tls_addr).await.map_err(|e| {
+            format!(
+                "Failed to bind to TLS address '{}': {}
+
+This error typically occurs when:
+- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
+- The port number is invalid (must be 1-65535)
+- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
+- The address format is incorrect (should be 'host:port', ':port', or just 'port')
+
+You can change the TLS listen address in your configuration file using the 'tls_addr' setting.",
+                tls_addr, e,
+                tls_addr.split(':').last().unwrap_or("563"),
+                tls_addr.split(':').last().unwrap_or("563")
+            )
+        })?;
         let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
         *self.config_manager.tls_acceptor.write().await = Some(acceptor.clone());
 
@@ -472,24 +503,91 @@ impl PeerManager {
 /// Returns an error if the files cannot be read or contain invalid data
 fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
     let cert_file = &mut BufReader::new(
-        File::open(cert_path)
-            .map_err(|e| format!("Failed to open TLS certificate file '{}': {}", cert_path, e))?
+        File::open(cert_path).map_err(|e| {
+            match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    format!(
+                        "TLS certificate file not found: '{}'
+
+Please ensure the certificate file exists at the specified path.
+For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/fullchain.pem'.",
+                        cert_path
+                    )
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    format!(
+                        "Permission denied reading TLS certificate file: '{}'
+
+Please ensure the file is readable by the current user.
+You may need to run as root or adjust file permissions.",
+                        cert_path
+                    )
+                }
+                _ => format!("Failed to open TLS certificate file '{}': {}", cert_path, e)
+            }
+        })?
     );
     let key_file = &mut BufReader::new(
-        File::open(key_path)
-            .map_err(|e| format!("Failed to open TLS private key file '{}': {}", key_path, e))?
+        File::open(key_path).map_err(|e| {
+            match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    format!(
+                        "TLS private key file not found: '{}'
+
+Please ensure the private key file exists at the specified path.
+For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/privkey.pem'.",
+                        key_path
+                    )
+                }
+                std::io::ErrorKind::PermissionDenied => {
+                    format!(
+                        "Permission denied reading TLS private key file: '{}'
+
+Please ensure the file is readable by the current user.
+You may need to run as root or adjust file permissions.
+Note: Private key files should be protected (mode 600).",
+                        key_path
+                    )
+                }
+                _ => format!("Failed to open TLS private key file '{}': {}", key_path, e)
+            }
+        })?
     );
 
-    let certs = certs(cert_file)
-        .map_err(|e| format!("Failed to parse TLS certificate file '{}': {}", cert_path, e))?
+    let certs = certs(cert_file).map_err(|e| {
+        format!(
+            "Failed to parse TLS certificate file '{}': {}
+
+Please ensure the certificate file is in valid PEM format.
+The file should contain one or more certificates starting with '-----BEGIN CERTIFICATE-----'.",
+            cert_path, e
+        )
+    })?
         .into_iter()
         .map(rustls::Certificate)
         .collect();
 
-    let mut keys = pkcs8_private_keys(key_file)
-        .map_err(|e| format!("Failed to parse TLS private key file '{}': {}", key_path, e))?;
+    let mut keys = pkcs8_private_keys(key_file).map_err(|e| {
+        format!(
+            "Failed to parse TLS private key file '{}': {}
+
+Please ensure the private key file is in valid PKCS#8 PEM format.
+The file should contain a private key starting with '-----BEGIN PRIVATE KEY-----'.
+If your key is in a different format, you may need to convert it:
+- For RSA keys: openssl rsa -in old_key.pem -out new_key.pem
+- For EC keys: openssl ec -in old_key.pem -out new_key.pem",
+            key_path, e
+        )
+    })?;
+    
     if keys.is_empty() {
-        return Err(format!("No private key found in TLS key file '{}'", key_path).into());
+        return Err(format!(
+            "No valid private key found in TLS key file '{}'
+
+Please ensure the file contains a valid PKCS#8 private key.
+The file should have content starting with '-----BEGIN PRIVATE KEY-----'.",
+            key_path
+        ).into());
     }
 
     let key = rustls::PrivateKey(keys.remove(0));
@@ -497,7 +595,20 @@ fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::Serv
         .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(certs, key)
-        .map_err(|e| format!("Failed to create TLS configuration: {}", e))?;
+        .map_err(|e| {
+            format!(
+                "Failed to create TLS configuration: {}
+
+This error typically occurs when:
+- The certificate and private key don't match
+- The certificate chain is incomplete
+- The certificate has expired
+- The certificate format is invalid
+
+Please verify that your certificate and key files are correct and match each other.",
+                e
+            )
+        })?;
 
     Ok(config)
 }

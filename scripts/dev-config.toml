@@ -1,0 +1,19 @@
+# General Settings
+site_name = "example.com"
+addr      = ":1119"
+idle_timeout_secs = 600
+
+# Article queue configuration
+article_queue_capacity = 10
+article_worker_count   = 2 
+
+# Storage Settings
+db_path      = "sqlite://tmp/news.db"
+auth_db_path = "sqlite://tmp/auth.db"
+peer_db_path = "sqlite://tmp/peers.db"
+
+# Group Settings
+[[group]]
+pattern = "*"
+max_article_bytes = "1K"
+retention_days = 7

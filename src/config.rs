@@ -220,9 +220,66 @@ impl Config {
     ///
     /// Returns an error if the file cannot be read or parsed.
     pub fn from_file(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let text = std::fs::read_to_string(path)?;
-        let text = expand_placeholders(&text)?;
-        let mut cfg: Config = toml::from_str(&text)?;
+        let text = match std::fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                return match e.kind() {
+                    std::io::ErrorKind::NotFound => {
+                        Err(format!(
+                            "Configuration file not found: '{}'
+
+Please ensure the configuration file exists at the specified path.
+You can:
+- Create a configuration file at '{}'
+- Use --config <path> to specify a different location
+- Set the RENEWS_CONFIG environment variable
+- See the example configuration at 'examples/config.toml'",
+                            path, path
+                        ).into())
+                    }
+                    std::io::ErrorKind::PermissionDenied => {
+                        Err(format!(
+                            "Permission denied reading configuration file: '{}'
+
+Please ensure the file is readable by the current user.
+You may need to check file permissions or run with appropriate privileges.",
+                            path
+                        ).into())
+                    }
+                    _ => {
+                        Err(format!(
+                            "Failed to read configuration file '{}': {}
+
+Please ensure the file exists and is readable.",
+                            path, e
+                        ).into())
+                    }
+                }
+            }
+        };
+        
+        let text = expand_placeholders(&text).map_err(|e| {
+            format!(
+                "Failed to process configuration placeholders in '{}': {}
+
+Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid.",
+                path, e
+            )
+        })?;
+        
+        let mut cfg: Config = toml::from_str(&text).map_err(|e| {
+            format!(
+                "Failed to parse configuration file '{}': {}
+
+Please check the TOML syntax. Common issues:
+- Missing quotes around string values
+- Incorrect section headers
+- Malformed array or table syntax
+
+See 'examples/config.toml' for a valid configuration example.",
+                path, e
+            )
+        })?;
 
         // Enforce minimum values for queue configuration
         cfg.article_queue_capacity = cfg.article_queue_capacity.max(1);
