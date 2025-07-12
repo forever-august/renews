@@ -147,58 +147,7 @@ impl CommandHandler for OverHandler {
     }
 }
 
-/// Handler for the XOVER command (RFC2980).
-/// This is functionally equivalent to OVER but follows the RFC2980 specification.
-pub struct XOverHandler;
 
-impl CommandHandler for XOverHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
-        // XOVER command handling with optimized overview storage when possible
-        if let Some(current_group) = &ctx.state.current_group {
-            match args.first().map(String::as_str) {
-                Some(range_str) if !range_str.starts_with('<') => {
-                    // Handle range-based requests efficiently using overview storage
-                    match parse_range(&ctx.storage, current_group, range_str).await {
-                        Ok(numbers) => {
-                            if !numbers.is_empty() {
-                                let start = *numbers.iter().min().unwrap();
-                                let end = *numbers.iter().max().unwrap();
-                                
-                                match ctx.storage.get_overview_range(current_group, start, end).await {
-                                    Ok(overview_lines) => {
-                                        ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
-                                        for line in overview_lines {
-                                            ctx.writer
-                                                .write_all(format!("{line}\r\n").as_bytes())
-                                                .await?;
-                                        }
-                                        ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
-                                        return Ok(());
-                                    }
-                                    Err(_) => {
-                                        // Fall back to the standard OVER implementation
-                                    }
-                                }
-                            }
-                        }
-                        Err(_) => {
-                            // Fall back to the standard OVER implementation
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-        
-        // Fall back to standard OVER implementation for non-range requests
-        // or when overview storage fails
-        OverHandler::handle(ctx, args).await
-    }
-}
 
 /// Handle the special case of HDR with ":" for all headers.
 async fn handle_all_headers<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
