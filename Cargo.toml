@@ -48,6 +48,7 @@ uuid = { version = "1.17", features = ["v4"] }
 async-stream = "0.3"
 futures-core = "0.3"
 smallvec = { version = "1.13", features = ["serde"] }
+systemd_socket = "0.1"
 
 [features]
 websocket = ["tokio-tungstenite"]

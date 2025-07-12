@@ -1,0 +1,10 @@
+[Unit]
+Description=Renews NNTPS Server Socket
+PartOf=renews.service
+
+[Socket]
+ListenStream=563
+BindIPv6Only=both
+
+[Install]
+WantedBy=sockets.target

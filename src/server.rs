@@ -126,28 +126,12 @@ impl Server {
 
     /// Start TCP listener task
     async fn start_tcp_listener(&self) -> ServerResult<tokio::task::JoinHandle<()>> {
-        let addr = {
+        let addr_config = {
             let cfg_guard = self.components.config.read().await;
-            listen_addr(&cfg_guard.addr)
+            cfg_guard.addr.clone()
         };
 
-        info!("listening on {addr}");
-        let listener = TcpListener::bind(&addr).await.map_err(|e| {
-            format!(
-                "Failed to bind to address '{}': {}
-
-This error typically occurs when:
-- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
-- The port number is invalid (must be 1-65535)
-- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
-- The address format is incorrect (should be 'host:port', ':port', or just 'port')
-
-You can change the listen address in your configuration file using the 'addr' setting.",
-                addr, e, 
-                addr.split(':').last().unwrap_or("119"),
-                addr.split(':').last().unwrap_or("119")
-            )
-        })?;
+        let listener = get_listener(&addr_config).await?;
 
         // ...existing code...
         let storage = self.components.storage.clone();
@@ -192,25 +176,7 @@ You can change the listen address in your configuration file using the 'addr' se
             return Ok(None);
         };
 
-        let tls_addr = listen_addr(tls_addr_raw);
-        info!("listening TLS on {tls_addr}");
-
-        let tls_listener = TcpListener::bind(&tls_addr).await.map_err(|e| {
-            format!(
-                "Failed to bind to TLS address '{}': {}
-
-This error typically occurs when:
-- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
-- The port number is invalid (must be 1-65535)
-- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
-- The address format is incorrect (should be 'host:port', ':port', or just 'port')
-
-You can change the TLS listen address in your configuration file using the 'tls_addr' setting.",
-                tls_addr, e,
-                tls_addr.split(':').last().unwrap_or("563"),
-                tls_addr.split(':').last().unwrap_or("563")
-            )
-        })?;
+        let tls_listener = get_listener(tls_addr_raw).await?;
         let acceptor = TlsAcceptor::from(Arc::new(load_tls_config(cert, key)?));
         *self.config_manager.tls_acceptor.write().await = Some(acceptor.clone());
 
@@ -629,6 +595,79 @@ fn listen_addr(raw: &str) -> String {
         format!("0.0.0.0:{raw}")
     }
 }
+
+/// Try to get a systemd socket by name or bind directly to an address
+///
+/// # Arguments
+/// * `addr_config` - Address configuration (can be socket name, systemd:// URL, or regular address)
+///
+/// # Returns
+/// A TcpListener bound to the specified address or systemd socket
+async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
+    // First check for systemd:// URLs
+    if addr_config.starts_with("systemd://") {
+        match addr_config.parse::<systemd_socket::SocketAddr>() {
+            Ok(socket_addr) => {
+                match socket_addr.bind() {
+                    Ok(std_listener) => {
+                        // Convert std::net::TcpListener to tokio::net::TcpListener
+                        match std_listener.set_nonblocking(true) {
+                            Ok(()) => {
+                                match TcpListener::from_std(std_listener) {
+                                    Ok(listener) => {
+                                        info!("using systemd socket: {addr_config}");
+                                        Ok(listener)
+                                    }
+                                    Err(e) => Err(format!("failed to convert socket to tokio: {e}").into())
+                                }
+                            }
+                            Err(e) => Err(format!("failed to set socket to non-blocking: {e}").into())
+                        }
+                    }
+                    Err(e) => {
+                        Err(format!(
+                            "Failed to bind to address '{}': {}
+
+This error typically occurs when:
+- Another process is already using this port (try: lsof -i :<port> or netstat -tlnp | grep :<port>)
+- The port number is invalid (must be 1-65535)
+- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
+- The address format is incorrect (should be 'host:port', ':port', or just 'port')
+- For systemd socket activation, the socket is not available
+
+You can use 'systemd://socket_name' format for systemd socket activation.",
+                            addr_config, e
+                        ).into())
+                    }
+                }
+            }
+            Err(e) => Err(format!("Invalid systemd socket address '{}': {}", addr_config, e).into())
+        }
+    } else {
+        // For regular addresses, use our own parsing logic
+        let addr = listen_addr(addr_config);
+        info!("listening on {addr}");
+        match TcpListener::bind(&addr).await {
+            Ok(listener) => Ok(listener),
+            Err(e) => Err(format!(
+                "Failed to bind to address '{}': {}
+
+This error typically occurs when:
+- Another process is already using this port (try: lsof -i :{} or netstat -tlnp | grep :{})
+- The port number is invalid (must be 1-65535)
+- Permission denied for privileged ports (<1024) - try running as root or use a port ≥1024
+- The address format is incorrect (should be 'host:port', ':port', or just 'port')
+
+You can use 'systemd://socket_name' format for systemd socket activation.",
+                addr_config, e,
+                addr.split(':').last().unwrap_or("119"),
+                addr.split(':').last().unwrap_or("119")
+            ).into())
+        }
+    }
+}
+
+
 
 /// Handle an incoming client connection
 async fn handle_connection<S>(
