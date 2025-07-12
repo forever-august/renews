@@ -15,6 +15,9 @@ struct Args {
     /// Initialize databases and exit
     #[arg(long)]
     init: bool,
+    /// Allow posting without TLS for development
+    #[arg(long)]
+    allow_posting_insecure_connections: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -85,7 +88,12 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
     let cfg_path = args.config.clone();
-    let cfg_initial = Config::from_file(&cfg_path)?;
+    let mut cfg_initial = Config::from_file(&cfg_path)?;
+    
+    // Override config with CLI flag if provided
+    if args.allow_posting_insecure_connections {
+        cfg_initial.allow_posting_insecure_connections = true;
+    }
 
     if args.init {
         run_init(&cfg_initial).await?;

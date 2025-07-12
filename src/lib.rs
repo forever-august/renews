@@ -27,6 +27,7 @@ pub struct ConnectionState {
     pub username: Option<String>,
     pub is_tls: bool,
     pub in_stream_mode: bool,
+    pub allow_posting_insecure: bool,
 }
 
 use crate::auth::DynAuth;
@@ -64,6 +65,12 @@ where
     let (read_half, write_half) = io::split(socket);
     let reader = BufReader::new(read_half);
 
+    // Read the config to get the allow_posting_insecure_connections flag
+    let allow_posting_insecure = {
+        let cfg_guard = cfg.read().await;
+        cfg_guard.allow_posting_insecure_connections
+    };
+
     let mut ctx = HandlerContext {
         reader,
         writer: write_half,
@@ -72,13 +79,14 @@ where
         config: cfg,
         state: ConnectionState {
             is_tls,
+            allow_posting_insecure,
             ..Default::default()
         },
         queue,
     };
 
     // Send greeting
-    if is_tls {
+    if is_tls || allow_posting_insecure {
         ctx.writer.write_all(RESP_200_READY.as_bytes()).await?;
     } else {
         ctx.writer

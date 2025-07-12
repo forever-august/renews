@@ -17,7 +17,7 @@ impl CommandHandler for PostHandler {
         R: AsyncBufRead + Unpin,
         W: AsyncWrite + Unpin,
     {
-        if !ctx.state.is_tls {
+        if !ctx.state.is_tls && !ctx.state.allow_posting_insecure {
             write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
             return Ok(());
         }

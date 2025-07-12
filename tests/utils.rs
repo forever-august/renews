@@ -67,7 +67,15 @@ pub fn create_minimal_config() -> Config {
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),
+        allow_posting_insecure_connections: false,
     }
+}
+
+/// Create a test configuration with insecure posting enabled
+pub fn create_insecure_posting_config() -> Config {
+    let mut config = create_minimal_config();
+    config.allow_posting_insecure_connections = true;
+    config
 }
 
 /// Create a test configuration with specific limits for failure testing
@@ -96,12 +104,27 @@ pub fn create_failure_test_config(
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),
+        allow_posting_insecure_connections: false,
     }
 }
 
 /// Create a test article queue (legacy function - does not start workers)
 pub fn create_test_queue() -> ArticleQueue {
     ArticleQueue::new(10) // Small capacity for tests
+}
+
+/// Create a test storage instance
+pub async fn create_test_storage() -> renews::storage::DynStorage {
+    use renews::storage::sqlite::SqliteStorage;
+    let storage = SqliteStorage::new(":memory:").await.unwrap();
+    std::sync::Arc::new(storage)
+}
+
+/// Create a test auth instance
+pub async fn create_test_auth() -> renews::auth::DynAuth {
+    use renews::auth::sqlite::SqliteAuth;
+    let auth = SqliteAuth::new(":memory:").await.unwrap();
+    std::sync::Arc::new(auth)
 }
 
 /// Lines returned by the CAPABILITIES command.

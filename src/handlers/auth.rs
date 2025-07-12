@@ -69,7 +69,7 @@ impl CommandHandler for ModeHandler {
 
         match args[0].to_ascii_uppercase().as_str() {
             "READER" => {
-                if ctx.state.is_tls {
+                if ctx.state.is_tls || ctx.state.allow_posting_insecure {
                     write_simple(&mut ctx.writer, RESP_200_POSTING_ALLOWED).await?;
                 } else {
                     write_simple(&mut ctx.writer, RESP_201_POSTING_PROHIBITED).await?;
