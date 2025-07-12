@@ -40,8 +40,7 @@ const OVERVIEW_TABLE: &str = "CREATE TABLE IF NOT EXISTS overview (
         group_name TEXT,
         article_number BIGINT,
         overview_data TEXT,
-        PRIMARY KEY(group_name, article_number),
-        FOREIGN KEY(group_name) REFERENCES groups(name)
+        PRIMARY KEY(group_name, article_number)
     )";
 
 #[derive(Clone)]
