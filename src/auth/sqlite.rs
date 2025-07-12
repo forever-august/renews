@@ -1,7 +1,8 @@
 use super::{AuthProvider, Error, async_trait};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{Row, SqlitePool, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
+use std::str::FromStr;
 
 // SQL schemas for SQLite authentication
 const USERS_TABLE: &str = "CREATE TABLE IF NOT EXISTS users (
@@ -32,9 +33,12 @@ impl SqliteAuth {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let options = SqliteConnectOptions::from_str(path)?
+            .create_if_missing(true);
+        
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(path)
+            .connect_with(options)
             .await?;
 
         // Create authentication schema

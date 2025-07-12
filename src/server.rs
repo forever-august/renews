@@ -471,24 +471,33 @@ impl PeerManager {
 /// # Errors
 /// Returns an error if the files cannot be read or contain invalid data
 fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
-    let cert_file = &mut BufReader::new(File::open(cert_path)?);
-    let key_file = &mut BufReader::new(File::open(key_path)?);
+    let cert_file = &mut BufReader::new(
+        File::open(cert_path)
+            .map_err(|e| format!("Failed to open TLS certificate file '{}': {}", cert_path, e))?
+    );
+    let key_file = &mut BufReader::new(
+        File::open(key_path)
+            .map_err(|e| format!("Failed to open TLS private key file '{}': {}", key_path, e))?
+    );
 
-    let certs = certs(cert_file)?
+    let certs = certs(cert_file)
+        .map_err(|e| format!("Failed to parse TLS certificate file '{}': {}", cert_path, e))?
         .into_iter()
         .map(rustls::Certificate)
         .collect();
 
-    let mut keys = pkcs8_private_keys(key_file)?;
+    let mut keys = pkcs8_private_keys(key_file)
+        .map_err(|e| format!("Failed to parse TLS private key file '{}': {}", key_path, e))?;
     if keys.is_empty() {
-        return Err("no private key found".into());
+        return Err(format!("No private key found in TLS key file '{}'", key_path).into());
     }
 
     let key = rustls::PrivateKey(keys.remove(0));
     let config = rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(certs, key)?;
+        .with_single_cert(certs, key)
+        .map_err(|e| format!("Failed to create TLS configuration: {}", e))?;
 
     Ok(config)
 }

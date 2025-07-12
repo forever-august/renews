@@ -6,8 +6,11 @@ use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use smallvec::SmallVec;
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
-use std::error::Error;
+use sqlx::{
+    Row, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+};
+use std::{error::Error, str::FromStr};
 
 // SQL schemas for SQLite storage
 const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
@@ -45,9 +48,12 @@ impl SqliteStorage {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let options = SqliteConnectOptions::from_str(path)?
+            .create_if_missing(true);
+        
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(path)
+            .connect_with(options)
             .await?;
 
         // Create database schema

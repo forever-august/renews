@@ -7,8 +7,8 @@
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, TryStreamExt};
 use rustls_native_certs::load_native_certs;
-use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
-use std::error::Error;
+use sqlx::{Row, SqlitePool, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
+use std::{error::Error, str::FromStr};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
@@ -270,9 +270,12 @@ impl PeerDb {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> PeerResult<Self> {
+        let options = SqliteConnectOptions::from_str(path)?
+            .create_if_missing(true);
+        
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(path)
+            .connect_with(options)
             .await?;
 
         // Create peers table if it doesn't exist
