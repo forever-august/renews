@@ -4,9 +4,9 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/renews --config /opt/renews/config.toml
+ExecStart=/usr/local/bin/renews
 ExecReload=/bin/kill -HUP $MAINPID
-WorkingDirectory=/opt/renews
+WorkingDirectory=/var/lib/renews
 Restart=on-failure
 User=renews
 Group=renews
