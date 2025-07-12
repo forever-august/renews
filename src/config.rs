@@ -182,6 +182,9 @@ pub struct Config {
 
     #[serde(default = "default_pgp_key_servers")]
     pub pgp_key_servers: Vec<String>,
+    
+    #[serde(default)]
+    pub allow_posting_insecure_connections: bool,
 }
 
 #[derive(Deserialize, Clone)]
@@ -282,6 +285,7 @@ impl Config {
         self.tls_key = other.tls_key;
         self.ws_addr = other.ws_addr;
         self.pgp_key_servers = other.pgp_key_servers;
+        self.allow_posting_insecure_connections = other.allow_posting_insecure_connections;
     }
 }
 

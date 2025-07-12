@@ -43,6 +43,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),
+        allow_posting_insecure_connections: false,
     };
 
     // Since we can't easily test with TLS in this setup, we'll create a simplified server
