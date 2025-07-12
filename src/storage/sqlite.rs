@@ -35,6 +35,13 @@ const GROUPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS groups (
         moderated INTEGER NOT NULL DEFAULT 0
     )";
 
+const OVERVIEW_TABLE: &str = "CREATE TABLE IF NOT EXISTS overview (
+        group_name TEXT,
+        article_number INTEGER,
+        overview_data TEXT,
+        PRIMARY KEY(group_name, article_number)
+    )";
+
 #[derive(Clone)]
 pub struct SqliteStorage {
     pool: SqlitePool,
@@ -90,6 +97,9 @@ Possible causes:
         sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
             format!("Failed to create groups table in SQLite database '{}': {}", path, e)
         })?;
+        sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
+            format!("Failed to create overview table in SQLite database '{}': {}", path, e)
+        })?;
 
         Ok(Self { pool })
     }
@@ -127,7 +137,7 @@ impl Storage for SqliteStorage {
             })
             .unwrap_or_default();
 
-        // Associate with each group
+        // Associate with each group and create overview data
         let now = chrono::Utc::now().timestamp();
         for group in newsgroups {
             let next: i64 = sqlx::query_scalar(
@@ -144,6 +154,26 @@ impl Storage for SqliteStorage {
             .bind(next)
             .bind(&msg_id)
             .bind(now)
+            .execute(&self.pool)
+            .await?;
+
+            // Generate and store overview data
+            let overview_data = {
+                use crate::overview::generate_overview_line;
+                generate_overview_line(
+                    self,
+                    next as u64,
+                    article,
+                )
+                .await?
+            };
+
+            sqlx::query(
+                "INSERT OR REPLACE INTO overview (group_name, article_number, overview_data) VALUES (?, ?, ?)",
+            )
+            .bind(&group)
+            .bind(next)
+            .bind(&overview_data)
             .execute(&self.pool)
             .await?;
         }
@@ -440,5 +470,30 @@ impl Storage for SqliteStorage {
         .execute(&self.pool)
         .await?;
         Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn get_overview_range(
+        &self,
+        group: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+        let rows = sqlx::query(
+            "SELECT overview_data FROM overview WHERE group_name = ? AND article_number >= ? AND article_number <= ? ORDER BY article_number",
+        )
+        .bind(group)
+        .bind(i64::try_from(start).unwrap_or(0))
+        .bind(i64::try_from(end).unwrap_or(i64::MAX))
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut overview_lines = Vec::new();
+        for row in rows {
+            let overview_data: String = row.try_get("overview_data")?;
+            overview_lines.push(overview_data);
+        }
+
+        Ok(overview_lines)
     }
 }

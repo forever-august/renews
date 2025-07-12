@@ -28,6 +28,14 @@ pub trait Storage: Send + Sync {
         message_id: &str,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
 
+    /// Retrieve overview information for a range of article numbers in a group
+    async fn get_overview_range(
+        &self,
+        group: &str,
+        start: u64,
+        end: u64,
+    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+
     /// Add a newsgroup to the server's list. When `moderated` is true the group
     /// requires an `Approved` header on posted articles.
     async fn add_group(

@@ -1,10 +1,11 @@
 //! Article retrieval command handlers.
 
 use super::utils::{
-    ArticleOperation, extract_message_id, get_header_value, handle_article_operation,
+    ArticleOperation, get_header_value, handle_article_operation,
     metadata_value, resolve_articles, write_response_with_values, write_simple,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::overview::generate_overview_line;
 use crate::parse_range;
 use crate::responses::*;
 use std::error::Error;
@@ -130,27 +131,9 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let subject = get_header_value(&article, "Subject").unwrap_or_default();
-                    let from = get_header_value(&article, "From").unwrap_or_default();
-                    let date = get_header_value(&article, "Date").unwrap_or_default();
-                    let msgid = get_header_value(&article, "Message-ID").unwrap_or_default();
-                    let refs = get_header_value(&article, "References").unwrap_or_default();
-                    let bytes = if let Some(id) = extract_message_id(&article) {
-                        ctx.storage
-                            .get_message_size(id)
-                            .await?
-                            .unwrap_or(article.body.len() as u64)
-                    } else {
-                        article.body.len() as u64
-                    };
-                    let lines = article.body.lines().count();
+                    let overview_line = generate_overview_line(ctx.storage.as_ref(), num, &article).await?;
                     ctx.writer
-                        .write_all(
-                            format!(
-                                "{num}\t{subject}\t{from}\t{date}\t{msgid}\t{refs}\t{bytes}\t{lines}\r\n"
-                            )
-                            .as_bytes(),
-                        )
+                        .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;
                 }
                 ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -163,6 +146,8 @@ impl CommandHandler for OverHandler {
         Ok(())
     }
 }
+
+
 
 /// Handle the special case of HDR with ":" for all headers.
 async fn handle_all_headers<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult

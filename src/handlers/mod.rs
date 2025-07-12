@@ -69,6 +69,7 @@ where
         "HDR" => article::HdrHandler::handle(ctx, &cmd.args).await,
         "XPAT" => article::XPatHandler::handle(ctx, &cmd.args).await,
         "OVER" => article::OverHandler::handle(ctx, &cmd.args).await,
+        "XOVER" => article::OverHandler::handle(ctx, &cmd.args).await,
 
         // Posting and streaming commands
         "POST" => post::PostHandler::handle(ctx, &cmd.args).await,
