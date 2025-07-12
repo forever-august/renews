@@ -36,8 +36,6 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         tls_cert: None,
         tls_key: None,
         ws_addr: None,
-        default_retention_days: None,
-        default_max_article_bytes: None,
         article_queue_capacity: 100,
         article_worker_count: 2,
         group_settings: vec![],

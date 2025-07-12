@@ -19,13 +19,29 @@ impl ArticleFilter for SizeFilter {
         _storage: &DynStorage,
         _auth: &DynAuth,
         cfg: &Config,
-        _article: &Message,
+        article: &Message,
         size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
-        // Check size limit
-        if let Some(max_size) = cfg.default_max_article_bytes {
-            if size > max_size {
-                return Err("article too large".into());
+        // Extract newsgroups from the article
+        let newsgroups: Vec<String> = article
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+            .map(|(_, v)| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(std::string::ToString::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        // Check size limit for each newsgroup
+        for group in &newsgroups {
+            if let Some(max_size) = cfg.max_size_for_group(group) {
+                if size > max_size {
+                    return Err(format!("article too large for group {}", group).into());
+                }
             }
         }
 

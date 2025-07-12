@@ -33,25 +33,23 @@ peer_db_path = "sqlite:///var/lib/renews/peers.db" # Only sqlite is supported fo
 peer_sync_schedule = "0 0 * * * *"                 # Default: sync every hour
 
 # Group Settings
-default_retention_days    = 30
-default_max_article_bytes = "1M"
 
-[[group_settings]]
+[[group]]
 pattern = "*"
 retention_days = 7
 
-[[group_settings]]
+[[group]]
 group = "comp.lang.rust"
 retention_days = 60
 max_article_bytes = "2M"
 
 # Peer configuration
-[[peers]]
+[[peer]]
 sitename = "peeruser:peerpass@peer.example.com" # Peer name with credentials
 patterns = ["*"]                                # Sync all groups
 sync_schedule = "0 */30 * * * *"                # Sync every 30 minutes
 
-[[peers]]
+[[peer]]
 sitename = "daily-peer.example.com"
 patterns = ["daily.*"]
 sync_schedule = "0 0 2 * * *"       # Sync daily at 2 AM
