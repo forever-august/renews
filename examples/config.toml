@@ -1,0 +1,72 @@
+# General Settings
+site_name = "example.com"
+addr      = ":119"
+idle_timeout_secs = 600 # How long to wait between commands before disconnecting a client
+
+# TLS Settings
+# tls_addr = ":563"
+# tls_cert = "/etc/letsencrypt/fullchain.pem"
+# tls_key  = "/etc/letsencrypt/privkey.pem"
+
+# PGP key discovery servers for signature verification
+# These servers are queried when looking up PGP public keys for admin control messages
+# Default servers are included if this section is omitted
+# pgp_key_servers = [
+#     "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>",
+#     "hkps://pgp.mit.edu/pks/lookup?op=get&search=<email>",
+#     "hkps://keyserver.ubuntu.com/pks/lookup?op=get&search=<email>"
+# ]
+
+# Article queue configuration
+# article_queue_capacity = 1000    # Maximum articles in queue (default: 1000)
+# article_worker_count   = 4       # Number of worker threads (default: 4)
+
+# Storage Settings
+# Currently sqlite and postgres are supported
+# sqlite:   sqlite:path/to/file.db
+# postgres: postgres://user@pass:db_host.com/database
+db_path      = "sqlite:///var/lib/renews/news.db"
+auth_db_path = "sqlite:///var/lib/renews/auth.db"
+
+# Default peer settings
+peer_db_path = "sqlite:///var/lib/renews/peers.db" # Only sqlite is supported for peer_db
+peer_sync_schedule = "0 0 * * * *"                 # Default: sync every hour
+
+# Group Settings
+default_retention_days    = 30
+default_max_article_bytes = "1M"
+
+[[group_settings]]
+pattern = "*"
+retention_days = 7
+
+[[group_settings]]
+group = "comp.lang.rust"
+retention_days = 60
+max_article_bytes = "2M"
+
+# Peer configuration
+[[peers]]
+sitename = "peeruser:peerpass@peer.example.com" # Peer name with credentials
+patterns = ["*"]                                # Sync all groups
+sync_schedule = "0 */30 * * * *"                # Sync every 30 minutes
+
+[[peers]]
+sitename = "daily-peer.example.com"
+patterns = ["daily.*"]
+sync_schedule = "0 0 2 * * *"       # Sync daily at 2 AM
+
+# Filter pipeline configuration
+# If not specified, the default filter chain is used (all filters)
+# You can customize the filter chain by specifying which filters to use and in what order
+# [[filters]]
+# name = "HeaderFilter"
+
+# [[filters]]
+# name = "SizeFilter"
+
+# [[filters]]
+# name = "GroupExistenceFilter"
+
+# [[filters]]
+# name = "ModerationFilter"

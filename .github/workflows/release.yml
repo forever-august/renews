@@ -62,13 +62,13 @@ jobs:
           mkdir -p renews-${{ github.ref_name }}/etc/renews
           
           cp target/release/renews renews-${{ github.ref_name }}/usr/bin/
-          cp man/renews.1 renews-${{ github.ref_name }}/usr/share/man/man1/
-          cp examples/systemd/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
-          cp config.toml renews-${{ github.ref_name }}/etc/renews/config.toml.example
+          cp dist/man/renews.1 renews-${{ github.ref_name }}/usr/share/man/man1/
+          cp examples/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
+          cp examples/config.toml renews-${{ github.ref_name }}/etc/renews/config.toml.example
           cp LICENSE-MIT renews-${{ github.ref_name }}/
           cp README.md renews-${{ github.ref_name }}/
-          cp install.sh renews-${{ github.ref_name }}/
-          cp uninstall.sh renews-${{ github.ref_name }}/
+          cp dist/install.sh renews-${{ github.ref_name }}/
+          cp dist/uninstall.sh renews-${{ github.ref_name }}/
           
           tar -czf renews-${{ github.ref_name }}-linux-x86_64.tar.gz renews-${{ github.ref_name }}/
 
