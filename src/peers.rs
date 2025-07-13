@@ -532,23 +532,45 @@ async fn process_group_articles(
     let mut sent_count = 0;
     let mut skipped_count = 0;
     let mut error_count = 0;
+    let mut found_ids = std::collections::HashSet::new();
 
-    for article_id in &article_ids {
-        match process_single_article(peer, storage, site_name, article_id).await {
-            Ok(ArticleProcessResult::Sent) => sent_count += 1,
-            Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
-            Ok(ArticleProcessResult::NotFound) => {
-                tracing::debug!("Article {} not found in storage", article_id);
+    // Use batch fetching for better performance
+    use futures_util::StreamExt;
+    let mut article_stream = storage.get_articles_by_ids(&article_ids);
+    
+    while let Some(result) = article_stream.next().await {
+        match result {
+            Ok((article_id, original_article)) => {
+                found_ids.insert(article_id.clone());
+                match process_fetched_article(peer, site_name, &article_id, &original_article).await {
+                    Ok(ArticleProcessResult::Sent) => sent_count += 1,
+                    Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
+                    Err(e) => {
+                        error_count += 1;
+                        tracing::warn!(
+                            "Failed to process article {} for peer {}: {}",
+                            article_id,
+                            peer.sitename,
+                            e
+                        );
+                    }
+                }
             }
             Err(e) => {
                 error_count += 1;
                 tracing::warn!(
-                    "Failed to process article {} for peer {}: {}",
-                    article_id,
+                    "Failed to fetch article for peer {}: {}",
                     peer.sitename,
                     e
                 );
             }
+        }
+    }
+
+    // Log articles that weren't found
+    for article_id in &article_ids {
+        if !found_ids.contains(article_id) {
+            tracing::debug!("Article {} not found in storage", article_id);
         }
     }
 
@@ -569,21 +591,16 @@ async fn process_group_articles(
 enum ArticleProcessResult {
     Sent,
     Skipped,
-    NotFound,
 }
 
-/// Process a single article for peer distribution.
-async fn process_single_article(
+/// Process an already-fetched article for peer distribution (used by batch processing).
+async fn process_fetched_article(
     peer: &PeerConfig,
-    storage: &DynStorage,
     site_name: &str,
     article_id: &str,
+    original_article: &Message,
 ) -> PeerResult<ArticleProcessResult> {
-    let Some(original_article) = storage.get_article_by_id(article_id).await? else {
-        return Ok(ArticleProcessResult::NotFound);
-    };
-
-    if should_skip_article(&original_article, &peer.sitename) {
+    if should_skip_article(original_article, &peer.sitename) {
         tracing::debug!(
             "Skipping article {} for peer {} (already in path)",
             article_id,
@@ -592,7 +609,7 @@ async fn process_single_article(
         return Ok(ArticleProcessResult::Skipped);
     }
 
-    let peer_article = create_peer_article(&original_article, site_name)?;
+    let peer_article = create_peer_article(original_article, site_name)?;
     send_article_to_peer(&peer.sitename, &peer_article).await?;
     tracing::debug!(
         "Successfully sent article {} to {}",

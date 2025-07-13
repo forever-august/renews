@@ -92,9 +92,10 @@ pub async fn send_headers<W: AsyncWrite + Unpin>(
     article: &Message,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     for (name, val) in &article.headers {
-        writer
-            .write_all(format!("{name}: {val}\r\n").as_bytes())
-            .await?;
+        writer.write_all(name.as_bytes()).await?;
+        writer.write_all(b": ").await?;
+        writer.write_all(val.as_bytes()).await?;
+        writer.write_all(b"\r\n").await?;
     }
     Ok(())
 }
@@ -248,14 +249,20 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
         Ok(articles) => {
             for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or_default();
-                let response = format!(
+                // Use efficient response building instead of format!
+                use std::io::Write;
+                let mut buf = [0u8; 256];
+                let mut cursor = std::io::Cursor::new(&mut buf[..]);
+                write!(
+                    &mut cursor,
                     "{} {} {} {}\r\n",
                     operation.response_code(),
                     num,
                     id,
                     operation.response_suffix()
-                );
-                write_simple(writer, &response).await?;
+                ).unwrap();
+                let len = cursor.position() as usize;
+                writer.write_all(&buf[..len]).await?;
 
                 match operation {
                     ArticleOperation::Full => {
@@ -321,11 +328,17 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(response.as_bytes()).await?;
     for (n, val) in values {
+        // Use efficient direct writing instead of format!
+        use std::io::Write;
+        let mut buf = [0u8; 64];
+        let mut cursor = std::io::Cursor::new(&mut buf[..]);
         if let Some(v) = val {
-            writer.write_all(format!("{n} {v}\r\n").as_bytes()).await?;
+            write!(&mut cursor, "{n} {v}\r\n").unwrap();
         } else {
-            writer.write_all(format!("{n}\r\n").as_bytes()).await?;
+            write!(&mut cursor, "{n}\r\n").unwrap();
         }
+        let len = cursor.position() as usize;
+        writer.write_all(&buf[..len]).await?;
     }
     use crate::responses::RESP_DOT_CRLF;
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
