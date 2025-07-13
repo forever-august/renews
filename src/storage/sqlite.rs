@@ -96,7 +96,7 @@ Possible causes:
             format!("Failed to create groups table in SQLite database '{path}': {e}")
         })?;
         sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create overview table in SQLite database '{}': {}", path, e)
+            format!("Failed to create overview table in SQLite database '{path}': {e}")
         })?;
 
         Ok(Self { pool })
