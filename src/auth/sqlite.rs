@@ -2,7 +2,10 @@ use super::{AuthProvider, Error, async_trait};
 use crate::migrations::Migrator;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use sqlx::{Row, SqlitePool, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
+use sqlx::{
+    Row, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+};
 use std::str::FromStr;
 
 // SQL schemas for SQLite authentication
@@ -34,18 +37,19 @@ impl SqliteAuth {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let options = SqliteConnectOptions::from_str(path).map_err(|e| {
-            format!(
-                "Invalid SQLite authentication database URI '{path}': {e}
+        let options = SqliteConnectOptions::from_str(path)
+            .map_err(|e| {
+                format!(
+                    "Invalid SQLite authentication database URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
 - File database: sqlite:///path/to/auth.db
 - In-memory database: sqlite::memory:
 - Relative path: sqlite://relative/path.db"
-            )
-        })?
+                )
+            })?
             .create_if_missing(true);
-        
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -66,14 +70,19 @@ Possible causes:
 
         // Set up migrator to check database state
         let migrator = super::migrations::sqlite::SqliteAuthMigrator::new(pool.clone());
-        
+
         if migrator.is_fresh_database().await {
             // Fresh database: initialize with current schema
-            tracing::info!("Initializing fresh SQLite authentication database at '{}'", path);
-            
+            tracing::info!(
+                "Initializing fresh SQLite authentication database at '{}'",
+                path
+            );
+
             // Create authentication schema
             sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create users table in SQLite authentication database '{path}': {e}")
+                format!(
+                    "Failed to create users table in SQLite authentication database '{path}': {e}"
+                )
             })?;
             sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
                 format!("Failed to create admins table in SQLite authentication database '{path}': {e}")
@@ -84,13 +93,17 @@ Possible causes:
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!("Failed to set initial schema version for SQLite auth database '{path}': {e}")
+                format!(
+                    "Failed to set initial schema version for SQLite auth database '{path}': {e}"
+                )
             })?;
-            
+
             tracing::info!("Successfully initialized SQLite authentication database at version 1");
         } else {
             // Existing database: apply any pending migrations
-            tracing::info!("Found existing SQLite authentication database, checking for migrations");
+            tracing::info!(
+                "Found existing SQLite authentication database, checking for migrations"
+            );
             migrator.migrate_to_latest().await.map_err(|e| {
                 format!("Failed to run auth migrations for SQLite database '{path}': {e}")
             })?;

@@ -62,7 +62,8 @@ This error typically occurs when:
 
 You can change the WebSocket listen address in your configuration file using the 'ws_addr' setting
 or disable the WebSocket bridge by removing the 'ws_addr' configuration.",
-            addr, e,
+            addr,
+            e,
             addr.split(':').next_back().unwrap_or("8080"),
             addr.split(':').next_back().unwrap_or("8080")
         )

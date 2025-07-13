@@ -1,6 +1,6 @@
+use futures_util::StreamExt;
 use renews::control::canonical_text;
 use renews::parse_message;
-use futures_util::StreamExt;
 
 use crate::utils::{self, ClientMock, build_sig};
 

@@ -31,13 +31,13 @@ impl CommandHandler for IHaveHandler {
             // Check if this is a control message first
             let is_control = control::is_control_message(&article);
 
-            ensure_message_id(&mut article);
+            let cfg_guard = ctx.config.read().await;
+            ensure_message_id(&mut article, &cfg_guard.site_name);
             parse::ensure_date(&mut article);
             parse::escape_message_id_header(&mut article);
 
             // Handle control messages immediately without comprehensive validation
             if is_control {
-                let cfg_guard = ctx.config.read().await;
                 if control::handle_control(&article, &ctx.storage, &ctx.auth, &cfg_guard).await? {
                     write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
                     return Ok(());
@@ -48,7 +48,6 @@ impl CommandHandler for IHaveHandler {
             }
 
             // Comprehensive validation before queuing for IHAVE (non-control messages)
-            let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
@@ -129,13 +128,13 @@ impl CommandHandler for TakeThisHandler {
             // Check if this is a control message first
             let is_control = control::is_control_message(&article);
 
-            ensure_message_id(&mut article);
+            let cfg_guard = ctx.config.read().await;
+            ensure_message_id(&mut article, &cfg_guard.site_name);
             parse::ensure_date(&mut article);
             parse::escape_message_id_header(&mut article);
 
             // Handle control messages immediately without comprehensive validation
             if is_control {
-                let cfg_guard = ctx.config.read().await;
                 if control::handle_control(&article, &ctx.storage, &ctx.auth, &cfg_guard).await? {
                     write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
                     return Ok(());
@@ -146,7 +145,6 @@ impl CommandHandler for TakeThisHandler {
             }
 
             // Comprehensive validation before queuing for TAKETHIS (non-control messages)
-            let cfg_guard = ctx.config.read().await;
             let size = msg.len() as u64;
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await

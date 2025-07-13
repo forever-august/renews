@@ -39,12 +39,12 @@ impl CommandHandler for PostHandler {
         let is_control = control::is_control_message(&message);
 
         // Ensure required headers
-        ensure_message_id(&mut message);
+        let cfg_guard = ctx.config.read().await;
+        ensure_message_id(&mut message, &cfg_guard.site_name);
         parse::ensure_date(&mut message);
         parse::escape_message_id_header(&mut message);
 
         // Comprehensive validation before queuing for POST (to maintain expected behavior)
-        let cfg_guard = ctx.config.read().await;
         let size = msg.len() as u64;
         if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
             .await

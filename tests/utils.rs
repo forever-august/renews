@@ -435,8 +435,7 @@ impl ClientMock {
     /// Expect a command that should fail with a specific error code.
     pub fn expect_failure(mut self, cmd: &str, error_code: u16) -> Self {
         let error_msg = format!("{error_code} command failed");
-        self.steps
-            .push((vec![cmd.to_string()], vec![error_msg]));
+        self.steps.push((vec![cmd.to_string()], vec![error_msg]));
         self
     }
 

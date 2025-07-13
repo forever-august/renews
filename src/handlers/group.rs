@@ -107,9 +107,7 @@ impl CommandHandler for ListGroupHandler {
         let mut stream = ctx.storage.list_article_numbers(&group_name);
         while let Some(result) = stream.next().await {
             let num = result?;
-            ctx.writer
-                .write_all(num.to_string().as_bytes())
-                .await?;
+            ctx.writer.write_all(num.to_string().as_bytes()).await?;
             ctx.writer.write_all(b"\r\n").await?;
         }
         ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -260,7 +258,7 @@ where
         let mut nums_stream = ctx.storage.list_article_numbers(&group);
         let mut low = None;
         let mut high = None;
-        
+
         while let Some(result) = nums_stream.next().await {
             let num = result?;
             if low.is_none() {
@@ -268,10 +266,10 @@ where
             }
             high = Some(num);
         }
-        
+
         let low = low.unwrap_or(0);
         let high = high.unwrap_or(0);
-        
+
         ctx.writer.write_all(group.as_bytes()).await?;
         ctx.writer.write_all(b" ").await?;
         ctx.writer.write_all(high.to_string().as_bytes()).await?;
@@ -325,14 +323,16 @@ where
     W: AsyncWrite + Unpin,
 {
     use crate::overview::get_overview_format_lines;
-    
-    ctx.writer.write_all(RESP_215_OVERVIEW_FMT.as_bytes()).await?;
-    
+
+    ctx.writer
+        .write_all(RESP_215_OVERVIEW_FMT.as_bytes())
+        .await?;
+
     let format_lines = get_overview_format_lines();
     for line in format_lines {
         ctx.writer.write_all(line.as_bytes()).await?;
     }
-    
+
     ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
     Ok(())
 }

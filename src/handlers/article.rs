@@ -1,8 +1,8 @@
 //! Article retrieval command handlers.
 
 use super::utils::{
-    ArticleOperation, get_header_value, handle_article_operation,
-    metadata_value, resolve_articles, write_response_with_values, write_simple,
+    ArticleOperation, get_header_value, handle_article_operation, metadata_value, resolve_articles,
+    write_response_with_values, write_simple,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::overview::generate_overview_line;
@@ -131,7 +131,8 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let overview_line = generate_overview_line(ctx.storage.as_ref(), num, &article).await?;
+                    let overview_line =
+                        generate_overview_line(ctx.storage.as_ref(), num, &article).await?;
                     ctx.writer
                         .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;
@@ -146,8 +147,6 @@ impl CommandHandler for OverHandler {
         Ok(())
     }
 }
-
-
 
 /// Handle the special case of HDR with ":" for all headers.
 async fn handle_all_headers<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult

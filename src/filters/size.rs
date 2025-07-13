@@ -3,10 +3,10 @@
 //! Validates that articles are within configured size limits.
 
 use super::ArticleFilter;
-use crate::handlers::utils::extract_newsgroups;
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::handlers::utils::extract_newsgroups;
 use crate::storage::DynStorage;
 use std::error::Error;
 

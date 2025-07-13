@@ -1,5 +1,5 @@
 use super::{
-    Message, Storage, StringStream, StringTimestampStream, U64Stream, ArticleStream,
+    ArticleStream, Message, Storage, StringStream, StringTimestampStream, U64Stream,
     common::{Headers, extract_message_id},
 };
 use crate::migrations::Migrator;
@@ -56,18 +56,19 @@ impl SqliteStorage {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let options = SqliteConnectOptions::from_str(path).map_err(|e| {
-            format!(
-                "Invalid SQLite connection URI '{path}': {e}
+        let options = SqliteConnectOptions::from_str(path)
+            .map_err(|e| {
+                format!(
+                    "Invalid SQLite connection URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
 - File database: sqlite:///path/to/database.db
 - In-memory database: sqlite::memory:
 - Relative path: sqlite://relative/path.db"
-            )
-        })?
+                )
+            })?
             .create_if_missing(true);
-        
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -88,30 +89,46 @@ Possible causes:
 
         // Set up migrator to check database state
         let migrator = super::migrations::sqlite::SqliteStorageMigrator::new(pool.clone());
-        
+
         if migrator.is_fresh_database().await {
             // Fresh database: initialize with current schema
             tracing::info!("Initializing fresh SQLite storage database at '{}'", path);
-            
+
             // Create database schema
-            sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create messages table in SQLite database '{path}': {e}")
-            })?;
-            sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create group_articles table in SQLite database '{path}': {e}")
-            })?;
-            sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create groups table in SQLite database '{path}': {e}")
-            })?;
-            sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create overview table in SQLite database '{path}': {e}")
-            })?;
+            sqlx::query(MESSAGES_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!("Failed to create messages table in SQLite database '{path}': {e}")
+                })?;
+            sqlx::query(GROUP_ARTICLES_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to create group_articles table in SQLite database '{path}': {e}"
+                    )
+                })?;
+            sqlx::query(GROUPS_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!("Failed to create groups table in SQLite database '{path}': {e}")
+                })?;
+            sqlx::query(OVERVIEW_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!("Failed to create overview table in SQLite database '{path}': {e}")
+                })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!("Failed to set initial schema version for SQLite storage database '{path}': {e}")
+                format!(
+                    "Failed to set initial schema version for SQLite storage database '{path}': {e}"
+                )
             })?;
-            
+
             tracing::info!("Successfully initialized SQLite storage database at version 1");
         } else {
             // Existing database: apply any pending migrations
@@ -180,12 +197,7 @@ impl Storage for SqliteStorage {
             // Generate and store overview data
             let overview_data = {
                 use crate::overview::generate_overview_line;
-                generate_overview_line(
-                    self,
-                    next as u64,
-                    article,
-                )
-                .await?
+                generate_overview_line(self, next as u64, article).await?
             };
 
             sqlx::query(
@@ -219,7 +231,10 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(
+                &headers_str,
+                &body,
+            )?))
         } else {
             Ok(None)
         }
@@ -237,7 +252,10 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(
+                &headers_str,
+                &body,
+            )?))
         } else {
             Ok(None)
         }
@@ -246,23 +264,23 @@ impl Storage for SqliteStorage {
     #[tracing::instrument(skip_all)]
     fn get_articles_by_ids<'a>(&'a self, message_ids: &'a [String]) -> ArticleStream<'a> {
         let pool = self.pool.clone();
-        
+
         Box::pin(stream! {
             if message_ids.is_empty() {
                 return;
             }
-            
+
             // Build a parameterized query with the right number of placeholders
             let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
             let query = format!("SELECT message_id, headers, body FROM messages WHERE message_id IN ({placeholders})");
-            
+
             let mut query_builder = sqlx::query(&query);
             for message_id in message_ids {
                 query_builder = query_builder.bind(message_id);
             }
-            
+
             let mut rows = query_builder.fetch(&pool);
-            
+
             while let Some(row) = rows.next().await {
                 match row {
                     Ok(r) => {

@@ -90,10 +90,10 @@ async fn add_and_list_groups() {
         groups.push(result.unwrap());
     }
     assert!(groups.is_empty());
-    
+
     storage.add_group("g1", false).await.unwrap();
     storage.add_group("g2", false).await.unwrap();
-    
+
     let mut groups = Vec::new();
     let mut stream = storage.list_groups();
     while let Some(result) = stream.next().await {
@@ -102,7 +102,7 @@ async fn add_and_list_groups() {
     assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
 
     storage.remove_group("g1").await.unwrap();
-    
+
     let mut groups = Vec::new();
     let mut stream = storage.list_groups();
     while let Some(result) = stream.next().await {

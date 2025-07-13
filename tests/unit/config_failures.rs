@@ -2,8 +2,8 @@
 
 use renews::config::Config;
 use std::env;
-use tempfile::NamedTempFile;
 use std::io::Write;
+use tempfile::NamedTempFile;
 
 #[test]
 fn test_config_invalid_toml() {
@@ -12,7 +12,7 @@ fn test_config_invalid_toml() {
         addr = ":119"
         invalid_syntax = 
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_toml);
     assert!(result.is_err());
 }
@@ -21,7 +21,7 @@ fn test_config_invalid_toml() {
 fn test_config_missing_required_fields() {
     // Empty config might fail due to missing required addr field
     let empty_config: Result<Config, _> = toml::from_str("");
-    
+
     // Check if it requires the addr field
     match empty_config {
         Ok(config) => {
@@ -41,10 +41,10 @@ fn test_config_invalid_types() {
     let invalid_config = r#"
         idle_timeout_secs = "not_a_number"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_config);
     assert!(result.is_err());
-    
+
     // Invalid type for boolean field
     let invalid_config = r#"
         [group_settings]
@@ -52,7 +52,7 @@ fn test_config_invalid_types() {
         name = "test"
         moderated = "not_a_boolean"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_config);
     assert!(result.is_err());
 }
@@ -63,7 +63,7 @@ fn test_env_substitution_missing_var() {
     let config_with_env = r#"
         db_path = "$ENV{NONEXISTENT_VAR}/test.db"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_env);
     // This should fail during substitution, but might pass during TOML parsing
     match result {
@@ -83,11 +83,16 @@ fn test_file_substitution_missing_file() {
     let config_with_file = r#"
         tls_cert = "$FILE{/nonexistent/path/cert.pem}"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_file);
     // This should parse but substitution would fail later
     if let Ok(config) = result {
-        assert!(config.tls_cert.as_ref().is_some_and(|s| s.contains("$FILE{")));
+        assert!(
+            config
+                .tls_cert
+                .as_ref()
+                .is_some_and(|s| s.contains("$FILE{"))
+        );
     }
 }
 
@@ -97,24 +102,26 @@ fn test_env_substitution_valid() {
     unsafe {
         env::set_var("TEST_DB_PATH", "/tmp/test.db");
     }
-    
+
     let config_with_env = r#"
         addr = ":119"
         db_path = "$ENV{TEST_DB_PATH}"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_env);
     // Environment substitution might not be implemented in TOML parsing
     match result {
         Ok(config) => {
             // If parsing succeeds, the substitution might happen later
-            assert!(config.db_path.contains("TEST_DB_PATH") || config.db_path.contains("/tmp/test.db"));
+            assert!(
+                config.db_path.contains("TEST_DB_PATH") || config.db_path.contains("/tmp/test.db")
+            );
         }
         Err(_) => {
             // Failing is acceptable if substitution causes parse errors
         }
     }
-    
+
     // Clean up
     unsafe {
         env::remove_var("TEST_DB_PATH");
@@ -127,14 +134,16 @@ fn test_file_substitution_valid() {
     let mut temp_file = NamedTempFile::new().unwrap();
     writeln!(temp_file, "test content").unwrap();
     let temp_path = temp_file.path().to_string_lossy();
-    
-    let config_with_file = format!(r#"
+
+    let config_with_file = format!(
+        r#"
         addr = ":119"
         tls_cert = "$FILE{{{temp_path}}}"
-    "#);
-    
+    "#
+    );
+
     let result: Result<Config, _> = toml::from_str(&config_with_file);
-    
+
     // File substitution might not be implemented in TOML parsing
     match result {
         Ok(config) => {
@@ -158,18 +167,18 @@ fn test_config_invalid_addresses() {
     let invalid_config = r#"
         addr = ":99999"
     "#;
-    
+
     // This might parse successfully but fail during binding
     let result: Result<Config, _> = toml::from_str(invalid_config);
     if let Ok(config) = result {
         assert_eq!(config.addr, ":99999");
     }
-    
+
     // Invalid address format
     let invalid_config = r#"
         addr = "invalid_address"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_config);
     if let Ok(config) = result {
         assert_eq!(config.addr, "invalid_address");
@@ -182,7 +191,7 @@ fn test_config_invalid_cron_schedule() {
     let invalid_config = r#"
         peer_sync_schedule = "invalid cron"
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_config);
     // Should parse but fail during scheduler creation
     if let Ok(config) = result {
@@ -196,7 +205,7 @@ fn test_config_negative_values() {
     let invalid_config = r#"
         idle_timeout_secs = -1
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(invalid_config);
     // u64 type should prevent negative values
     assert!(result.is_err());
@@ -210,7 +219,7 @@ fn test_config_extremely_large_values() {
         article_queue_capacity = 4294967295
         article_worker_count = 4294967295
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_large_values);
     if let Ok(config) = result {
         // Should handle max values
@@ -228,7 +237,7 @@ fn test_config_zero_values() {
         article_queue_capacity = 0
         article_worker_count = 0
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_zeros);
     if let Ok(config) = result {
         assert_eq!(config.idle_timeout_secs, 0);
@@ -249,13 +258,19 @@ fn test_config_duplicate_group_settings() {
         group = "test.group"
         retention_days = 60
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_duplicates);
     if let Ok(config) = result {
         // Should parse successfully, behavior depends on implementation
         assert_eq!(config.group_settings.len(), 2);
-        assert_eq!(config.group_settings[0].group, Some("test.group".to_string()));
-        assert_eq!(config.group_settings[1].group, Some("test.group".to_string()));
+        assert_eq!(
+            config.group_settings[0].group,
+            Some("test.group".to_string())
+        );
+        assert_eq!(
+            config.group_settings[1].group,
+            Some("test.group".to_string())
+        );
     }
 }
 
@@ -267,7 +282,7 @@ fn test_config_invalid_group_patterns() {
         pattern = "["  # Invalid regex
         retention_days = 30
     "#;
-    
+
     let result: Result<Config, _> = toml::from_str(config_with_invalid_pattern);
     // Should parse but fail during pattern compilation
     if let Ok(config) = result {

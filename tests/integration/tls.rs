@@ -115,9 +115,10 @@ async fn post_without_msgid_generates_one() {
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
-        "<{}>",
+        "<{}@localhost>",
         hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
     );
+
     assert!(storage.get_article_by_id(&id).await.unwrap().is_some());
 }
 
@@ -156,7 +157,7 @@ async fn post_without_date_adds_header() {
     use sha1::{Digest, Sha1};
     let hash = Sha1::digest(b"Body\r\n");
     let id = format!(
-        "<{}>",
+        "<{}@localhost>",
         hash.iter().map(|b| format!("{b:02x}")).collect::<String>()
     );
     let msg = storage.get_article_by_id(&id).await.unwrap().unwrap();

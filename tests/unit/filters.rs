@@ -2,8 +2,8 @@ use renews::filters::header::HeaderFilter;
 use renews::filters::size::SizeFilter;
 use renews::filters::{ArticleFilter, FilterChain};
 use renews::{Message, config::Config};
-use std::sync::Arc;
 use smallvec::smallvec;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn test_header_filter_valid() {
@@ -87,7 +87,10 @@ async fn test_size_filter_exceeds_limit() {
 
     let result = filter.validate(&storage, &auth, &cfg, &article, 1500).await;
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().to_string(), "article too large for group test.group");
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "article too large for group test.group"
+    );
 }
 
 #[tokio::test]

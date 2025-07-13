@@ -6,10 +6,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 // Type aliases for complex stream return types
-type StringStream<'a> = Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type U64Stream<'a> = Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type StringTimestampStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type ArticleStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, Message), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type StringStream<'a> =
+    Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type U64Stream<'a> =
+    Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type StringTimestampStream<'a> =
+    Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type ArticleStream<'a> = Pin<
+    Box<dyn Stream<Item = Result<(String, Message), Box<dyn Error + Send + Sync>>> + Send + 'a>,
+>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -56,10 +61,7 @@ pub trait Storage: Send + Sync {
     fn list_groups(&self) -> StringStream<'_>;
 
     /// Retrieve newsgroups created after the specified time
-    fn list_groups_since(
-        &self,
-        since: chrono::DateTime<chrono::Utc>,
-    ) -> StringStream<'_>;
+    fn list_groups_since(&self, since: chrono::DateTime<chrono::Utc>) -> StringStream<'_>;
 
     /// Retrieve all newsgroups with their creation timestamps
     fn list_groups_with_times(&self) -> StringTimestampStream<'_>;
@@ -117,7 +119,8 @@ pub mod sqlite;
 /// Create a storage backend from a connection URI.
 pub async fn open(uri: &str) -> Result<DynStorage, Box<dyn Error + Send + Sync>> {
     if uri.starts_with("sqlite:") {
-        sqlite::SqliteStorage::new(uri).await
+        sqlite::SqliteStorage::new(uri)
+            .await
             .map(|s| Arc::new(s) as DynStorage)
             .map_err(|e| {
                 format!(
@@ -136,12 +139,14 @@ For SQLite URIs:
 - Relative paths are relative to the working directory
 
 You can change the database path in your configuration file using the 'db_path' setting."
-                ).into()
+                )
+                .into()
             })
     } else if uri.starts_with("postgres:") {
         #[cfg(feature = "postgres")]
         {
-            postgres::PostgresStorage::new(uri).await
+            postgres::PostgresStorage::new(uri)
+                .await
                 .map(|s| Arc::new(s) as DynStorage)
                 .map_err(|e| {
                     format!(
@@ -160,7 +165,8 @@ For PostgreSQL URIs, use format:
 postgres://username:password@host:port/database
 
 You can change the database URI in your configuration file using the 'db_path' setting."
-                    ).into()
+                    )
+                    .into()
                 })
         }
         #[cfg(not(feature = "postgres"))]
@@ -172,7 +178,8 @@ The renews server was compiled without PostgreSQL support.
 To use PostgreSQL:
 1. Rebuild with: cargo build --features postgres
 2. Or use SQLite instead by changing 'db_path' to a sqlite:// URI in your configuration"
-            ).into())
+            )
+            .into())
         }
     } else {
         Err(format!(
@@ -183,6 +190,7 @@ Supported database backends:
 - PostgreSQL: postgres://user:pass@host:port/database (requires --features postgres)
 
 You can change the database URI in your configuration file using the 'db_path' setting."
-        ).into())
+        )
+        .into())
     }
 }

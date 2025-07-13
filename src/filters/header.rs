@@ -3,10 +3,10 @@
 //! Validates that articles have required headers (From, Subject, Newsgroups).
 
 use super::ArticleFilter;
-use crate::handlers::utils::{extract_newsgroups, has_header};
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::handlers::utils::{extract_newsgroups, has_header};
 use crate::storage::DynStorage;
 use std::error::Error;
 

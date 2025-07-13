@@ -9,12 +9,12 @@ use std::error::Error;
 pub trait Migration: Send + Sync {
     /// The target version this migration upgrades to.
     fn target_version(&self) -> u32;
-    
+
     /// A human-readable description of what this migration does.
     fn description(&self) -> &str;
-    
+
     /// Apply this migration to the database.
-    /// 
+    ///
     /// Should be idempotent - running multiple times should not cause issues.
     async fn apply(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
 }
@@ -26,49 +26,49 @@ pub trait Migration: Send + Sync {
 #[async_trait]
 pub trait Migrator: Send + Sync {
     /// Get the current schema version stored in the backend.
-    /// 
+    ///
     /// Returns 0 if no version is stored (fresh install).
     async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>>;
-    
+
     /// Set the schema version in the backend.
     async fn set_version(&self, version: u32) -> Result<(), Box<dyn Error + Send + Sync>>;
-    
+
     /// Get all available migrations for this backend, ordered by target version.
     fn get_migrations(&self) -> Vec<Box<dyn Migration>>;
-    
+
     /// Check if this is a fresh database that needs initialization.
-    /// 
+    ///
     /// This method attempts to read the version table. If it fails,
     /// we assume this is a fresh database.
     async fn is_fresh_database(&self) -> bool {
         (self.get_current_version().await).is_err()
     }
-    
+
     /// Apply all necessary migrations to reach the latest version.
-    /// 
+    ///
     /// This method should only be called after the database has been initialized
     /// with the current schema. The flow should be:
     /// 1. Check if database is fresh (cannot read version)
     /// 2. If fresh, initialize with current schema and set to latest version
     /// 3. If not fresh, apply any pending migrations
-    /// 
+    ///
     /// Returns an error if any migration fails or if the stored version
     /// is higher than the latest available version.
     async fn migrate_to_latest(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
         let current_version = self.get_current_version().await?;
         let migrations = self.get_migrations();
-        
+
         if migrations.is_empty() {
             tracing::info!("No migrations available");
             return Ok(());
         }
-        
+
         let latest_version = migrations
             .iter()
             .map(|m| m.target_version())
             .max()
             .unwrap_or(0);
-        
+
         if current_version > latest_version {
             return Err(format!(
                 "Stored schema version {current_version} is higher than latest available version {latest_version}. \
@@ -76,7 +76,7 @@ pub trait Migrator: Send + Sync {
                 against a newer database. Please upgrade to a compatible version."
             ).into());
         }
-        
+
         if current_version == latest_version {
             tracing::info!(
                 "Database schema is up to date at version {}",
@@ -84,43 +84,40 @@ pub trait Migrator: Send + Sync {
             );
             return Ok(());
         }
-        
+
         tracing::info!(
             "Migrating database schema from version {} to version {}",
             current_version,
             latest_version
         );
-        
+
         // Apply migrations in sequence
         for migration in migrations {
             let target = migration.target_version();
-            
+
             // Skip migrations we've already applied
             if target <= current_version {
                 continue;
             }
-            
+
             tracing::info!(
                 "Applying migration to version {}: {}",
                 target,
                 migration.description()
             );
-            
-            migration.apply().await.map_err(|e| {
-                format!(
-                    "Failed to apply migration to version {target}: {e}"
-                )
-            })?;
-            
-            self.set_version(target).await.map_err(|e| {
-                format!(
-                    "Failed to update schema version to {target}: {e}"
-                )
-            })?;
-            
+
+            migration
+                .apply()
+                .await
+                .map_err(|e| format!("Failed to apply migration to version {target}: {e}"))?;
+
+            self.set_version(target)
+                .await
+                .map_err(|e| format!("Failed to update schema version to {target}: {e}"))?;
+
             tracing::info!("Successfully migrated to version {}", target);
         }
-        
+
         tracing::info!("Database migration completed successfully");
         Ok(())
     }
@@ -131,7 +128,7 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
     // Mock migration for testing
     struct MockMigration {
@@ -173,11 +170,11 @@ mod tests {
 
         async fn apply(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
             self.apply_count.fetch_add(1, Ordering::SeqCst);
-            
+
             if self.should_fail.load(Ordering::SeqCst) {
                 return Err("Mock migration failure".into());
             }
-            
+
             Ok(())
         }
     }
@@ -227,11 +224,11 @@ mod tests {
     #[tokio::test]
     async fn test_migrator_no_migrations() {
         let migrator = MockMigrator::new(0);
-        
+
         // No migrations means no work to do
         let result = migrator.migrate_to_latest().await;
         assert!(result.is_ok());
-        
+
         // Version should remain 0
         let version = migrator.get_current_version().await.unwrap();
         assert_eq!(version, 0);
@@ -240,11 +237,11 @@ mod tests {
     #[tokio::test]
     async fn test_migrator_up_to_date() {
         let migrator = MockMigrator::new(5);
-        
+
         // If we're already at the latest version, should be no-op
         let result = migrator.migrate_to_latest().await;
         assert!(result.is_ok());
-        
+
         // Version should remain 5
         let version = migrator.get_current_version().await.unwrap();
         assert_eq!(version, 5);
@@ -253,14 +250,14 @@ mod tests {
     #[tokio::test]
     async fn test_migrator_fresh_database() {
         let migrator = MockMigrator::new(0).with_fresh_database();
-        
+
         // Fresh database should not be able to read version
         assert!(migrator.is_fresh_database().await);
-        
+
         // But once we set a version, it should work
         migrator.set_version(1).await.unwrap();
         assert!(!migrator.is_fresh_database().await);
-        
+
         let version = migrator.get_current_version().await.unwrap();
         assert_eq!(version, 1);
     }
@@ -268,10 +265,10 @@ mod tests {
     #[tokio::test]
     async fn test_migrator_version_too_high() {
         // Test the case where stored version is higher than available migrations
-        
+
         // Create a migrator that simulates this scenario
         struct HighVersionMigrator;
-        
+
         #[async_trait]
         impl Migrator for HighVersionMigrator {
             async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>> {
@@ -286,27 +283,30 @@ mod tests {
                 vec![Box::new(MockMigration::new(5, "Test migration"))]
             }
         }
-        
+
         let migrator = HighVersionMigrator;
         let result = migrator.migrate_to_latest().await;
-        
+
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("Stored schema version 10 is higher than latest available version 5"));
+        assert!(
+            error_msg
+                .contains("Stored schema version 10 is higher than latest available version 5")
+        );
     }
 
     #[tokio::test]
     async fn test_migration_basic_properties() {
         let migration = MockMigration::new(42, "Test migration for version 42");
-        
+
         assert_eq!(migration.target_version(), 42);
         assert_eq!(migration.description(), "Test migration for version 42");
-        
+
         // Test successful apply
         let result = migration.apply().await;
         assert!(result.is_ok());
         assert_eq!(migration.get_apply_count(), 1);
-        
+
         // Test idempotency
         let result = migration.apply().await;
         assert!(result.is_ok());
@@ -316,11 +316,11 @@ mod tests {
     #[tokio::test]
     async fn test_migration_failure() {
         let migration = MockMigration::new(1, "Failing migration").with_failure();
-        
+
         let result = migration.apply().await;
         assert!(result.is_err());
         assert_eq!(migration.get_apply_count(), 1);
-        
+
         let error_msg = result.unwrap_err().to_string();
         assert_eq!(error_msg, "Mock migration failure");
     }

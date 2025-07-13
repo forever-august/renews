@@ -12,7 +12,7 @@ async fn test_milter_filter_configuration() {
     let mut parameters = serde_json::Map::new();
     parameters.insert("address".to_string(), json!("tcp://127.0.0.1:8888"));
     parameters.insert("timeout_secs".to_string(), json!(30));
-    
+
     let milter_config = FilterConfig {
         name: "MilterFilter".to_string(),
         parameters,
@@ -30,9 +30,12 @@ async fn test_milter_filter_configuration() {
 async fn test_milter_filter_with_tls_configuration() {
     // Test creating a filter chain with MilterFilter using TLS
     let mut parameters = serde_json::Map::new();
-    parameters.insert("address".to_string(), json!("tls://milter.example.com:8888"));
+    parameters.insert(
+        "address".to_string(),
+        json!("tls://milter.example.com:8888"),
+    );
     parameters.insert("timeout_secs".to_string(), json!(60));
-    
+
     let milter_config = FilterConfig {
         name: "MilterFilter".to_string(),
         parameters,
@@ -52,7 +55,7 @@ async fn test_milter_filter_in_pipeline() {
     let mut milter_parameters = serde_json::Map::new();
     milter_parameters.insert("address".to_string(), json!("tcp://127.0.0.1:8888"));
     milter_parameters.insert("timeout_secs".to_string(), json!(30));
-    
+
     let configs = vec![
         FilterConfig {
             name: "HeaderFilter".to_string(),
@@ -111,11 +114,18 @@ name = "SizeFilter"
     let names = chain.filter_names();
     assert_eq!(names.len(), 3);
     assert!(names.contains(&"MilterFilter"));
-    
+
     // Test that the MilterFilter has the correct configuration
     assert_eq!(config.filters.len(), 3);
-    let milter_filter = config.filters.iter().find(|f| f.name == "MilterFilter").unwrap();
-    assert_eq!(milter_filter.parameters.get("address").unwrap(), "tcp://127.0.0.1:8888");
+    let milter_filter = config
+        .filters
+        .iter()
+        .find(|f| f.name == "MilterFilter")
+        .unwrap();
+    assert_eq!(
+        milter_filter.parameters.get("address").unwrap(),
+        "tcp://127.0.0.1:8888"
+    );
     assert_eq!(milter_filter.parameters.get("timeout_secs").unwrap(), 30);
 }
 
@@ -124,7 +134,7 @@ async fn test_milter_filter_invalid_config() {
     // Test error handling for invalid MilterFilter configuration
     let mut invalid_parameters = serde_json::Map::new();
     invalid_parameters.insert("invalid_field".to_string(), json!("value"));
-    
+
     let invalid_config = FilterConfig {
         name: "MilterFilter".to_string(),
         parameters: invalid_parameters,
@@ -142,7 +152,7 @@ async fn test_milter_filter_with_unix_socket_configuration() {
     let mut parameters = serde_json::Map::new();
     parameters.insert("address".to_string(), json!("unix:///var/run/milter.sock"));
     parameters.insert("timeout_secs".to_string(), json!(30));
-    
+
     let milter_config = FilterConfig {
         name: "MilterFilter".to_string(),
         parameters,
