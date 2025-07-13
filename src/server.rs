@@ -21,7 +21,6 @@
 //! - Article retention cleanup
 //!
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
@@ -35,6 +34,7 @@ use tracing::{error, info};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::JobScheduler;
+use dashmap::DashMap;
 
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
@@ -359,7 +359,7 @@ impl ConfigManager {
 struct PeerManager {
     peer_db: PeerDb,
     scheduler: Arc<JobScheduler>,
-    peer_jobs: Arc<RwLock<HashMap<String, uuid::Uuid>>>,
+    peer_jobs: Arc<DashMap<String, uuid::Uuid>>,
 }
 
 impl PeerManager {
@@ -370,7 +370,7 @@ impl PeerManager {
         Ok(Self {
             peer_db,
             scheduler: Arc::new(scheduler),
-            peer_jobs: Arc::new(RwLock::new(HashMap::new())),
+            peer_jobs: Arc::new(DashMap::new()),
         })
     }
 
@@ -396,7 +396,7 @@ impl PeerManager {
             .await
             {
                 Ok(job_uuid) => {
-                    self.peer_jobs.write().await.insert(name, job_uuid);
+                    self.peer_jobs.insert(name, job_uuid);
                 }
                 Err(e) => {
                     error!("Failed to add peer job for {}: {}", name, e);
@@ -411,12 +411,11 @@ impl PeerManager {
         let names: Vec<String> = new_cfg.peers.iter().map(|p| p.sitename.clone()).collect();
         self.peer_db.sync_config(&names).await?;
 
-        let mut jobs = self.peer_jobs.write().await;
         let default_schedule = new_cfg.peer_sync_schedule.clone();
 
         // Start new peer tasks
         for peer in &new_cfg.peers {
-            if !jobs.contains_key(&peer.sitename) {
+            if !self.peer_jobs.contains_key(&peer.sitename) {
                 let pc = PeerConfig::from(peer);
                 let name = pc.sitename.clone();
 
@@ -431,7 +430,7 @@ impl PeerManager {
                 .await
                 {
                     Ok(job_uuid) => {
-                        jobs.insert(name, job_uuid);
+                        self.peer_jobs.insert(name, job_uuid);
                     }
                     Err(e) => {
                         error!("Failed to add peer job for {}: {}", name, e);
@@ -441,14 +440,14 @@ impl PeerManager {
         }
 
         // Remove obsolete peer tasks
-        let to_remove: Vec<String> = jobs
-            .keys()
-            .filter(|k| !new_cfg.peers.iter().any(|p| &p.sitename == *k))
-            .cloned()
+        let to_remove: Vec<String> = self.peer_jobs
+            .iter()
+            .filter(|entry| !new_cfg.peers.iter().any(|p| &p.sitename == entry.key()))
+            .map(|entry| entry.key().clone())
             .collect();
 
         for name in to_remove {
-            if let Some(job_uuid) = jobs.remove(&name) {
+            if let Some((_, job_uuid)) = self.peer_jobs.remove(&name) {
                 if let Err(e) = self.scheduler.remove(&job_uuid).await {
                     error!("Failed to remove peer job for {}: {}", name, e);
                 }
