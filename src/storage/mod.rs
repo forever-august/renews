@@ -104,6 +104,7 @@ pub trait Storage: Send + Sync {
 pub type DynStorage = Arc<dyn Storage>;
 
 pub mod common;
+pub mod migrations;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod sqlite;

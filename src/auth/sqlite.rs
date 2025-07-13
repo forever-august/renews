@@ -66,22 +66,37 @@ Possible causes:
                 )
             })?;
 
-        // Create authentication schema
-        sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create users table in SQLite authentication database '{}': {}", path, e)
-        })?;
-        sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create admins table in SQLite authentication database '{}': {}", path, e)
-        })?;
-        sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create moderators table in SQLite authentication database '{}': {}", path, e)
-        })?;
+        // Set up migrator to check database state
+        let migrator = super::migrations::sqlite::SqliteAuthMigrator::new(pool.clone());
+        
+        if migrator.is_fresh_database().await {
+            // Fresh database: initialize with current schema
+            tracing::info!("Initializing fresh SQLite authentication database at '{}'", path);
+            
+            // Create authentication schema
+            sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create users table in SQLite authentication database '{}': {}", path, e)
+            })?;
+            sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create admins table in SQLite authentication database '{}': {}", path, e)
+            })?;
+            sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create moderators table in SQLite authentication database '{}': {}", path, e)
+            })?;
 
-        // Set up and run migrations
-        let migrator = crate::migrations::auth::SqliteAuthMigrator::new(pool.clone());
-        migrator.migrate_to_latest().await.map_err(|e| {
-            format!("Failed to run auth migrations for SQLite database '{}': {}", path, e)
-        })?;
+            // Set current version (since pre-1.0, we use version 1 as the baseline)
+            migrator.set_version(1).await.map_err(|e| {
+                format!("Failed to set initial schema version for SQLite auth database '{}': {}", path, e)
+            })?;
+            
+            tracing::info!("Successfully initialized SQLite authentication database at version 1");
+        } else {
+            // Existing database: apply any pending migrations
+            tracing::info!("Found existing SQLite authentication database, checking for migrations");
+            migrator.migrate_to_latest().await.map_err(|e| {
+                format!("Failed to run auth migrations for SQLite database '{}': {}", path, e)
+            })?;
+        }
 
         Ok(Self { pool })
     }

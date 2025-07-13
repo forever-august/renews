@@ -36,13 +36,24 @@ pub trait Migrator: Send + Sync {
     /// Get all available migrations for this backend, ordered by target version.
     fn get_migrations(&self) -> Vec<Box<dyn Migration>>;
     
+    /// Check if this is a fresh database that needs initialization.
+    /// 
+    /// This method attempts to read the version table. If it fails,
+    /// we assume this is a fresh database.
+    async fn is_fresh_database(&self) -> bool {
+        match self.get_current_version().await {
+            Ok(_) => false,  // Version table exists, not fresh
+            Err(_) => true,  // Cannot read version, assume fresh
+        }
+    }
+    
     /// Apply all necessary migrations to reach the latest version.
     /// 
-    /// This method:
-    /// 1. Gets the current version from storage
-    /// 2. Gets the latest version from available migrations
-    /// 3. Applies all intermediate migrations in sequence
-    /// 4. Updates the stored version after each successful migration
+    /// This method should only be called after the database has been initialized
+    /// with the current schema. The flow should be:
+    /// 1. Check if database is fresh (cannot read version)
+    /// 2. If fresh, initialize with current schema and set to latest version
+    /// 3. If not fresh, apply any pending migrations
     /// 
     /// Returns an error if any migration fails or if the stored version
     /// is higher than the latest available version.
@@ -121,9 +132,6 @@ pub trait Migrator: Send + Sync {
     }
 }
 
-pub mod storage;
-pub mod auth;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +192,7 @@ mod tests {
     struct MockMigrator {
         current_version: Arc<AtomicU32>,
         migrations: Vec<Box<dyn Migration>>,
+        can_read_version: Arc<AtomicBool>,
     }
 
     impl MockMigrator {
@@ -191,7 +200,13 @@ mod tests {
             Self {
                 current_version: Arc::new(AtomicU32::new(initial_version)),
                 migrations: Vec::new(),
+                can_read_version: Arc::new(AtomicBool::new(true)),
             }
+        }
+
+        fn with_fresh_database(mut self) -> Self {
+            self.can_read_version.store(false, Ordering::SeqCst);
+            self
         }
 
         fn add_migration(mut self, migration: Box<dyn Migration>) -> Self {
@@ -203,17 +218,20 @@ mod tests {
     #[async_trait]
     impl Migrator for MockMigrator {
         async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>> {
-            Ok(self.current_version.load(Ordering::SeqCst))
+            if self.can_read_version.load(Ordering::SeqCst) {
+                Ok(self.current_version.load(Ordering::SeqCst))
+            } else {
+                Err("Cannot read version table".into())
+            }
         }
 
         async fn set_version(&self, version: u32) -> Result<(), Box<dyn Error + Send + Sync>> {
             self.current_version.store(version, Ordering::SeqCst);
+            self.can_read_version.store(true, Ordering::SeqCst);
             Ok(())
         }
 
         fn get_migrations(&self) -> Vec<Box<dyn Migration>> {
-            // This is a bit tricky for the test - we need to clone the migrations
-            // Since we can't clone trait objects easily, we'll use a different approach
             // For tests, we'll return empty and test the individual methods
             Vec::new()
         }
@@ -246,9 +264,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_migrator_fresh_database() {
+        let migrator = MockMigrator::new(0).with_fresh_database();
+        
+        // Fresh database should not be able to read version
+        assert!(migrator.is_fresh_database().await);
+        
+        // But once we set a version, it should work
+        migrator.set_version(1).await.unwrap();
+        assert!(!migrator.is_fresh_database().await);
+        
+        let version = migrator.get_current_version().await.unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[tokio::test]
     async fn test_migrator_version_too_high() {
         // Test the case where stored version is higher than available migrations
-        // This is implemented in the default implementation, so we need to test it differently
         
         // Create a migrator that simulates this scenario
         struct HighVersionMigrator;

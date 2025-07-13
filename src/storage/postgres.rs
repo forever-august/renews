@@ -98,25 +98,40 @@ Please verify:
                 )
             })?;
 
-        // Create database schema
-        sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create messages table in PostgreSQL database '{}': {}", uri, e)
-        })?;
-        sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create group_articles table in PostgreSQL database '{}': {}", uri, e)
-        })?;
-        sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create groups table in PostgreSQL database '{}': {}", uri, e)
-        })?;
-        sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create overview table in PostgreSQL database '{}': {}", uri, e)
-        })?;
+        // Set up migrator to check database state
+        let migrator = super::migrations::postgres::PostgresStorageMigrator::new(pool.clone());
+        
+        if migrator.is_fresh_database().await {
+            // Fresh database: initialize with current schema
+            tracing::info!("Initializing fresh PostgreSQL storage database at '{}'", uri);
+            
+            // Create database schema
+            sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create messages table in PostgreSQL database '{}': {}", uri, e)
+            })?;
+            sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create group_articles table in PostgreSQL database '{}': {}", uri, e)
+            })?;
+            sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create groups table in PostgreSQL database '{}': {}", uri, e)
+            })?;
+            sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
+                format!("Failed to create overview table in PostgreSQL database '{}': {}", uri, e)
+            })?;
 
-        // Set up and run migrations
-        let migrator = crate::migrations::storage::PostgresStorageMigrator::new(pool.clone());
-        migrator.migrate_to_latest().await.map_err(|e| {
-            format!("Failed to run storage migrations for PostgreSQL database '{}': {}", uri, e)
-        })?;
+            // Set current version (since pre-1.0, we use version 1 as the baseline)
+            migrator.set_version(1).await.map_err(|e| {
+                format!("Failed to set initial schema version for PostgreSQL storage database '{}': {}", uri, e)
+            })?;
+            
+            tracing::info!("Successfully initialized PostgreSQL storage database at version 1");
+        } else {
+            // Existing database: apply any pending migrations
+            tracing::info!("Found existing PostgreSQL storage database, checking for migrations");
+            migrator.migrate_to_latest().await.map_err(|e| {
+                format!("Failed to run storage migrations for PostgreSQL database '{}': {}", uri, e)
+            })?;
+        }
 
         Ok(Self { pool })
     }
