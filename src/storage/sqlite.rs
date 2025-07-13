@@ -197,8 +197,7 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }
@@ -216,8 +215,7 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }

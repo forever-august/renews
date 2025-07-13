@@ -1,8 +1,6 @@
 use super::{
     Message, Storage, StringStream, StringTimestampStream, U64Stream,
-    common::{Headers, extract_message_id},
-};
-use async_stream::stream;
+    common::{Headers, extract_message_id}        let newsgroups = crate::storage::common::parse_newsgroups_from_message(article);nc_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use smallvec::SmallVec;
@@ -205,10 +203,10 @@ impl Storage for PostgresStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
+        }
         }
     }
 
@@ -224,8 +222,10 @@ impl Storage for PostgresStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
+        } else {
+            Ok(None)
+        }
         } else {
             Ok(None)
         }

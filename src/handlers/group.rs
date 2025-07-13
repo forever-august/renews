@@ -108,8 +108,9 @@ impl CommandHandler for ListGroupHandler {
         while let Some(result) = stream.next().await {
             let num = result?;
             ctx.writer
-                .write_all(format!("{num}\r\n").as_bytes())
+                .write_all(num.to_string().as_bytes())
                 .await?;
+            ctx.writer.write_all(b"\r\n").await?;
         }
         ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
         Ok(())
@@ -177,9 +178,8 @@ impl CommandHandler for NewGroupsHandler {
         let mut stream = ctx.storage.list_groups_since(since);
         while let Some(result) = stream.next().await {
             let group = result?;
-            ctx.writer
-                .write_all(format!("{group}\r\n").as_bytes())
-                .await?;
+            ctx.writer.write_all(group.as_bytes()).await?;
+            ctx.writer.write_all(b"\r\n").await?;
         }
         ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
         Ok(())
@@ -226,9 +226,8 @@ impl CommandHandler for NewNewsHandler {
                 let mut articles_stream = ctx.storage.list_article_ids_since(&group, since);
                 while let Some(article_result) = articles_stream.next().await {
                     let article_id = article_result?;
-                    ctx.writer
-                        .write_all(format!("{article_id}\r\n").as_bytes())
-                        .await?;
+                    ctx.writer.write_all(article_id.as_bytes()).await?;
+                    ctx.writer.write_all(b"\r\n").await?;
                 }
             }
         }
@@ -258,13 +257,27 @@ where
             }
         }
 
-        let nums_stream = ctx.storage.list_article_numbers(&group);
-        let nums = nums_stream.try_collect::<Vec<u64>>().await?;
-        let high = nums.last().copied().unwrap_or(0);
-        let low = nums.first().copied().unwrap_or(0);
-        ctx.writer
-            .write_all(format!("{group} {high} {low} y\r\n").as_bytes())
-            .await?;
+        let mut nums_stream = ctx.storage.list_article_numbers(&group);
+        let mut low = None;
+        let mut high = None;
+        
+        while let Some(result) = nums_stream.next().await {
+            let num = result?;
+            if low.is_none() {
+                low = Some(num);
+            }
+            high = Some(num);
+        }
+        
+        let low = low.unwrap_or(0);
+        let high = high.unwrap_or(0);
+        
+        ctx.writer.write_all(group.as_bytes()).await?;
+        ctx.writer.write_all(b" ").await?;
+        ctx.writer.write_all(high.to_string().as_bytes()).await?;
+        ctx.writer.write_all(b" ").await?;
+        ctx.writer.write_all(low.to_string().as_bytes()).await?;
+        ctx.writer.write_all(b" y\r\n").await?;
     }
 
     ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -381,7 +394,7 @@ where
     if let Some(&new_num) = nums.get(new_pos) {
         if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await? {
             ctx.state.current_article = Some(new_num);
-            let id = super::utils::extract_message_id(&article).unwrap_or("");
+            let id = super::utils::extract_message_id(&article).unwrap_or_default();
             write_simple(
                 &mut ctx.writer,
                 &format!("223 {new_num} {id} article exists\r\n"),

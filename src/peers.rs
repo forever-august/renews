@@ -474,7 +474,7 @@ async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
         .await
         .map_err(|e| format!("Failed to connect to peer {host}: {e}"))?;
 
-    let result = connection.transfer_article(article, msg_id).await;
+    let result = connection.transfer_article(article, &msg_id).await;
 
     if let Err(close_err) = connection.close().await {
         tracing::warn!("Failed to close connection to {}: {}", host, close_err);

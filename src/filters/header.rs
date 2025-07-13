@@ -3,11 +3,11 @@
 //! Validates that articles have required headers (From, Subject, Newsgroups).
 
 use super::ArticleFilter;
+use crate::handlers::utils::{extract_newsgroups, has_header};
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use smallvec::SmallVec;
 use std::error::Error;
 
 /// Filter that validates required article headers
@@ -24,26 +24,9 @@ impl ArticleFilter for HeaderFilter {
         _size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Check required headers
-        let has_from = article
-            .headers
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("From"));
-        let has_subject = article
-            .headers
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case("Subject"));
-        let newsgroups: SmallVec<[String; 4]> = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect::<SmallVec<[String; 4]>>()
-            })
-            .unwrap_or_default();
+        let has_from = has_header(article, "From");
+        let has_subject = has_header(article, "Subject");
+        let newsgroups = extract_newsgroups(article);
 
         if !has_from || !has_subject || newsgroups.is_empty() {
             return Err("missing required headers".into());

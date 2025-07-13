@@ -114,15 +114,20 @@ pub fn create_test_queue() -> ArticleQueue {
 /// Create a test storage instance
 pub async fn create_test_storage() -> renews::storage::DynStorage {
     use renews::storage::sqlite::SqliteStorage;
-    let storage = SqliteStorage::new(":memory:").await.unwrap();
+    let storage = SqliteStorage::new("sqlite::memory:").await.unwrap();
     std::sync::Arc::new(storage)
 }
 
 /// Create a test auth instance
 pub async fn create_test_auth() -> renews::auth::DynAuth {
     use renews::auth::sqlite::SqliteAuth;
-    let auth = SqliteAuth::new(":memory:").await.unwrap();
+    let auth = SqliteAuth::new("sqlite::memory:").await.unwrap();
     std::sync::Arc::new(auth)
+}
+
+/// Create a test article queue (legacy function - does not start workers)
+pub fn create_test_queue() -> ArticleQueue {
+    ArticleQueue::new(10) // Small capacity for tests
 }
 
 /// Lines returned by the CAPABILITIES command.
@@ -607,4 +612,70 @@ pub fn create_large_article(size_kb: usize) -> String {
     format!(
         "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{body}\r\n.\r\n"
     )
+}
+
+/// Create a test article queue with workers
+pub async fn create_test_queue_with_workers(
+    storage: Arc<dyn Storage>,
+    auth: Arc<dyn AuthProvider>,
+    config: Arc<RwLock<Config>>,
+) -> ArticleQueue {
+    let queue = ArticleQueue::new(10); // Small capacity for tests
+
+    // Start worker pool
+    let worker_pool = renews::queue::WorkerPool::new(
+        queue.clone(),
+        storage,
+        auth,
+        config,
+        2, // Use 2 workers for tests
+    );
+
+    let _worker_handles = worker_pool.start().await;
+
+    queue
+}
+
+/// Create a test configuration with minimal settings
+pub fn create_minimal_config() -> Config {
+    Config {
+        addr: "127.0.0.1:0".to_string(),
+        site_name: "test".to_string(),
+        db_path: "sqlite::memory:".to_string(),
+        auth_db_path: "sqlite::memory:".to_string(),
+        peer_db_path: "sqlite::memory:".to_string(),
+        peer_sync_schedule: "0 0 * * * *".to_string(),
+        idle_timeout_secs: 600,
+        peers: vec![],
+        tls_addr: None,
+        tls_cert: None,
+        tls_key: None,
+        ws_addr: None,
+        article_queue_capacity: 10,
+        article_worker_count: 2,
+        group_settings: vec![],
+        filters: vec![],
+        pgp_key_servers: renews::config::default_pgp_key_servers(),
+        allow_posting_insecure_connections: false,
+    }
+}
+
+/// Create a test configuration with insecure posting enabled
+pub fn create_insecure_posting_config() -> Config {
+    let mut config = create_minimal_config();
+    config.allow_posting_insecure_connections = true;
+    config
+}
+
+/// Create a test configuration with specific limits for failure testing
+pub fn create_failure_test_config(
+    _max_article_bytes: Option<u64>,
+    queue_capacity: usize,
+    idle_timeout_secs: u64,
+) -> Config {
+    let mut config = create_minimal_config();
+    config.idle_timeout_secs = idle_timeout_secs;
+    config.article_queue_capacity = queue_capacity;
+    config.article_worker_count = 1;
+    config
 }
