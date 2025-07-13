@@ -34,7 +34,7 @@ impl PostgresAuth {
     pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let opts = PgConnectOptions::from_str(uri).map_err(|e| {
             format!(
-                "Invalid PostgreSQL authentication database URI '{}': {}
+                "Invalid PostgreSQL authentication database URI '{uri}': {e}
 
 Please ensure the URI is in the correct format:
 - Standard connection: postgresql://user:password@host:port/database
@@ -46,8 +46,7 @@ Required connection components:
 - port: PostgreSQL server port (default: 5432)
 - database: Target database name
 - user: PostgreSQL username
-- password: User password (if required)",
-                uri, e
+- password: User password (if required)"
             )
         })?;
         
@@ -57,7 +56,7 @@ Required connection components:
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to connect to PostgreSQL authentication database '{}': {}
+                    "Failed to connect to PostgreSQL authentication database '{uri}': {e}
 
 Possible causes:
 - PostgreSQL server is not running or unreachable
@@ -72,20 +71,19 @@ Please verify:
 1. PostgreSQL server is running: systemctl status postgresql
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
-4. Connection settings in pg_hba.conf allow your connection method",
-                    uri, e
+4. Connection settings in pg_hba.conf allow your connection method"
                 )
             })?;
 
         // Create authentication schema
         sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create users table in PostgreSQL authentication database '{}': {}", uri, e)
+            format!("Failed to create users table in PostgreSQL authentication database '{uri}': {e}")
         })?;
         sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create admins table in PostgreSQL authentication database '{}': {}", uri, e)
+            format!("Failed to create admins table in PostgreSQL authentication database '{uri}': {e}")
         })?;
         sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create moderators table in PostgreSQL authentication database '{}': {}", uri, e)
+            format!("Failed to create moderators table in PostgreSQL authentication database '{uri}': {e}")
         })?;
 
         Ok(Self { pool })

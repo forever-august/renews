@@ -232,32 +232,29 @@ impl Config {
                 return match e.kind() {
                     std::io::ErrorKind::NotFound => {
                         Err(format!(
-                            "Configuration file not found: '{}'
+                            "Configuration file not found: '{path}'
 
 Please ensure the configuration file exists at the specified path.
 You can:
-- Create a configuration file at '{}'
+- Create a configuration file at '{path}'
 - Use --config <path> to specify a different location
 - Set the RENEWS_CONFIG environment variable
-- See the example configuration at 'examples/config.toml'",
-                            path, path
+- See the example configuration at 'examples/config.toml'"
                         ).into())
                     }
                     std::io::ErrorKind::PermissionDenied => {
                         Err(format!(
-                            "Permission denied reading configuration file: '{}'
+                            "Permission denied reading configuration file: '{path}'
 
 Please ensure the file is readable by the current user.
-You may need to check file permissions or run with appropriate privileges.",
-                            path
+You may need to check file permissions or run with appropriate privileges."
                         ).into())
                     }
                     _ => {
                         Err(format!(
-                            "Failed to read configuration file '{}': {}
+                            "Failed to read configuration file '{path}': {e}
 
-Please ensure the file exists and is readable.",
-                            path, e
+Please ensure the file exists and is readable."
                         ).into())
                     }
                 }
@@ -266,24 +263,22 @@ Please ensure the file exists and is readable.",
         
         let text = expand_placeholders(&text).map_err(|e| {
             format!(
-                "Failed to process configuration placeholders in '{}': {}
+                "Failed to process configuration placeholders in '{path}': {e}
 
-Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid.",
-                path, e
+Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid."
             )
         })?;
         
         let mut cfg: Config = toml::from_str(&text).map_err(|e| {
             format!(
-                "Failed to parse configuration file '{}': {}
+                "Failed to parse configuration file '{path}': {e}
 
 Please check the TOML syntax. Common issues:
 - Missing quotes around string values
 - Incorrect section headers
 - Malformed array or table syntax
 
-See 'examples/config.toml' for a valid configuration example.",
-                path, e
+See 'examples/config.toml' for a valid configuration example."
             )
         })?;
 
@@ -390,7 +385,7 @@ See 'examples/config.toml' for a valid configuration example.",
         if self.runtime_threads == 0 {
             std::thread::available_parallelism()
                 .map(|n| n.get())
-                .map_err(|e| format!("Failed to determine number of CPU cores: {}", e).into())
+                .map_err(|e| format!("Failed to determine number of CPU cores: {e}").into())
         } else {
             Ok(self.runtime_threads)
         }

@@ -1,4 +1,4 @@
-use super::Message;
+use crate::Message;
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
 
@@ -16,5 +16,33 @@ pub fn extract_message_id(article: &Message) -> Option<String> {
         } else {
             None
         }
+    })
+}
+
+/// Parse newsgroups from a message, returning a SmallVec for efficiency
+pub fn parse_newsgroups_from_message(article: &Message) -> SmallVec<[String; 4]> {
+    article
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
+        .map(|(_, v)| {
+            v.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(std::string::ToString::to_string)
+                .collect::<SmallVec<[String; 4]>>()
+        })
+        .unwrap_or_default()
+}
+
+/// Common logic for reconstructing a Message from database row data
+pub fn reconstruct_message_from_row(
+    headers_str: &str,
+    body: &str,
+) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
+    let Headers(headers) = serde_json::from_str(headers_str)?;
+    Ok(Message {
+        headers,
+        body: body.to_string(),
     })
 }

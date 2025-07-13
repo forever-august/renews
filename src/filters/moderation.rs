@@ -3,6 +3,7 @@
 //! Validates moderated group approval and PGP signatures.
 
 use super::ArticleFilter;
+use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
@@ -24,33 +25,11 @@ impl ArticleFilter for ModerationFilter {
         _size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Get newsgroups from the article
-        let newsgroups: SmallVec<[String; 4]> = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect::<SmallVec<[String; 4]>>()
-            })
-            .unwrap_or_default();
+        let newsgroups = extract_newsgroups(article);
 
         // Get all approved values and signatures
-        let approved_values: SmallVec<[String; 2]> = article
-            .headers
-            .iter()
-            .filter(|(k, _)| k.eq_ignore_ascii_case("Approved"))
-            .map(|(_, v)| v.trim().to_string())
-            .collect();
-
-        let sig_headers: SmallVec<[String; 2]> = article
-            .headers
-            .iter()
-            .filter(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
-            .map(|(_, v)| v.clone())
-            .collect();
+        let approved_values = get_header_values(article, "Approved");
+        let sig_headers = get_header_values(article, "X-PGP-Sig");
 
         // Check each newsgroup for moderation requirements
         for group in &newsgroups {

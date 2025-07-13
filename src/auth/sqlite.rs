@@ -35,13 +35,12 @@ impl SqliteAuth {
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let options = SqliteConnectOptions::from_str(path).map_err(|e| {
             format!(
-                "Invalid SQLite authentication database URI '{}': {}
+                "Invalid SQLite authentication database URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
 - File database: sqlite:///path/to/auth.db
 - In-memory database: sqlite::memory:
-- Relative path: sqlite://relative/path.db",
-                path, e
+- Relative path: sqlite://relative/path.db"
             )
         })?
             .create_if_missing(true);
@@ -52,7 +51,7 @@ Please ensure the URI is in the correct format:
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to connect to SQLite authentication database '{}': {}
+                    "Failed to connect to SQLite authentication database '{path}': {e}
 
 Possible causes:
 - Parent directory does not exist and cannot be created
@@ -60,20 +59,19 @@ Possible causes:
 - Database file is corrupted or not a valid SQLite database
 - Path contains invalid characters for the filesystem
 - Disk space is full
-- Database is locked by another process",
-                    path, e
+- Database is locked by another process"
                 )
             })?;
 
         // Create authentication schema
         sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create users table in SQLite authentication database '{}': {}", path, e)
+            format!("Failed to create users table in SQLite authentication database '{path}': {e}")
         })?;
         sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create admins table in SQLite authentication database '{}': {}", path, e)
+            format!("Failed to create admins table in SQLite authentication database '{path}': {e}")
         })?;
         sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create moderators table in SQLite authentication database '{}': {}", path, e)
+            format!("Failed to create moderators table in SQLite authentication database '{path}': {e}")
         })?;
 
         Ok(Self { pool })

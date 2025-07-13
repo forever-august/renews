@@ -1,8 +1,6 @@
 use super::{
     Message, Storage, StringStream, StringTimestampStream, U64Stream,
-    common::{Headers, extract_message_id},
-};
-use async_stream::stream;
+    common::{Headers, extract_message_id}        let newsgroups = crate::storage::common::parse_newsgroups_from_message(article);nc_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use smallvec::SmallVec;
@@ -54,7 +52,7 @@ impl PostgresStorage {
     pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let opts = PgConnectOptions::from_str(uri).map_err(|e| {
             format!(
-                "Invalid PostgreSQL connection URI '{}': {}
+                "Invalid PostgreSQL connection URI '{uri}': {e}
 
 Please ensure the URI is in the correct format:
 - Standard connection: postgresql://user:password@host:port/database
@@ -66,8 +64,7 @@ Required connection components:
 - port: PostgreSQL server port (default: 5432)
 - database: Target database name
 - user: PostgreSQL username
-- password: User password (if required)",
-                uri, e
+- password: User password (if required)"
             )
         })?;
         
@@ -77,7 +74,7 @@ Required connection components:
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to connect to PostgreSQL database '{}': {}
+                    "Failed to connect to PostgreSQL database '{uri}': {e}
 
 Possible causes:
 - PostgreSQL server is not running or unreachable
@@ -92,20 +89,19 @@ Please verify:
 1. PostgreSQL server is running: systemctl status postgresql
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
-4. Connection settings in pg_hba.conf allow your connection method",
-                    uri, e
+4. Connection settings in pg_hba.conf allow your connection method"
                 )
             })?;
 
         // Create database schema
         sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create messages table in PostgreSQL database '{}': {}", uri, e)
+            format!("Failed to create messages table in PostgreSQL database '{uri}': {e}")
         })?;
         sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create group_articles table in PostgreSQL database '{}': {}", uri, e)
+            format!("Failed to create group_articles table in PostgreSQL database '{uri}': {e}")
         })?;
         sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create groups table in PostgreSQL database '{}': {}", uri, e)
+            format!("Failed to create groups table in PostgreSQL database '{uri}': {e}")
         })?;
         sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
             format!("Failed to create overview table in PostgreSQL database '{}': {}", uri, e)
@@ -207,10 +203,10 @@ impl Storage for PostgresStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
+        }
         }
     }
 
@@ -226,8 +222,10 @@ impl Storage for PostgresStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
+        } else {
+            Ok(None)
+        }
         } else {
             Ok(None)
         }

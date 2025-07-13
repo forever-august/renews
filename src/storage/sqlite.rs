@@ -57,13 +57,12 @@ impl SqliteStorage {
     pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let options = SqliteConnectOptions::from_str(path).map_err(|e| {
             format!(
-                "Invalid SQLite connection URI '{}': {}
+                "Invalid SQLite connection URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
 - File database: sqlite:///path/to/database.db
 - In-memory database: sqlite::memory:
-- Relative path: sqlite://relative/path.db",
-                path, e
+- Relative path: sqlite://relative/path.db"
             )
         })?
             .create_if_missing(true);
@@ -74,7 +73,7 @@ Please ensure the URI is in the correct format:
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to connect to SQLite database '{}': {}
+                    "Failed to connect to SQLite database '{path}': {e}
 
 Possible causes:
 - Parent directory does not exist and cannot be created
@@ -82,23 +81,22 @@ Possible causes:
 - Database file is corrupted or not a valid SQLite database
 - Path contains invalid characters for the filesystem
 - Disk space is full
-- Database is locked by another process",
-                    path, e
+- Database is locked by another process"
                 )
             })?;
 
         // Create database schema
         sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create messages table in SQLite database '{}': {}", path, e)
+            format!("Failed to create messages table in SQLite database '{path}': {e}")
         })?;
         sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create group_articles table in SQLite database '{}': {}", path, e)
+            format!("Failed to create group_articles table in SQLite database '{path}': {e}")
         })?;
         sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create groups table in SQLite database '{}': {}", path, e)
+            format!("Failed to create groups table in SQLite database '{path}': {e}")
         })?;
         sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
-            format!("Failed to create overview table in SQLite database '{}': {}", path, e)
+            format!("Failed to create overview table in SQLite database '{path}': {e}")
         })?;
 
         Ok(Self { pool })
@@ -199,8 +197,7 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }
@@ -218,8 +215,7 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }

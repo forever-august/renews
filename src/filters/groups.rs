@@ -3,12 +3,12 @@
 //! Validates that all newsgroups in an article exist in the server.
 
 use super::ArticleFilter;
+use crate::handlers::utils::extract_newsgroups;
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
 use futures_util::TryStreamExt;
-use smallvec::SmallVec;
 use std::error::Error;
 
 /// Filter that validates newsgroups exist in the server
@@ -25,18 +25,7 @@ impl ArticleFilter for GroupExistenceFilter {
         _size: u64,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Get newsgroups from the article
-        let newsgroups: SmallVec<[String; 4]> = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect::<SmallVec<[String; 4]>>()
-            })
-            .unwrap_or_default();
+        let newsgroups = extract_newsgroups(article);
 
         // Check that all groups exist
         let stream = storage.list_groups();
