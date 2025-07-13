@@ -120,12 +120,38 @@ impl AuthProvider for SqliteAuth {
         username: &str,
         password: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.add_user_with_key(username, password, None).await
+    }
+
+    async fn add_user_with_key(
+        &self,
+        username: &str,
+        password: &str,
+        key: Option<&str>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)?
             .to_string();
-        sqlx::query("INSERT OR REPLACE INTO users (username, password_hash, key) VALUES (?, ?, (SELECT key FROM users WHERE username = ?))")
+        sqlx::query("INSERT OR REPLACE INTO users (username, password_hash, key) VALUES (?, ?, ?)")
             .bind(username)
+            .bind(hash)
+            .bind(key)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn update_password(
+        &self,
+        username: &str,
+        new_password: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(new_password.as_bytes(), &salt)?
+            .to_string();
+        sqlx::query("UPDATE users SET password_hash = ? WHERE username = ?")
             .bind(hash)
             .bind(username)
             .execute(&self.pool)
@@ -188,6 +214,17 @@ impl AuthProvider for SqliteAuth {
             .await?;
         sqlx::query("UPDATE users SET key = ? WHERE username = ?")
             .bind(key)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn add_admin_without_key(
+        &self,
+        username: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
             .bind(username)
             .execute(&self.pool)
             .await?;
