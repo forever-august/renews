@@ -1,5 +1,5 @@
 use super::{
-    Message, Storage, StringStream, StringTimestampStream, U64Stream, ArticleStream,
+    ArticleStream, Message, Storage, StringStream, StringTimestampStream, U64Stream,
     common::{Headers, extract_message_id},
 };
 use crate::migrations::Migrator;
@@ -70,7 +70,7 @@ Required connection components:
                 uri, e
             )
         })?;
-        
+
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect_with(opts)
@@ -99,36 +99,69 @@ Please verify:
 
         // Set up migrator to check database state
         let migrator = super::migrations::postgres::PostgresStorageMigrator::new(pool.clone());
-        
+
         if migrator.is_fresh_database().await {
             // Fresh database: initialize with current schema
-            tracing::info!("Initializing fresh PostgreSQL storage database at '{}'", uri);
-            
+            tracing::info!(
+                "Initializing fresh PostgreSQL storage database at '{}'",
+                uri
+            );
+
             // Create database schema
-            sqlx::query(MESSAGES_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create messages table in PostgreSQL database '{}': {}", uri, e)
-            })?;
-            sqlx::query(GROUP_ARTICLES_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create group_articles table in PostgreSQL database '{}': {}", uri, e)
-            })?;
-            sqlx::query(GROUPS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create groups table in PostgreSQL database '{}': {}", uri, e)
-            })?;
-            sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create overview table in PostgreSQL database '{}': {}", uri, e)
-            })?;
+            sqlx::query(MESSAGES_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to create messages table in PostgreSQL database '{}': {}",
+                        uri, e
+                    )
+                })?;
+            sqlx::query(GROUP_ARTICLES_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to create group_articles table in PostgreSQL database '{}': {}",
+                        uri, e
+                    )
+                })?;
+            sqlx::query(GROUPS_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to create groups table in PostgreSQL database '{}': {}",
+                        uri, e
+                    )
+                })?;
+            sqlx::query(OVERVIEW_TABLE)
+                .execute(&pool)
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to create overview table in PostgreSQL database '{}': {}",
+                        uri, e
+                    )
+                })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!("Failed to set initial schema version for PostgreSQL storage database '{}': {}", uri, e)
+                format!(
+                    "Failed to set initial schema version for PostgreSQL storage database '{}': {}",
+                    uri, e
+                )
             })?;
-            
+
             tracing::info!("Successfully initialized PostgreSQL storage database at version 1");
         } else {
             // Existing database: apply any pending migrations
             tracing::info!("Found existing PostgreSQL storage database, checking for migrations");
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!("Failed to run storage migrations for PostgreSQL database '{}': {}", uri, e)
+                format!(
+                    "Failed to run storage migrations for PostgreSQL database '{}': {}",
+                    uri, e
+                )
             })?;
         }
 
@@ -191,12 +224,7 @@ impl Storage for PostgresStorage {
             // Generate and store overview data
             let overview_data = {
                 use crate::overview::generate_overview_line;
-                generate_overview_line(
-                    self,
-                    next as u64,
-                    article,
-                )
-                .await?
+                generate_overview_line(self, next as u64, article).await?
             };
 
             sqlx::query(
@@ -246,7 +274,10 @@ impl Storage for PostgresStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(
+                &headers_str,
+                &body,
+            )?))
         } else {
             Ok(None)
         }
@@ -255,23 +286,23 @@ impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
     fn get_articles_by_ids<'a>(&'a self, message_ids: &'a [String]) -> ArticleStream<'a> {
         let pool = self.pool.clone();
-        
+
         Box::pin(stream! {
             if message_ids.is_empty() {
                 return;
             }
-            
+
             // Build a parameterized query with the right number of placeholders
             let placeholders = (1..=message_ids.len()).map(|i| format!("${i}")).collect::<Vec<_>>().join(", ");
             let query = format!("SELECT message_id, headers, body FROM messages WHERE message_id IN ({placeholders})");
-            
+
             let mut query_builder = sqlx::query(&query);
             for message_id in message_ids {
                 query_builder = query_builder.bind(message_id);
             }
-            
+
             let mut rows = query_builder.fetch(&pool);
-            
+
             while let Some(row) = rows.next().await {
                 match row {
                     Ok(r) => {

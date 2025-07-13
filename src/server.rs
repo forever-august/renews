@@ -468,62 +468,55 @@ impl PeerManager {
 /// # Errors
 /// Returns an error if the files cannot be read or contain invalid data
 fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
-    let cert_file = &mut BufReader::new(
-        File::open(cert_path).map_err(|e| {
-            match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    format!(
-                        "TLS certificate file not found: '{cert_path}'
+    let cert_file = &mut BufReader::new(File::open(cert_path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            format!(
+                "TLS certificate file not found: '{cert_path}'
 
 Please ensure the certificate file exists at the specified path.
 For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/fullchain.pem'."
-                    )
-                }
-                std::io::ErrorKind::PermissionDenied => {
-                    format!(
-                        "Permission denied reading TLS certificate file: '{cert_path}'
+            )
+        }
+        std::io::ErrorKind::PermissionDenied => {
+            format!(
+                "Permission denied reading TLS certificate file: '{cert_path}'
 
 Please ensure the file is readable by the current user.
 You may need to run as root or adjust file permissions."
-                    )
-                }
-                _ => format!("Failed to open TLS certificate file '{cert_path}': {e}")
-            }
-        })?
-    );
-    let key_file = &mut BufReader::new(
-        File::open(key_path).map_err(|e| {
-            match e.kind() {
-                std::io::ErrorKind::NotFound => {
-                    format!(
-                        "TLS private key file not found: '{key_path}'
+            )
+        }
+        _ => format!("Failed to open TLS certificate file '{cert_path}': {e}"),
+    })?);
+    let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => {
+            format!(
+                "TLS private key file not found: '{key_path}'
 
 Please ensure the private key file exists at the specified path.
 For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/privkey.pem'."
-                    )
-                }
-                std::io::ErrorKind::PermissionDenied => {
-                    format!(
-                        "Permission denied reading TLS private key file: '{key_path}'
+            )
+        }
+        std::io::ErrorKind::PermissionDenied => {
+            format!(
+                "Permission denied reading TLS private key file: '{key_path}'
 
 Please ensure the file is readable by the current user.
 You may need to run as root or adjust file permissions.
 Note: Private key files should be protected (mode 600)."
-                    )
-                }
-                _ => format!("Failed to open TLS private key file '{key_path}': {e}")
-            }
-        })?
-    );
+            )
+        }
+        _ => format!("Failed to open TLS private key file '{key_path}': {e}"),
+    })?);
 
-    let certs = certs(cert_file).map_err(|e| {
-        format!(
-            "Failed to parse TLS certificate file '{cert_path}': {e}
+    let certs = certs(cert_file)
+        .map_err(|e| {
+            format!(
+                "Failed to parse TLS certificate file '{cert_path}': {e}
 
 Please ensure the certificate file is in valid PEM format.
 The file should contain one or more certificates starting with '-----BEGIN CERTIFICATE-----'."
-        )
-    })?
+            )
+        })?
         .into_iter()
         .map(rustls::Certificate)
         .collect();
@@ -539,14 +532,15 @@ If your key is in a different format, you may need to convert it:
 - For EC keys: openssl ec -in old_key.pem -out new_key.pem"
         )
     })?;
-    
+
     if keys.is_empty() {
         return Err(format!(
             "No valid private key found in TLS key file '{key_path}'
 
 Please ensure the file contains a valid PKCS#8 private key.
 The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
-        ).into());
+        )
+        .into());
     }
 
     let key = rustls::PrivateKey(keys.remove(0));
@@ -604,21 +598,22 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                     Ok(std_listener) => {
                         // Convert std::net::TcpListener to tokio::net::TcpListener
                         match std_listener.set_nonblocking(true) {
-                            Ok(()) => {
-                                match TcpListener::from_std(std_listener) {
-                                    Ok(listener) => {
-                                        info!("using systemd socket: {addr_config}");
-                                        Ok(listener)
-                                    }
-                                    Err(e) => Err(format!("failed to convert socket to tokio: {e}").into())
+                            Ok(()) => match TcpListener::from_std(std_listener) {
+                                Ok(listener) => {
+                                    info!("using systemd socket: {addr_config}");
+                                    Ok(listener)
                                 }
+                                Err(e) => {
+                                    Err(format!("failed to convert socket to tokio: {e}").into())
+                                }
+                            },
+                            Err(e) => {
+                                Err(format!("failed to set socket to non-blocking: {e}").into())
                             }
-                            Err(e) => Err(format!("failed to set socket to non-blocking: {e}").into())
                         }
                     }
-                    Err(e) => {
-                        Err(format!(
-                            "Failed to bind to address '{addr_config}': {e}
+                    Err(e) => Err(format!(
+                        "Failed to bind to address '{addr_config}': {e}
 
 This error typically occurs when:
 - Another process is already using this port (try: lsof -i :<port> or netstat -tlnp | grep :<port>)
@@ -628,11 +623,11 @@ This error typically occurs when:
 - For systemd socket activation, the socket is not available
 
 You can use 'systemd://socket_name' format for systemd socket activation."
-                        ).into())
-                    }
+                    )
+                    .into()),
                 }
             }
-            Err(e) => Err(format!("Invalid systemd socket address '{addr_config}': {e}").into())
+            Err(e) => Err(format!("Invalid systemd socket address '{addr_config}': {e}").into()),
         }
     } else {
         // For regular addresses, use our own parsing logic
@@ -650,15 +645,15 @@ This error typically occurs when:
 - The address format is incorrect (should be 'host:port', ':port', or just 'port')
 
 You can use 'systemd://socket_name' format for systemd socket activation.",
-                addr_config, e,
+                addr_config,
+                e,
                 addr.split(':').next_back().unwrap_or("119"),
                 addr.split(':').next_back().unwrap_or("119")
-            ).into())
+            )
+            .into()),
         }
     }
 }
-
-
 
 /// Handle an incoming client connection
 async fn handle_connection<S>(

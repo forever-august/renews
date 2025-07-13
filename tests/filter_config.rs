@@ -155,7 +155,10 @@ max_size = 1048576
     // Default parameters should be empty when not specified
     assert!(config.filters[0].parameters.is_empty());
     assert_eq!(config.filters[1].name, "SizeFilter");
-    assert_eq!(config.filters[1].parameters.get("max_size").unwrap(), &json!(1048576));
+    assert_eq!(
+        config.filters[1].parameters.get("max_size").unwrap(),
+        &json!(1048576)
+    );
 }
 
 #[tokio::test]

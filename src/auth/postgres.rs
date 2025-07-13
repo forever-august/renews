@@ -51,7 +51,7 @@ Required connection components:
                 uri, e
             )
         })?;
-        
+
         let pool = PgPoolOptions::new()
             .max_connections(5)
             .connect_with(opts)
@@ -80,14 +80,20 @@ Please verify:
 
         // Set up migrator to check database state
         let migrator = super::migrations::postgres::PostgresAuthMigrator::new(pool.clone());
-        
+
         if migrator.is_fresh_database().await {
             // Fresh database: initialize with current schema
-            tracing::info!("Initializing fresh PostgreSQL authentication database at '{}'", uri);
-            
+            tracing::info!(
+                "Initializing fresh PostgreSQL authentication database at '{}'",
+                uri
+            );
+
             // Create authentication schema
             sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create users table in PostgreSQL authentication database '{}': {}", uri, e)
+                format!(
+                    "Failed to create users table in PostgreSQL authentication database '{}': {}",
+                    uri, e
+                )
             })?;
             sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
                 format!("Failed to create admins table in PostgreSQL authentication database '{}': {}", uri, e)
@@ -98,15 +104,25 @@ Please verify:
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!("Failed to set initial schema version for PostgreSQL auth database '{}': {}", uri, e)
+                format!(
+                    "Failed to set initial schema version for PostgreSQL auth database '{}': {}",
+                    uri, e
+                )
             })?;
-            
-            tracing::info!("Successfully initialized PostgreSQL authentication database at version 1");
+
+            tracing::info!(
+                "Successfully initialized PostgreSQL authentication database at version 1"
+            );
         } else {
             // Existing database: apply any pending migrations
-            tracing::info!("Found existing PostgreSQL authentication database, checking for migrations");
+            tracing::info!(
+                "Found existing PostgreSQL authentication database, checking for migrations"
+            );
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!("Failed to run auth migrations for PostgreSQL database '{}': {}", uri, e)
+                format!(
+                    "Failed to run auth migrations for PostgreSQL database '{}': {}",
+                    uri, e
+                )
             })?;
         }
 

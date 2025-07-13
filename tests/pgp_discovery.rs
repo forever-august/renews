@@ -92,7 +92,10 @@ async fn test_canonical_text_generation() {
         headers: smallvec![
             ("From".to_string(), "test@example.com".to_string()),
             ("Subject".to_string(), "Test Subject".to_string()),
-            ("Date".to_string(), "Mon, 1 Jan 2024 12:00:00 +0000".to_string()),
+            (
+                "Date".to_string(),
+                "Mon, 1 Jan 2024 12:00:00 +0000".to_string()
+            ),
         ],
         body: "Test message body".to_string(),
     };

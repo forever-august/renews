@@ -7,9 +7,12 @@
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, TryStreamExt};
 use rustls_native_certs::load_native_certs;
-use sqlx::{Row, SqlitePool, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
-use std::{error::Error, str::FromStr};
+use sqlx::{
+    Row, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqlitePoolOptions},
+};
 use std::sync::Arc;
+use std::{error::Error, str::FromStr};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -270,9 +273,8 @@ impl PeerDb {
     ///
     /// Returns an error if the database connection fails or schema creation fails.
     pub async fn new(path: &str) -> PeerResult<Self> {
-        let options = SqliteConnectOptions::from_str(path)?
-            .create_if_missing(true);
-        
+        let options = SqliteConnectOptions::from_str(path)?.create_if_missing(true);
+
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
             .connect_with(options)
@@ -537,12 +539,13 @@ async fn process_group_articles(
     // Use batch fetching for better performance
     use futures_util::StreamExt;
     let mut article_stream = storage.get_articles_by_ids(&article_ids);
-    
+
     while let Some(result) = article_stream.next().await {
         match result {
             Ok((article_id, original_article)) => {
                 found_ids.insert(article_id.clone());
-                match process_fetched_article(peer, site_name, &article_id, &original_article).await {
+                match process_fetched_article(peer, site_name, &article_id, &original_article).await
+                {
                     Ok(ArticleProcessResult::Sent) => sent_count += 1,
                     Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
                     Err(e) => {
@@ -558,11 +561,7 @@ async fn process_group_articles(
             }
             Err(e) => {
                 error_count += 1;
-                tracing::warn!(
-                    "Failed to fetch article for peer {}: {}",
-                    peer.sitename,
-                    e
-                );
+                tracing::warn!("Failed to fetch article for peer {}: {}", peer.sitename, e);
             }
         }
     }

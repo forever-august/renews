@@ -188,20 +188,36 @@ group = "comp.lang.rust"
 retention_days = 90
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
-    
+
     // Test that comp.misc gets only the broad pattern settings
     assert_eq!(cfg.retention_for_group("comp.misc").unwrap().num_days(), 30);
     assert_eq!(cfg.max_size_for_group("comp.misc"), None);
-    
+
     // Test that comp.lang.python gets the more specific pattern settings for both
     // retention (from comp.*) and size (from comp.lang.*)
-    assert_eq!(cfg.retention_for_group("comp.lang.python").unwrap().num_days(), 30);
-    assert_eq!(cfg.max_size_for_group("comp.lang.python"), Some(5 * 1024 * 1024));
-    
+    assert_eq!(
+        cfg.retention_for_group("comp.lang.python")
+            .unwrap()
+            .num_days(),
+        30
+    );
+    assert_eq!(
+        cfg.max_size_for_group("comp.lang.python"),
+        Some(5 * 1024 * 1024)
+    );
+
     // Test that comp.lang.rust gets the most specific exact match for retention
     // and inherits size from comp.lang.* pattern
-    assert_eq!(cfg.retention_for_group("comp.lang.rust").unwrap().num_days(), 90);
-    assert_eq!(cfg.max_size_for_group("comp.lang.rust"), Some(5 * 1024 * 1024));
+    assert_eq!(
+        cfg.retention_for_group("comp.lang.rust")
+            .unwrap()
+            .num_days(),
+        90
+    );
+    assert_eq!(
+        cfg.max_size_for_group("comp.lang.rust"),
+        Some(5 * 1024 * 1024)
+    );
 }
 
 #[test]
@@ -226,7 +242,7 @@ runtime_threads = 0
 "#;
     let cfg: Config = toml::from_str(toml).unwrap();
     assert_eq!(cfg.runtime_threads, 0);
-    
+
     // Test that get_runtime_threads returns the number of cores
     let actual_threads = cfg.get_runtime_threads().unwrap();
     assert!(actual_threads > 0);

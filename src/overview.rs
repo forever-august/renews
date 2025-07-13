@@ -4,14 +4,14 @@
 //! as specified in RFC2980 and RFC3977.
 
 use crate::Message;
-use crate::handlers::utils::{get_header_value, extract_message_id};
+use crate::handlers::utils::{extract_message_id, get_header_value};
 
 /// Standard overview format fields as defined in RFC2980.
 /// This determines the order and content of fields returned by OVER/XOVER commands
 /// and the LIST OVERVIEW.FMT command.
 pub const OVERVIEW_FORMAT: &[&str] = &[
     "Subject:",
-    "From:", 
+    "From:",
     "Date:",
     "Message-ID:",
     "References:",
@@ -31,7 +31,7 @@ pub async fn generate_overview_line(
     let date = get_header_value(article, "Date").unwrap_or_default();
     let msgid = get_header_value(article, "Message-ID").unwrap_or_default();
     let refs = get_header_value(article, "References").unwrap_or_default();
-    
+
     let bytes = if let Some(id) = extract_message_id(article) {
         storage
             .get_message_size(&id)
@@ -40,9 +40,9 @@ pub async fn generate_overview_line(
     } else {
         article.body.len() as u64
     };
-    
+
     let lines = article.body.lines().count();
-    
+
     Ok(format!(
         "{article_number}\t{subject}\t{from}\t{date}\t{msgid}\t{refs}\t{bytes}\t{lines}"
     ))
@@ -50,5 +50,8 @@ pub async fn generate_overview_line(
 
 /// Get the overview format fields for LIST OVERVIEW.FMT command.
 pub fn get_overview_format_lines() -> Vec<String> {
-    OVERVIEW_FORMAT.iter().map(|&s| format!("{s}\r\n")).collect()
+    OVERVIEW_FORMAT
+        .iter()
+        .map(|&s| format!("{s}\r\n"))
+        .collect()
 }

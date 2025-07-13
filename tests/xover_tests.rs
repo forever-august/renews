@@ -1,16 +1,16 @@
 //! Tests for XOVER command implementation
 
-use renews::{Message, parse_command};
-use renews::storage::{open};
-use renews::handlers::{HandlerContext, dispatch_command};
-use renews::auth::sqlite::SqliteAuth;
-use renews::queue::ArticleQueue;
 use renews::ConnectionState;
-use tokio::io::{self, AsyncWrite};
-use std::sync::Arc;
-use tokio::sync::RwLock;
+use renews::auth::sqlite::SqliteAuth;
+use renews::handlers::{HandlerContext, dispatch_command};
+use renews::queue::ArticleQueue;
+use renews::storage::open;
+use renews::{Message, parse_command};
 use smallvec::smallvec;
+use std::sync::Arc;
 use tempfile::NamedTempFile;
+use tokio::io::{self, AsyncWrite};
+use tokio::sync::RwLock;
 
 // Helper to create a test article
 fn create_test_article(subject: &str, from: &str, message_id: &str, group: &str) -> Message {
@@ -18,7 +18,10 @@ fn create_test_article(subject: &str, from: &str, message_id: &str, group: &str)
         headers: smallvec![
             ("Subject".to_string(), subject.to_string()),
             ("From".to_string(), from.to_string()),
-            ("Date".to_string(), "Mon, 1 Jan 2024 12:00:00 +0000".to_string()),
+            (
+                "Date".to_string(),
+                "Mon, 1 Jan 2024 12:00:00 +0000".to_string()
+            ),
             ("Message-ID".to_string(), message_id.to_string()),
             ("Newsgroups".to_string(), group.to_string()),
         ],
@@ -72,35 +75,35 @@ async fn test_xover_command_basic() {
     let db_file = NamedTempFile::new().unwrap();
     let db_path = format!("sqlite://{}", db_file.path().display());
     let storage = open(&db_path).await.unwrap();
-    
+
     // Add test group
     storage.add_group("test.group", false).await.unwrap();
-    
+
     // Store test articles
     let article1 = create_test_article(
         "Test Subject 1",
         "user1@example.com",
-        "<msg1@example.com>", 
-        "test.group"
+        "<msg1@example.com>",
+        "test.group",
     );
     let article2 = create_test_article(
-        "Test Subject 2", 
+        "Test Subject 2",
         "user2@example.com",
         "<msg2@example.com>",
-        "test.group"
+        "test.group",
     );
-    
+
     storage.store_article(&article1).await.unwrap();
     storage.store_article(&article2).await.unwrap();
-    
+
     // Create test context
     let config = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
-    
+
     let reader = io::empty();
     let writer = MockWriter::new();
-    
+
     let mut ctx = HandlerContext {
         reader,
         writer,
@@ -114,13 +117,13 @@ async fn test_xover_command_basic() {
         },
         queue,
     };
-    
+
     // Test XOVER command with range
     let (_, cmd) = parse_command("XOVER 1-2").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
-    
+
     let output = ctx.writer.output();
-    
+
     // Verify output contains overview response
     assert!(output.contains("224 Overview information follows"));
     assert!(output.contains("Test Subject 1"));
@@ -138,15 +141,15 @@ async fn test_xover_without_group() {
     let db_file = NamedTempFile::new().unwrap();
     let db_path = format!("sqlite://{}", db_file.path().display());
     let storage = open(&db_path).await.unwrap();
-    
+
     // Create test context without current group
     let config = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
-    
+
     let reader = io::empty();
     let writer = MockWriter::new();
-    
+
     let mut ctx = HandlerContext {
         reader,
         writer,
@@ -156,13 +159,13 @@ async fn test_xover_without_group() {
         state: ConnectionState::default(),
         queue,
     };
-    
+
     // Test XOVER command without current group
     let (_, cmd) = parse_command("XOVER 1-2").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
-    
+
     let output = ctx.writer.output();
-    
+
     // Should get appropriate error response
     assert!(output.contains("412") || output.contains("500") || output.contains("501"));
 }
@@ -173,27 +176,27 @@ async fn test_xover_single_article() {
     let db_file = NamedTempFile::new().unwrap();
     let db_path = format!("sqlite://{}", db_file.path().display());
     let storage = open(&db_path).await.unwrap();
-    
+
     // Add test group
     storage.add_group("test.group", false).await.unwrap();
-    
+
     // Store test article
     let article = create_test_article(
         "Single Test",
-        "single@example.com", 
+        "single@example.com",
         "<single@example.com>",
-        "test.group"
+        "test.group",
     );
     storage.store_article(&article).await.unwrap();
-    
+
     // Create test context
     let config = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
-    
+
     let reader = io::empty();
     let writer = MockWriter::new();
-    
+
     let mut ctx = HandlerContext {
         reader,
         writer,
@@ -207,13 +210,13 @@ async fn test_xover_single_article() {
         },
         queue,
     };
-    
+
     // Test XOVER command with single article
     let (_, cmd) = parse_command("XOVER 1").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
-    
+
     let output = ctx.writer.output();
-    
+
     // Verify output
     assert!(output.contains("224 Overview information follows"));
     assert!(output.contains("Single Test"));
@@ -222,33 +225,33 @@ async fn test_xover_single_article() {
     assert!(output.ends_with(".\r\n"));
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_xover_current_article() {
     // Create temporary database
     let db_file = NamedTempFile::new().unwrap();
     let db_path = format!("sqlite://{}", db_file.path().display());
     let storage = open(&db_path).await.unwrap();
-    
+
     // Add test group
     storage.add_group("test.group", false).await.unwrap();
-    
+
     // Store test article
     let article = create_test_article(
         "Current Test",
         "current@example.com",
         "<current@example.com>",
-        "test.group"
+        "test.group",
     );
     storage.store_article(&article).await.unwrap();
-    
+
     // Create test context
     let config = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
-    
+
     let reader = io::empty();
     let writer = MockWriter::new();
-    
+
     let mut ctx = HandlerContext {
         reader,
         writer,
@@ -262,13 +265,13 @@ async fn test_xover_current_article() {
         },
         queue,
     };
-    
+
     // Test XOVER command without arguments (current article)
     let (_, cmd) = parse_command("XOVER").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
-    
+
     let output = ctx.writer.output();
-    
+
     // Verify output
     assert!(output.contains("224 Overview information follows"));
     assert!(output.contains("Current Test"));

@@ -41,11 +41,12 @@ pub fn create_filter(config: &FilterConfig) -> Result<Box<dyn ArticleFilter>, Fi
         "MilterFilter" => {
             // Extract Milter configuration from parameters
             let milter_config: super::milter::MilterConfig =
-                serde_json::from_value(serde_json::Value::Object(config.parameters.clone())).map_err(|e| {
-                    FilterFactoryError::InvalidParameters(format!(
-                        "MilterFilter configuration error: {e}"
-                    ))
-                })?;
+                serde_json::from_value(serde_json::Value::Object(config.parameters.clone()))
+                    .map_err(|e| {
+                        FilterFactoryError::InvalidParameters(format!(
+                            "MilterFilter configuration error: {e}"
+                        ))
+                    })?;
             Ok(Box::new(super::milter::MilterFilter::new(milter_config)))
         }
         _ => Err(FilterFactoryError::UnknownFilter(config.name.clone())),
@@ -124,7 +125,7 @@ mod tests {
         let mut parameters = serde_json::Map::new();
         parameters.insert("address".to_string(), json!("tcp://127.0.0.1:8888"));
         parameters.insert("timeout_secs".to_string(), json!(30));
-        
+
         let config = FilterConfig {
             name: "MilterFilter".to_string(),
             parameters,

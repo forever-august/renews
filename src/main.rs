@@ -86,15 +86,15 @@ async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
-    
+
     // Initialize systemd socket support
     if let Err(e) = systemd_socket::init() {
         eprintln!("Warning: Failed to initialize systemd socket support: {e}");
     }
-    
+
     let args = Args::parse();
     let cfg_path = args.config.clone();
-    
+
     let mut cfg_initial = match Config::from_file(&cfg_path) {
         Ok(config) => config,
         Err(e) => {
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             std::process::exit(1);
         }
     };
-    
+
     // Override config with CLI flag if provided
     if args.allow_posting_insecure_connections {
         cfg_initial.allow_posting_insecure_connections = true;
@@ -151,7 +151,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
-        
+
         Ok(())
     })
 }

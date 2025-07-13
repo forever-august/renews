@@ -116,10 +116,10 @@ async fn test_listgroup_command_nonexistent_group() {
 
     ClientMock::new()
         // LISTGROUP creates empty listing for nonexistent group
-        .expect_multi("LISTGROUP nonexistent.group", vec![
-            "211 article numbers follow",
-            "."
-        ])
+        .expect_multi(
+            "LISTGROUP nonexistent.group",
+            vec!["211 article numbers follow", "."],
+        )
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;
@@ -247,7 +247,10 @@ async fn test_ihave_command_invalid_message_id() {
 
     ClientMock::new()
         .expect("IHAVE", "501 message-id required")
-        .expect("IHAVE invalid-message-id", "335 Send it; end with <CR-LF>.<CR-LF>")
+        .expect(
+            "IHAVE invalid-message-id",
+            "335 Send it; end with <CR-LF>.<CR-LF>",
+        )
         .expect("Invalid article content\r\n.", "437 article rejected")
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)

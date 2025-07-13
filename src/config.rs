@@ -184,7 +184,7 @@ pub struct Config {
 
     #[serde(default = "default_pgp_key_servers")]
     pub pgp_key_servers: Vec<String>,
-    
+
     #[serde(default)]
     pub allow_posting_insecure_connections: bool,
 }
@@ -217,8 +217,6 @@ pub struct FilterConfig {
     pub parameters: serde_json::Map<String, serde_json::Value>,
 }
 
-
-
 impl Config {
     /// Load configuration from a TOML file.
     ///
@@ -230,9 +228,8 @@ impl Config {
             Ok(content) => content,
             Err(e) => {
                 return match e.kind() {
-                    std::io::ErrorKind::NotFound => {
-                        Err(format!(
-                            "Configuration file not found: '{path}'
+                    std::io::ErrorKind::NotFound => Err(format!(
+                        "Configuration file not found: '{path}'
 
 Please ensure the configuration file exists at the specified path.
 You can:
@@ -240,27 +237,25 @@ You can:
 - Use --config <path> to specify a different location
 - Set the RENEWS_CONFIG environment variable
 - See the example configuration at 'examples/config.toml'"
-                        ).into())
-                    }
-                    std::io::ErrorKind::PermissionDenied => {
-                        Err(format!(
-                            "Permission denied reading configuration file: '{path}'
+                    )
+                    .into()),
+                    std::io::ErrorKind::PermissionDenied => Err(format!(
+                        "Permission denied reading configuration file: '{path}'
 
 Please ensure the file is readable by the current user.
 You may need to check file permissions or run with appropriate privileges."
-                        ).into())
-                    }
-                    _ => {
-                        Err(format!(
-                            "Failed to read configuration file '{path}': {e}
+                    )
+                    .into()),
+                    _ => Err(format!(
+                        "Failed to read configuration file '{path}': {e}
 
 Please ensure the file exists and is readable."
-                        ).into())
-                    }
-                }
+                    )
+                    .into()),
+                };
             }
         };
-        
+
         let text = expand_placeholders(&text).map_err(|e| {
             format!(
                 "Failed to process configuration placeholders in '{path}': {e}
@@ -268,7 +263,7 @@ Please ensure the file exists and is readable."
 Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid."
             )
         })?;
-        
+
         let mut cfg: Config = toml::from_str(&text).map_err(|e| {
             format!(
                 "Failed to parse configuration file '{path}': {e}
@@ -304,7 +299,7 @@ See 'examples/config.toml' for a valid configuration example."
                 return None;
             }
         }
-        
+
         // Then check for pattern matches, looking for the most specific pattern that has retention_days
         let mut matches: Vec<_> = self
             .group_settings
@@ -313,11 +308,11 @@ See 'examples/config.toml' for a valid configuration example."
             .filter(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
             .filter(|r| r.retention_days.is_some())
             .collect();
-            
+
         if matches.is_empty() {
             return None;
         }
-        
+
         // Sort by pattern specificity (fewer wildcards = more specific)
         matches.sort_by_key(|r| {
             let pattern = r.pattern.as_ref().unwrap();
@@ -326,7 +321,7 @@ See 'examples/config.toml' for a valid configuration example."
             // Also consider pattern length - longer patterns with same wildcard count are more specific
             (wildcard_count, -(pattern.len() as i32))
         });
-        
+
         if let Some(rule) = matches.first() {
             if let Some(days) = rule.retention_days {
                 if days > 0 {
@@ -334,7 +329,7 @@ See 'examples/config.toml' for a valid configuration example."
                 }
             }
         }
-        
+
         None
     }
 
@@ -350,7 +345,7 @@ See 'examples/config.toml' for a valid configuration example."
                 return rule.max_article_bytes;
             }
         }
-        
+
         // Then check for pattern matches, looking for the most specific pattern that has max_article_bytes
         let mut matches: Vec<_> = self
             .group_settings
@@ -359,11 +354,11 @@ See 'examples/config.toml' for a valid configuration example."
             .filter(|r| r.pattern.as_deref().is_some_and(|p| wildmat(p, group)))
             .filter(|r| r.max_article_bytes.is_some())
             .collect();
-            
+
         if matches.is_empty() {
             return None;
         }
-        
+
         // Sort by pattern specificity (fewer wildcards = more specific)
         matches.sort_by_key(|r| {
             let pattern = r.pattern.as_ref().unwrap();
@@ -372,7 +367,7 @@ See 'examples/config.toml' for a valid configuration example."
             // Also consider pattern length - longer patterns with same wildcard count are more specific
             (wildcard_count, -(pattern.len() as i32))
         });
-        
+
         matches.first().and_then(|r| r.max_article_bytes)
     }
 

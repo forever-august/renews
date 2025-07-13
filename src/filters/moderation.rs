@@ -3,10 +3,10 @@
 //! Validates moderated group approval and PGP signatures.
 
 use super::ArticleFilter;
-use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::storage::DynStorage;
 use smallvec::SmallVec;
 use std::error::Error;

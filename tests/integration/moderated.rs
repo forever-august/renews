@@ -172,7 +172,7 @@ async fn cross_post_different_moderators() {
         mod_one_nums.push(result.unwrap());
     }
     assert_eq!(mod_one_nums, vec![1]);
-    
+
     let mut mod_two_nums = Vec::new();
     let mut stream = storage.list_article_numbers("mod.two");
     while let Some(result) = stream.next().await {

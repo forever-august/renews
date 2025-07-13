@@ -260,7 +260,8 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
                     num,
                     id,
                     operation.response_suffix()
-                ).unwrap();
+                )
+                .unwrap();
                 let len = cursor.position() as usize;
                 writer.write_all(&buf[..len]).await?;
 
@@ -412,7 +413,15 @@ pub async fn comprehensive_validate_article(
     article: &crate::Message,
     size: u64,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    validate_article_with_filters(storage, auth, cfg, article, size, &crate::filters::FilterChain::default()).await
+    validate_article_with_filters(
+        storage,
+        auth,
+        cfg,
+        article,
+        size,
+        &crate::filters::FilterChain::default(),
+    )
+    .await
 }
 
 /// Validate an article using a custom filter chain.

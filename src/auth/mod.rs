@@ -114,7 +114,8 @@ The renews server was compiled without PostgreSQL support.
 To use PostgreSQL:
 1. Rebuild with: cargo build --features postgres
 2. Or use SQLite instead by changing 'auth_db_path' to a sqlite:// URI in your configuration"
-            ).into())
+            )
+            .into())
         }
     } else {
         Err(format!(

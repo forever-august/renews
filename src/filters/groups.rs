@@ -3,10 +3,10 @@
 //! Validates that all newsgroups in an article exist in the server.
 
 use super::ArticleFilter;
-use crate::handlers::utils::extract_newsgroups;
 use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::handlers::utils::extract_newsgroups;
 use crate::storage::DynStorage;
 use futures_util::TryStreamExt;
 use std::error::Error;
