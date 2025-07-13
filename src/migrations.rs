@@ -185,7 +185,6 @@ mod tests {
     // Mock migrator for testing
     struct MockMigrator {
         current_version: Arc<AtomicU32>,
-        migrations: Vec<Box<dyn Migration>>,
         can_read_version: Arc<AtomicBool>,
     }
 
@@ -193,18 +192,12 @@ mod tests {
         fn new(initial_version: u32) -> Self {
             Self {
                 current_version: Arc::new(AtomicU32::new(initial_version)),
-                migrations: Vec::new(),
                 can_read_version: Arc::new(AtomicBool::new(true)),
             }
         }
 
         fn with_fresh_database(self) -> Self {
             self.can_read_version.store(false, Ordering::SeqCst);
-            self
-        }
-
-        fn add_migration(mut self, migration: Box<dyn Migration>) -> Self {
-            self.migrations.push(migration);
             self
         }
     }
