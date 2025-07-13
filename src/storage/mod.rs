@@ -139,7 +139,7 @@ You can change the database path in your configuration file using the 'db_path' 
                 .map(|s| Arc::new(s) as DynStorage)
                 .map_err(|e| {
                     format!(
-                        "Failed to connect to PostgreSQL database '{}': {}
+                        "Failed to connect to PostgreSQL database '{uri}': {e}
 
 Common PostgreSQL connection issues:
 - PostgreSQL server is not running
@@ -153,8 +153,7 @@ Common PostgreSQL connection issues:
 For PostgreSQL URIs, use format:
 postgres://username:password@host:port/database
 
-You can change the database URI in your configuration file using the 'db_path' setting.",
-                        uri, e
+You can change the database URI in your configuration file using the 'db_path' setting."
                     ).into()
                 })
         }

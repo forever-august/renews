@@ -86,7 +86,7 @@ You can change the authentication database path in your configuration file using
                 .map(|a| Arc::new(a) as DynAuth)
                 .map_err(|e| {
                     format!(
-                        "Failed to connect to PostgreSQL authentication database '{}': {}
+                        "Failed to connect to PostgreSQL authentication database '{uri}': {e}
 
 Common PostgreSQL connection issues:
 - PostgreSQL server is not running
@@ -100,8 +100,7 @@ Common PostgreSQL connection issues:
 For PostgreSQL URIs, use format:
 postgres://username:password@host:port/database
 
-You can change the authentication database URI in your configuration file using the 'auth_db_path' setting.",
-                        uri, e
+You can change the authentication database URI in your configuration file using the 'auth_db_path' setting."
                     ).into()
                 })
         }

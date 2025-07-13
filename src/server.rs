@@ -618,7 +618,7 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                     }
                     Err(e) => {
                         Err(format!(
-                            "Failed to bind to address '{}': {}
+                            "Failed to bind to address '{addr_config}': {e}
 
 This error typically occurs when:
 - Another process is already using this port (try: lsof -i :<port> or netstat -tlnp | grep :<port>)
@@ -627,13 +627,12 @@ This error typically occurs when:
 - The address format is incorrect (should be 'host:port', ':port', or just 'port')
 - For systemd socket activation, the socket is not available
 
-You can use 'systemd://socket_name' format for systemd socket activation.",
-                            addr_config, e
+You can use 'systemd://socket_name' format for systemd socket activation."
                         ).into())
                     }
                 }
             }
-            Err(e) => Err(format!("Invalid systemd socket address '{}': {}", addr_config, e).into())
+            Err(e) => Err(format!("Invalid systemd socket address '{addr_config}': {e}").into())
         }
     } else {
         // For regular addresses, use our own parsing logic
@@ -652,8 +651,8 @@ This error typically occurs when:
 
 You can use 'systemd://socket_name' format for systemd socket activation.",
                 addr_config, e,
-                addr.split(':').last().unwrap_or("119"),
-                addr.split(':').last().unwrap_or("119")
+                addr.split(':').next_back().unwrap_or("119"),
+                addr.split(':').next_back().unwrap_or("119")
             ).into())
         }
     }
