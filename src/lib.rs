@@ -9,6 +9,7 @@ pub mod config;
 pub mod control;
 pub mod filters;
 pub mod handlers;
+mod migrations;
 pub mod overview;
 pub mod peers;
 pub mod queue;
