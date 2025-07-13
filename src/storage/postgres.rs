@@ -2,6 +2,7 @@ use super::{
     Message, Storage, StringStream, StringTimestampStream, U64Stream,
     common::{Headers, extract_message_id},
 };
+use crate::migrations::Migrator;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -109,6 +110,12 @@ Please verify:
         })?;
         sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
             format!("Failed to create overview table in PostgreSQL database '{}': {}", uri, e)
+        })?;
+
+        // Set up and run migrations
+        let migrator = crate::migrations::storage::PostgresStorageMigrator::new(pool.clone());
+        migrator.migrate_to_latest().await.map_err(|e| {
+            format!("Failed to run storage migrations for PostgreSQL database '{}': {}", uri, e)
         })?;
 
         Ok(Self { pool })

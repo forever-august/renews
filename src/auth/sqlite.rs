@@ -1,4 +1,5 @@
 use super::{AuthProvider, Error, async_trait};
+use crate::migrations::Migrator;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::{Row, SqlitePool, sqlite::{SqliteConnectOptions, SqlitePoolOptions}};
@@ -74,6 +75,12 @@ Possible causes:
         })?;
         sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
             format!("Failed to create moderators table in SQLite authentication database '{}': {}", path, e)
+        })?;
+
+        // Set up and run migrations
+        let migrator = crate::migrations::auth::SqliteAuthMigrator::new(pool.clone());
+        migrator.migrate_to_latest().await.map_err(|e| {
+            format!("Failed to run auth migrations for SQLite database '{}': {}", path, e)
         })?;
 
         Ok(Self { pool })

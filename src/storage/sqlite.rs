@@ -2,6 +2,7 @@ use super::{
     Message, Storage, StringStream, StringTimestampStream, U64Stream,
     common::{Headers, extract_message_id},
 };
+use crate::migrations::Migrator;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -99,6 +100,12 @@ Possible causes:
         })?;
         sqlx::query(OVERVIEW_TABLE).execute(&pool).await.map_err(|e| {
             format!("Failed to create overview table in SQLite database '{}': {}", path, e)
+        })?;
+
+        // Set up and run migrations
+        let migrator = crate::migrations::storage::SqliteStorageMigrator::new(pool.clone());
+        migrator.migrate_to_latest().await.map_err(|e| {
+            format!("Failed to run storage migrations for SQLite database '{}': {}", path, e)
         })?;
 
         Ok(Self { pool })
