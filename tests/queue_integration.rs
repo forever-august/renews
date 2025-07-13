@@ -38,6 +38,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         ws_addr: None,
         article_queue_capacity: 100,
         article_worker_count: 2,
+        runtime_threads: 1,
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),

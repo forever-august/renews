@@ -34,6 +34,10 @@ fn default_article_worker_count() -> usize {
     4
 }
 
+fn default_runtime_threads() -> usize {
+    1
+}
+
 fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
@@ -171,6 +175,8 @@ pub struct Config {
     pub article_queue_capacity: usize,
     #[serde(default = "default_article_worker_count")]
     pub article_worker_count: usize,
+    #[serde(default = "default_runtime_threads")]
+    pub runtime_threads: usize,
     #[serde(default, alias = "group")]
     pub group_settings: Vec<GroupRule>,
     #[serde(default, alias = "filter")]
@@ -375,6 +381,21 @@ See 'examples/config.toml' for a valid configuration example.",
         matches.first().and_then(|r| r.max_article_bytes)
     }
 
+    /// Get the actual number of runtime threads, handling the special case where 0 means "use all cores".
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the number of available cores cannot be determined when runtime_threads is 0.
+    pub fn get_runtime_threads(&self) -> Result<usize, Box<dyn Error + Send + Sync>> {
+        if self.runtime_threads == 0 {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .map_err(|e| format!("Failed to determine number of CPU cores: {}", e).into())
+        } else {
+            Ok(self.runtime_threads)
+        }
+    }
+
     /// Update runtime-adjustable values from a new configuration.
     /// Only retention, group, filter pipeline, and TLS settings are changed.
     pub fn update_runtime(&mut self, other: Config) {
@@ -387,6 +408,7 @@ See 'examples/config.toml' for a valid configuration example.",
         self.tls_cert = other.tls_cert;
         self.tls_key = other.tls_key;
         self.ws_addr = other.ws_addr;
+        self.runtime_threads = other.runtime_threads;
         self.pgp_key_servers = other.pgp_key_servers;
         self.allow_posting_insecure_connections = other.allow_posting_insecure_connections;
     }
