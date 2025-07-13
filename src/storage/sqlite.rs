@@ -1,5 +1,5 @@
 use super::{
-    Message, Storage, StringStream, StringTimestampStream, U64Stream,
+    Message, Storage, StringStream, StringTimestampStream, U64Stream, ArticleStream,
     common::{Headers, extract_message_id},
 };
 use crate::migrations::Migrator;
@@ -219,8 +219,7 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }
@@ -238,11 +237,55 @@ impl Storage for SqliteStorage {
         {
             let headers_str: String = row.try_get("headers")?;
             let body: String = row.try_get("body")?;
-            let Headers(headers) = serde_json::from_str(&headers_str)?;
-            Ok(Some(Message { headers, body }))
+            Ok(Some(crate::storage::common::reconstruct_message_from_row(&headers_str, &body)?))
         } else {
             Ok(None)
         }
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn get_articles_by_ids<'a>(&'a self, message_ids: &'a [String]) -> ArticleStream<'a> {
+        let pool = self.pool.clone();
+        
+        Box::pin(stream! {
+            if message_ids.is_empty() {
+                return;
+            }
+            
+            // Build a parameterized query with the right number of placeholders
+            let placeholders = message_ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+            let query = format!("SELECT message_id, headers, body FROM messages WHERE message_id IN ({placeholders})");
+            
+            let mut query_builder = sqlx::query(&query);
+            for message_id in message_ids {
+                query_builder = query_builder.bind(message_id);
+            }
+            
+            let mut rows = query_builder.fetch(&pool);
+            
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => {
+                        match (
+                            r.try_get::<String, _>("message_id"),
+                            r.try_get::<String, _>("headers"),
+                            r.try_get::<String, _>("body")
+                        ) {
+                            (Ok(message_id), Ok(headers_str), Ok(body)) => {
+                                match crate::storage::common::reconstruct_message_from_row(&headers_str, &body) {
+                                    Ok(message) => yield Ok((message_id, message)),
+                                    Err(e) => yield Err(e),
+                                }
+                            },
+                            (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
+                                yield Err(Box::new(e) as Box<dyn Error + Send + Sync>)
+                            }
+                        }
+                    },
+                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]

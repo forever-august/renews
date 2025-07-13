@@ -9,6 +9,7 @@ use std::sync::Arc;
 type StringStream<'a> = Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
 type U64Stream<'a> = Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
 type StringTimestampStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
+type ArticleStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, Message), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -27,6 +28,10 @@ pub trait Storage: Send + Sync {
         &self,
         message_id: &str,
     ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+
+    /// Retrieve multiple articles by their Message-ID headers in a single batch operation
+    /// Returns a stream of (message_id, article) pairs for found articles only
+    fn get_articles_by_ids<'a>(&'a self, message_ids: &'a [String]) -> ArticleStream<'a>;
 
     /// Retrieve overview information for a range of article numbers in a group
     async fn get_overview_range(

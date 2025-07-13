@@ -34,7 +34,7 @@ pub async fn generate_overview_line(
     
     let bytes = if let Some(id) = extract_message_id(article) {
         storage
-            .get_message_size(id)
+            .get_message_size(&id)
             .await?
             .unwrap_or(article.body.len() as u64)
     } else {

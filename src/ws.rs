@@ -63,8 +63,8 @@ This error typically occurs when:
 You can change the WebSocket listen address in your configuration file using the 'ws_addr' setting
 or disable the WebSocket bridge by removing the 'ws_addr' configuration.",
             addr, e,
-            addr.split(':').last().unwrap_or("8080"),
-            addr.split(':').last().unwrap_or("8080")
+            addr.split(':').next_back().unwrap_or("8080"),
+            addr.split(':').next_back().unwrap_or("8080")
         )
     })?;
     let nntp_addr = format!("127.0.0.1:{nntp_port}");

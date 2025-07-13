@@ -2,9 +2,48 @@
 
 use crate::storage::DynStorage;
 use crate::{ConnectionState, Message};
+use smallvec::SmallVec;
 use std::error::Error;
 use std::fmt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
+
+/// Extract newsgroups from message headers.
+/// Returns a collection of newsgroup names parsed from the Newsgroups header.
+pub fn extract_newsgroups(article: &Message) -> SmallVec<[String; 4]> {
+    crate::storage::common::parse_newsgroups_from_message(article)
+}
+
+/// Check if message has required header (case-insensitive).
+pub fn has_header(article: &Message, header_name: &str) -> bool {
+    article
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case(header_name))
+}
+
+/// Get header value from an article (case-insensitive).
+/// Returns the first matching header value.
+pub fn get_header_value(msg: &Message, name: &str) -> Option<String> {
+    msg.headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.clone())
+}
+
+/// Get all header values for a given header name (case-insensitive).
+pub fn get_header_values(article: &Message, header_name: &str) -> SmallVec<[String; 2]> {
+    article
+        .headers
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case(header_name))
+        .map(|(_, v)| v.clone())
+        .collect()
+}
+
+/// Extract Message-ID from an article.
+pub fn extract_message_id(article: &Message) -> Option<String> {
+    get_header_value(article, "Message-ID")
+}
 
 /// Errors that can occur when querying for articles.
 #[derive(Debug, Clone)]
@@ -53,9 +92,10 @@ pub async fn send_headers<W: AsyncWrite + Unpin>(
     article: &Message,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     for (name, val) in &article.headers {
-        writer
-            .write_all(format!("{name}: {val}\r\n").as_bytes())
-            .await?;
+        writer.write_all(name.as_bytes()).await?;
+        writer.write_all(b": ").await?;
+        writer.write_all(val.as_bytes()).await?;
+        writer.write_all(b"\r\n").await?;
     }
     Ok(())
 }
@@ -75,30 +115,13 @@ pub async fn send_body<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-/// Extract Message-ID from an article.
-pub fn extract_message_id(article: &Message) -> Option<&str> {
-    article
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
-        .map(|(_, v)| v.as_str())
-}
-
-/// Get header value from an article.
-pub fn get_header_value(msg: &Message, name: &str) -> Option<String> {
-    msg.headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(name))
-        .map(|(_, v)| v.clone())
-}
-
 /// Get metadata value for an article.
 pub async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> Option<String> {
     match name {
         ":bytes" => {
             if let Some(id) = extract_message_id(msg) {
                 storage
-                    .get_message_size(id)
+                    .get_message_size(&id)
                     .await
                     .ok()
                     .flatten()
@@ -225,15 +248,21 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
     match resolve_articles(storage, state, args.first().map(String::as_str)).await {
         Ok(articles) => {
             for (num, article) in articles {
-                let id = extract_message_id(&article).unwrap_or("");
-                let response = format!(
+                let id = extract_message_id(&article).unwrap_or_default();
+                // Use efficient response building instead of format!
+                use std::io::Write;
+                let mut buf = [0u8; 256];
+                let mut cursor = std::io::Cursor::new(&mut buf[..]);
+                write!(
+                    &mut cursor,
                     "{} {} {} {}\r\n",
                     operation.response_code(),
                     num,
                     id,
                     operation.response_suffix()
-                );
-                write_simple(writer, &response).await?;
+                ).unwrap();
+                let len = cursor.position() as usize;
+                writer.write_all(&buf[..len]).await?;
 
                 match operation {
                     ArticleOperation::Full => {
@@ -299,11 +328,17 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     writer.write_all(response.as_bytes()).await?;
     for (n, val) in values {
+        // Use efficient direct writing instead of format!
+        use std::io::Write;
+        let mut buf = [0u8; 64];
+        let mut cursor = std::io::Cursor::new(&mut buf[..]);
         if let Some(v) = val {
-            writer.write_all(format!("{n} {v}\r\n").as_bytes()).await?;
+            write!(&mut cursor, "{n} {v}\r\n").unwrap();
         } else {
-            writer.write_all(format!("{n}\r\n").as_bytes()).await?;
+            write!(&mut cursor, "{n}\r\n").unwrap();
         }
+        let len = cursor.position() as usize;
+        writer.write_all(&buf[..len]).await?;
     }
     use crate::responses::RESP_DOT_CRLF;
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -357,26 +392,9 @@ pub async fn basic_validate_article(
     _size: u64,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Check required headers
-    let has_from = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("From"));
-    let has_subject = article
-        .headers
-        .iter()
-        .any(|(k, _)| k.eq_ignore_ascii_case("Subject"));
-    let newsgroups: Vec<String> = article
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-        .map(|(_, v)| {
-            v.split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(std::string::ToString::to_string)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let has_from = has_header(article, "From");
+    let has_subject = has_header(article, "Subject");
+    let newsgroups = extract_newsgroups(article);
 
     if !has_from || !has_subject || newsgroups.is_empty() {
         return Err("missing required headers".into());
@@ -394,11 +412,7 @@ pub async fn comprehensive_validate_article(
     article: &crate::Message,
     size: u64,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // Use the default filter chain for validation
-    let filter_chain = crate::filters::FilterChain::default();
-    filter_chain
-        .validate(storage, auth, cfg, article, size)
-        .await
+    validate_article_with_filters(storage, auth, cfg, article, size, &crate::filters::FilterChain::default()).await
 }
 
 /// Validate an article using a custom filter chain.
@@ -414,4 +428,38 @@ pub async fn validate_article_with_filters(
     filter_chain
         .validate(storage, auth, cfg, article, size)
         .await
+}
+
+/// Write a formatted response line efficiently, avoiding format! allocations where possible
+pub async fn write_response_with_args<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    prefix: &str,
+    args: &[&str],
+    suffix: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    writer.write_all(prefix.as_bytes()).await?;
+    for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+            writer.write_all(b" ").await?;
+        }
+        writer.write_all(arg.as_bytes()).await?;
+    }
+    writer.write_all(suffix.as_bytes()).await?;
+    Ok(())
+}
+
+/// Write a simple numerical response efficiently
+pub async fn write_numerical_response<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    code: u16,
+    number: u64,
+    suffix: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    use std::io::Write;
+    let mut buf = [0u8; 64];
+    let mut cursor = std::io::Cursor::new(&mut buf[..]);
+    write!(&mut cursor, "{code} {number}{suffix}").unwrap();
+    let len = cursor.position() as usize;
+    writer.write_all(&buf[..len]).await?;
+    Ok(())
 }

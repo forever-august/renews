@@ -35,7 +35,7 @@ impl PostgresAuth {
     pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
         let opts = PgConnectOptions::from_str(uri).map_err(|e| {
             format!(
-                "Invalid PostgreSQL authentication database URI '{uri}': {e}
+                "Invalid PostgreSQL authentication database URI '{}': {}
 
 Please ensure the URI is in the correct format:
 - Standard connection: postgresql://user:password@host:port/database
@@ -47,7 +47,8 @@ Required connection components:
 - port: PostgreSQL server port (default: 5432)
 - database: Target database name
 - user: PostgreSQL username
-- password: User password (if required)"
+- password: User password (if required)",
+                uri, e
             )
         })?;
         
@@ -57,7 +58,7 @@ Required connection components:
             .await
             .map_err(|e| {
                 format!(
-                    "Failed to connect to PostgreSQL authentication database '{uri}': {e}
+                    "Failed to connect to PostgreSQL authentication database '{}': {}
 
 Possible causes:
 - PostgreSQL server is not running or unreachable
@@ -72,7 +73,8 @@ Please verify:
 1. PostgreSQL server is running: systemctl status postgresql
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
-4. Connection settings in pg_hba.conf allow your connection method"
+4. Connection settings in pg_hba.conf allow your connection method",
+                    uri, e
                 )
             })?;
 
@@ -85,18 +87,18 @@ Please verify:
             
             // Create authentication schema
             sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create users table in PostgreSQL authentication database '{uri}': {e}")
+                format!("Failed to create users table in PostgreSQL authentication database '{}': {}", uri, e)
             })?;
             sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create admins table in PostgreSQL authentication database '{uri}': {e}")
+                format!("Failed to create admins table in PostgreSQL authentication database '{}': {}", uri, e)
             })?;
             sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create moderators table in PostgreSQL authentication database '{uri}': {e}")
+                format!("Failed to create moderators table in PostgreSQL authentication database '{}': {}", uri, e)
             })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!("Failed to set initial schema version for PostgreSQL auth database '{uri}': {e}")
+                format!("Failed to set initial schema version for PostgreSQL auth database '{}': {}", uri, e)
             })?;
             
             tracing::info!("Successfully initialized PostgreSQL authentication database at version 1");
@@ -104,7 +106,7 @@ Please verify:
             // Existing database: apply any pending migrations
             tracing::info!("Found existing PostgreSQL authentication database, checking for migrations");
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!("Failed to run auth migrations for PostgreSQL database '{uri}': {e}")
+                format!("Failed to run auth migrations for PostgreSQL database '{}': {}", uri, e)
             })?;
         }
 
