@@ -41,10 +41,7 @@ pub trait Migrator: Send + Sync {
     /// This method attempts to read the version table. If it fails,
     /// we assume this is a fresh database.
     async fn is_fresh_database(&self) -> bool {
-        match self.get_current_version().await {
-            Ok(_) => false,  // Version table exists, not fresh
-            Err(_) => true,  // Cannot read version, assume fresh
-        }
+        (self.get_current_version().await).is_err()
     }
     
     /// Apply all necessary migrations to reach the latest version.
@@ -74,10 +71,9 @@ pub trait Migrator: Send + Sync {
         
         if current_version > latest_version {
             return Err(format!(
-                "Stored schema version {} is higher than latest available version {}. \
+                "Stored schema version {current_version} is higher than latest available version {latest_version}. \
                 This usually means you're trying to run an older version of the software \
-                against a newer database. Please upgrade to a compatible version.",
-                current_version, latest_version
+                against a newer database. Please upgrade to a compatible version."
             ).into());
         }
         
@@ -112,15 +108,13 @@ pub trait Migrator: Send + Sync {
             
             migration.apply().await.map_err(|e| {
                 format!(
-                    "Failed to apply migration to version {}: {}",
-                    target, e
+                    "Failed to apply migration to version {target}: {e}"
                 )
             })?;
             
             self.set_version(target).await.map_err(|e| {
                 format!(
-                    "Failed to update schema version to {}: {}",
-                    target, e
+                    "Failed to update schema version to {target}: {e}"
                 )
             })?;
             
@@ -157,7 +151,7 @@ mod tests {
             }
         }
 
-        fn with_failure(mut self) -> Self {
+        fn with_failure(self) -> Self {
             self.should_fail.store(true, Ordering::SeqCst);
             self
         }
@@ -204,7 +198,7 @@ mod tests {
             }
         }
 
-        fn with_fresh_database(mut self) -> Self {
+        fn with_fresh_database(self) -> Self {
             self.can_read_version.store(false, Ordering::SeqCst);
             self
         }

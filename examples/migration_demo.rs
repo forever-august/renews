@@ -41,13 +41,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
     // Show final state
     let final_version = migrator.get_current_version().await?;
-    println!("3. Final schema version: {}", final_version);
+    println!("3. Final schema version: {final_version}");
 
     // Show that running again is idempotent
     println!("4. Running migrations again (should be idempotent)...");
     migrator.migrate_to_latest().await?;
     let version_after_second_run = migrator.get_current_version().await?;
-    println!("5. Version after second run: {}", version_after_second_run);
+    println!("5. Version after second run: {version_after_second_run}");
 
     // Demonstrate the created schema
     println!("6. Schema verification:");
@@ -57,7 +57,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     
     for row in tables {
         let table_name: String = row.get("name");
-        println!("   ✓ Table: {}", table_name);
+        println!("   ✓ Table: {table_name}");
     }
 
     println!("\n=== Demo completed successfully! ===");

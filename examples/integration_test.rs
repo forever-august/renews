@@ -18,8 +18,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     
     // Test that the storage works
     match storage.group_exists("test.group").await {
-        Ok(exists) => println!("   ✓ Storage functionality verified (group exists check: {})", exists),
-        Err(e) => println!("   ⚠ Storage test failed: {}", e),
+        Ok(exists) => println!("   ✓ Storage functionality verified (group exists check: {exists})"),
+        Err(e) => println!("   ⚠ Storage test failed: {e}"),
     }
 
     // Test SQLite auth backend with migrations
@@ -33,8 +33,8 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     
     // Test that the auth works
     match auth.verify_user("testuser", "password").await {
-        Ok(verified) => println!("   ✓ Auth functionality verified (user verification: {})", verified),
-        Err(e) => println!("   ⚠ Auth test failed: {}", e),
+        Ok(verified) => println!("   ✓ Auth functionality verified (user verification: {verified})"),
+        Err(e) => println!("   ⚠ Auth test failed: {e}"),
     }
 
     // Test idempotency - reopening should not cause issues
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     
     // Check if group exists
     let exists = storage2.group_exists("test.migration.group").await?;
-    println!("   ✓ Group existence check: {}", exists);
+    println!("   ✓ Group existence check: {exists}");
     
     // Add a test user
     auth2.add_user("migrationtest", "testpass123").await?;
@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     
     // Verify the user
     let verified = auth2.verify_user("migrationtest", "testpass123").await?;
-    println!("   ✓ User verification: {}", verified);
+    println!("   ✓ User verification: {verified}");
 
     println!("\n=== All migration integration tests passed! ===");
     println!("The migration system is working correctly with the actual renews backends.");

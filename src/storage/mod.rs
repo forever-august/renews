@@ -116,7 +116,7 @@ pub async fn open(uri: &str) -> Result<DynStorage, Box<dyn Error + Send + Sync>>
             .map(|s| Arc::new(s) as DynStorage)
             .map_err(|e| {
                 format!(
-                    "Failed to connect to SQLite database '{}': {}
+                    "Failed to connect to SQLite database '{uri}': {e}
 
 Common SQLite connection issues:
 - Directory does not exist (SQLite will create the file but not directories)
@@ -130,8 +130,7 @@ For SQLite URIs:
 - For in-memory database: sqlite::memory:
 - Relative paths are relative to the working directory
 
-You can change the database path in your configuration file using the 'db_path' setting.",
-                    uri, e
+You can change the database path in your configuration file using the 'db_path' setting."
                 ).into()
             })
     } else if uri.starts_with("postgres:") {
@@ -141,7 +140,7 @@ You can change the database path in your configuration file using the 'db_path' 
                 .map(|s| Arc::new(s) as DynStorage)
                 .map_err(|e| {
                     format!(
-                        "Failed to connect to PostgreSQL database '{}': {}
+                        "Failed to connect to PostgreSQL database '{uri}': {e}
 
 Common PostgreSQL connection issues:
 - PostgreSQL server is not running
@@ -155,33 +154,30 @@ Common PostgreSQL connection issues:
 For PostgreSQL URIs, use format:
 postgres://username:password@host:port/database
 
-You can change the database URI in your configuration file using the 'db_path' setting.",
-                        uri, e
+You can change the database URI in your configuration file using the 'db_path' setting."
                     ).into()
                 })
         }
         #[cfg(not(feature = "postgres"))]
         {
             Err(format!(
-                "PostgreSQL backend not enabled: '{}'
+                "PostgreSQL backend not enabled: '{uri}'
 
 The renews server was compiled without PostgreSQL support.
 To use PostgreSQL:
 1. Rebuild with: cargo build --features postgres
-2. Or use SQLite instead by changing 'db_path' to a sqlite:// URI in your configuration",
-                uri
+2. Or use SQLite instead by changing 'db_path' to a sqlite:// URI in your configuration"
             ).into())
         }
     } else {
         Err(format!(
-            "Unknown storage backend: '{}'
+            "Unknown storage backend: '{uri}'
 
 Supported database backends:
 - SQLite: sqlite:///path/to/database.db
 - PostgreSQL: postgres://user:pass@host:port/database (requires --features postgres)
 
-You can change the database URI in your configuration file using the 'db_path' setting.",
-            uri
+You can change the database URI in your configuration file using the 'db_path' setting."
         ).into())
     }
 }

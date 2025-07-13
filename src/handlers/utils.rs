@@ -352,9 +352,9 @@ pub async fn read_message<R: AsyncBufRead + Unpin>(
 /// NOTE: This function is maintained for backward compatibility.
 /// New code should use the filter-based validation system.
 pub async fn basic_validate_article(
-    cfg: &crate::config::Config,
+    _cfg: &crate::config::Config,
     article: &crate::Message,
-    size: u64,
+    _size: u64,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     // Check required headers
     let has_from = article
