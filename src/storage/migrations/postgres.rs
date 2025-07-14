@@ -1,7 +1,7 @@
+use anyhow::Result;
 use crate::migrations::{Migration, Migrator};
 use async_trait::async_trait;
 use sqlx::Row;
-use std::error::Error;
 
 /// Version table creation SQL for PostgreSQL storage  
 const CREATE_VERSION_TABLE_POSTGRES: &str = "CREATE TABLE IF NOT EXISTS schema_version (
@@ -24,7 +24,7 @@ impl PostgresStorageMigrator {
 #[cfg(feature = "postgres")]
 #[async_trait]
 impl Migrator for PostgresStorageMigrator {
-    async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>> {
+    async fn get_current_version(&self) -> Result<u32> {
         // Try to read from the version table - if table doesn't exist, this will fail
         let row = sqlx::query("SELECT version FROM schema_version ORDER BY version DESC LIMIT 1")
             .fetch_optional(&self.pool)
@@ -47,7 +47,7 @@ impl Migrator for PostgresStorageMigrator {
         }
     }
 
-    async fn set_version(&self, version: u32) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn set_version(&self, version: u32) -> Result<()> {
         // Ensure version table exists first
         sqlx::query(CREATE_VERSION_TABLE_POSTGRES)
             .execute(&self.pool)

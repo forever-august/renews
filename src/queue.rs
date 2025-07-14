@@ -8,8 +8,8 @@ use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
+use anyhow::Result;
 use flume::{Receiver, Sender};
-use std::error::Error;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
@@ -45,7 +45,7 @@ impl ArticleQueue {
     ///
     /// Returns Ok(()) if the article was queued successfully,
     /// Err if the queue is full or closed.
-    pub async fn submit(&self, article: QueuedArticle) -> Result<(), Box<dyn Error + Send + Sync>> {
+    pub async fn submit(&self, article: QueuedArticle) -> Result<()> {
         self.sender
             .send_async(article)
             .await
@@ -134,7 +134,7 @@ async fn process_article(
     storage: &DynStorage,
     auth: &DynAuth,
     config: &Arc<RwLock<Config>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     let article = &queued_article.message;
 
     // Handle control messages first

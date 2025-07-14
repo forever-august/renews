@@ -1,5 +1,6 @@
-use super::{AuthProvider, Error, async_trait};
+use super::{AuthProvider, async_trait};
 use crate::migrations::Migrator;
+use anyhow::Result;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::{
@@ -36,10 +37,10 @@ impl SqliteAuth {
     /// # Errors
     ///
     /// Returns an error if the database connection fails or schema creation fails.
-    pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn new(path: &str) -> Result<Self> {
         let options = SqliteConnectOptions::from_str(path)
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Invalid SQLite authentication database URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
@@ -55,7 +56,7 @@ Please ensure the URI is in the correct format:
             .connect_with(options)
             .await
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to connect to SQLite authentication database '{path}': {e}
 
 Possible causes:
@@ -80,20 +81,20 @@ Possible causes:
 
             // Create authentication schema
             sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to create users table in SQLite authentication database '{path}': {e}"
                 )
             })?;
             sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create admins table in SQLite authentication database '{path}': {e}")
+                anyhow::anyhow!("Failed to create admins table in SQLite authentication database '{path}': {e}")
             })?;
             sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-                format!("Failed to create moderators table in SQLite authentication database '{path}': {e}")
+                anyhow::anyhow!("Failed to create moderators table in SQLite authentication database '{path}': {e}")
             })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to set initial schema version for SQLite auth database '{path}': {e}"
                 )
             })?;
@@ -105,7 +106,7 @@ Possible causes:
                 "Found existing SQLite authentication database, checking for migrations"
             );
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!("Failed to run auth migrations for SQLite database '{path}': {e}")
+                anyhow::anyhow!("Failed to run auth migrations for SQLite database '{path}': {e}")
             })?;
         }
 
@@ -119,7 +120,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         password: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         self.add_user_with_key(username, password, None).await
     }
 
@@ -128,7 +129,7 @@ impl AuthProvider for SqliteAuth {
         username: &str,
         password: &str,
         key: Option<&str>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)?
@@ -146,7 +147,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         new_password: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(new_password.as_bytes(), &salt)?
@@ -159,7 +160,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_user(&self, username: &str) -> Result<()> {
         sqlx::query("DELETE FROM users WHERE username = ?")
             .bind(username)
             .execute(&self.pool)
@@ -179,7 +180,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         password: &str,
-    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    ) -> Result<bool> {
         if let Some(row) = sqlx::query("SELECT password_hash FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -195,7 +196,7 @@ impl AuthProvider for SqliteAuth {
         }
     }
 
-    async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn is_admin(&self, username: &str) -> Result<bool> {
         let row = sqlx::query("SELECT 1 FROM admins WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -207,7 +208,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         key: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
             .bind(username)
             .execute(&self.pool)
@@ -223,7 +224,7 @@ impl AuthProvider for SqliteAuth {
     async fn add_admin_without_key(
         &self,
         username: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
             .bind(username)
             .execute(&self.pool)
@@ -231,7 +232,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_admin(&self, username: &str) -> Result<()> {
         sqlx::query("DELETE FROM admins WHERE username = ?")
             .bind(username)
             .execute(&self.pool)
@@ -243,7 +244,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         key: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("UPDATE users SET key = ? WHERE username = ?")
             .bind(key)
             .bind(username)
@@ -255,7 +256,7 @@ impl AuthProvider for SqliteAuth {
     async fn get_pgp_key(
         &self,
         username: &str,
-    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<String>> {
         if let Some(row) = sqlx::query("SELECT key FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -272,7 +273,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO moderators (username, pattern) VALUES (?, ?)")
             .bind(username)
             .bind(pattern)
@@ -285,7 +286,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("DELETE FROM moderators WHERE username = ? AND pattern = ?")
             .bind(username)
             .bind(pattern)
@@ -298,7 +299,7 @@ impl AuthProvider for SqliteAuth {
         &self,
         username: &str,
         group: &str,
-    ) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    ) -> Result<bool> {
         let rows = sqlx::query("SELECT pattern FROM moderators WHERE username = ?")
             .bind(username)
             .fetch_all(&self.pool)

@@ -21,7 +21,7 @@ impl CommandHandler for IHaveHandler {
                 .storage
                 .get_article_by_id(id)
                 .await
-                .to_anyhow()?
+                ?
                 .is_some()
             {
                 write_simple(&mut ctx.writer, RESP_435_NOT_WANTED).await?;

@@ -6,10 +6,11 @@ use crate::{
     },
     storage::DynStorage,
 };
+use anyhow::Result;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use pgp::native::{Deserializable, SignedPublicKey, StandaloneSignature};
 use sha2::{Digest, Sha256, Sha512};
-use std::{error::Error, io::Cursor};
+use std::io::Cursor;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ControlCommand {
@@ -130,7 +131,7 @@ pub async fn verify_pgp(
     signed_headers: &str,
     sig_data: &str,
     key_servers: &[String],
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     // Create PGP key discovery instance with configured servers
     let discovery = DefaultPgpKeyDiscovery::with_key_servers(key_servers.to_vec());
 
@@ -167,7 +168,7 @@ pub async fn verify_pgp(
                     // Discovery found a key but verification still failed
                     // Keep original key if it existed
                     Err(
-                        format!("Signature verification failed even with discovered key: {e}")
+                        anyhow::anyhow!("Signature verification failed even with discovered key: {e}")
                             .into(),
                     )
                 }
@@ -191,7 +192,7 @@ async fn try_verify_with_key(
     version: &str,
     signed_headers: &str,
     sig_data: &str,
-) -> Result<Result<(), Box<dyn Error + Send + Sync>>, Box<dyn Error + Send + Sync>> {
+) -> Result<Result<()>> {
     let (key, _) = SignedPublicKey::from_string(key_text)?;
     let armor = format!(
         "-----BEGIN PGP SIGNATURE-----\nVersion: {version}\n\n{sig_data}\n-----END PGP SIGNATURE-----\n"
@@ -216,7 +217,7 @@ pub async fn handle_control(
     storage: &DynStorage,
     auth: &DynAuth,
     config: &crate::config::Config,
-) -> Result<bool, Box<dyn Error + Send + Sync>> {
+) -> Result<bool> {
     let control_val = match msg
         .headers
         .iter()

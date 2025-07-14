@@ -1,38 +1,33 @@
 use crate::Message;
+use anyhow::Result;
 use async_trait::async_trait;
 use futures_core::Stream;
-use std::error::Error;
 use std::pin::Pin;
 use std::sync::Arc;
 
 // Type aliases for complex stream return types
-type StringStream<'a> =
-    Pin<Box<dyn Stream<Item = Result<String, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type U64Stream<'a> =
-    Pin<Box<dyn Stream<Item = Result<u64, Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type StringTimestampStream<'a> =
-    Pin<Box<dyn Stream<Item = Result<(String, i64), Box<dyn Error + Send + Sync>>> + Send + 'a>>;
-type ArticleStream<'a> = Pin<
-    Box<dyn Stream<Item = Result<(String, Message), Box<dyn Error + Send + Sync>>> + Send + 'a>,
->;
+type StringStream<'a> = Pin<Box<dyn Stream<Item = Result<String>> + Send + 'a>>;
+type U64Stream<'a> = Pin<Box<dyn Stream<Item = Result<u64>> + Send + 'a>>;
+type StringTimestampStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64)>> + Send + 'a>>;
+type ArticleStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, Message)>> + Send + 'a>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
     /// Store `article` and associate it with all groups specified in the Newsgroups header
-    async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn store_article(&self, article: &Message) -> Result<()>;
 
     /// Retrieve an article by group name and article number
     async fn get_article_by_number(
         &self,
         group: &str,
         number: u64,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Option<Message>>;
 
     /// Retrieve an article by its Message-ID header
     async fn get_article_by_id(
         &self,
         message_id: &str,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Option<Message>>;
 
     /// Retrieve multiple articles by their Message-ID headers in a single batch operation
     /// Returns a stream of (message_id, article) pairs for found articles only
@@ -44,7 +39,7 @@ pub trait Storage: Send + Sync {
         group: &str,
         start: u64,
         end: u64,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Vec<String>>;
 
     /// Add a newsgroup to the server's list. When `moderated` is true the group
     /// requires an `Approved` header on posted articles.
@@ -52,23 +47,23 @@ pub trait Storage: Send + Sync {
         &self,
         group: &str,
         moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Set moderation status for an existing newsgroup.
     async fn set_group_moderated(
         &self,
         group: &str,
         moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Remove a newsgroup from the server's list
-    async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn remove_group(&self, group: &str) -> Result<()>;
 
     /// Remove newsgroups matching a wildmat pattern from the server's list
     async fn remove_groups_by_pattern(
         &self,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Retrieve all newsgroups carried by the server
     fn list_groups(&self) -> StringStream<'_>;
@@ -97,28 +92,28 @@ pub trait Storage: Send + Sync {
         &self,
         group: &str,
         before: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Delete any messages no longer referenced by any group
-    async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn purge_orphan_messages(&self) -> Result<()>;
 
     /// Retrieve the stored size in bytes of a message by its Message-ID
     async fn get_message_size(
         &self,
         message_id: &str,
-    ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Option<u64>>;
 
     /// Delete an article by Message-ID from all groups
     async fn delete_article_by_id(
         &self,
         message_id: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Check if a group is moderated.
-    async fn is_group_moderated(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    async fn is_group_moderated(&self, group: &str) -> Result<bool>;
 
     /// Check if a group exists.
-    async fn group_exists(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    async fn group_exists(&self, group: &str) -> Result<bool>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;
@@ -130,13 +125,13 @@ pub mod postgres;
 pub mod sqlite;
 
 /// Create a storage backend from a connection URI.
-pub async fn open(uri: &str) -> Result<DynStorage, Box<dyn Error + Send + Sync>> {
+pub async fn open(uri: &str) -> Result<DynStorage> {
     if uri.starts_with("sqlite:") {
         sqlite::SqliteStorage::new(uri)
             .await
             .map(|s| Arc::new(s) as DynStorage)
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to connect to SQLite database '{uri}': {e}
 
 Common SQLite connection issues:
@@ -153,7 +148,6 @@ For SQLite URIs:
 
 You can change the database path in your configuration file using the 'db_path' setting."
                 )
-                .into()
             })
     } else if uri.starts_with("postgres:") {
         #[cfg(feature = "postgres")]
@@ -162,7 +156,7 @@ You can change the database path in your configuration file using the 'db_path' 
                 .await
                 .map(|s| Arc::new(s) as DynStorage)
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to connect to PostgreSQL database '{uri}': {e}
 
 Common PostgreSQL connection issues:
@@ -179,23 +173,21 @@ postgres://username:password@host:port/database
 
 You can change the database URI in your configuration file using the 'db_path' setting."
                     )
-                    .into()
                 })
         }
         #[cfg(not(feature = "postgres"))]
         {
-            Err(format!(
+            Err(anyhow::anyhow!(
                 "PostgreSQL backend not enabled: '{uri}'
 
 The renews server was compiled without PostgreSQL support.
 To use PostgreSQL:
 1. Rebuild with: cargo build --features postgres
 2. Or use SQLite instead by changing 'db_path' to a sqlite:// URI in your configuration"
-            )
-            .into())
+            ))
         }
     } else {
-        Err(format!(
+        Err(anyhow::anyhow!(
             "Unknown storage backend: '{uri}'
 
 Supported database backends:
@@ -203,7 +195,6 @@ Supported database backends:
 - PostgreSQL: postgres://user:pass@host:port/database (requires --features postgres)
 
 You can change the database URI in your configuration file using the 'db_path' setting."
-        )
-        .into())
+        ))
     }
 }

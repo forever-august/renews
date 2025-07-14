@@ -1,5 +1,5 @@
+use anyhow::Result;
 use async_trait::async_trait;
-use std::error::Error;
 use std::sync::Arc;
 
 #[async_trait]
@@ -8,59 +8,59 @@ pub trait AuthProvider: Send + Sync {
         &self,
         username: &str,
         password: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn add_user_with_key(
         &self,
         username: &str,
         password: &str,
         key: Option<&str>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn update_password(
         &self,
         username: &str,
         new_password: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
-    async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
+    async fn remove_user(&self, username: &str) -> Result<()>;
     async fn verify_user(
         &self,
         username: &str,
         password: &str,
-    ) -> Result<bool, Box<dyn Error + Send + Sync>>;
-    async fn is_admin(&self, username: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    ) -> Result<bool>;
+    async fn is_admin(&self, username: &str) -> Result<bool>;
     async fn add_admin(
         &self,
         username: &str,
         key: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn add_admin_without_key(
         &self,
         username: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
-    async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
+    async fn remove_admin(&self, username: &str) -> Result<()>;
     async fn update_pgp_key(
         &self,
         username: &str,
         key: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn get_pgp_key(
         &self,
         username: &str,
-    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>>;
+    ) -> Result<Option<String>>;
     async fn add_moderator(
         &self,
         username: &str,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn remove_moderator(
         &self,
         username: &str,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
     async fn is_moderator(
         &self,
         username: &str,
         group: &str,
-    ) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    ) -> Result<bool>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;
@@ -72,12 +72,12 @@ pub mod postgres;
 pub mod sqlite;
 
 /// Create an authentication backend from a connection URI.
-pub async fn open(uri: &str) -> Result<DynAuth, Box<dyn Error + Send + Sync>> {
+pub async fn open(uri: &str) -> Result<DynAuth> {
     if uri.starts_with("sqlite:") {
         sqlite::SqliteAuth::new(uri).await
             .map(|a| Arc::new(a) as DynAuth)
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to connect to SQLite authentication database '{uri}': {e}
 
 Common SQLite connection issues:
@@ -101,7 +101,7 @@ You can change the authentication database path in your configuration file using
             postgres::PostgresAuth::new(uri).await
                 .map(|a| Arc::new(a) as DynAuth)
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to connect to PostgreSQL authentication database '{uri}': {e}
 
 Common PostgreSQL connection issues:
@@ -122,7 +122,7 @@ You can change the authentication database URI in your configuration file using 
         }
         #[cfg(not(feature = "postgres"))]
         {
-            Err(format!(
+            Err(anyhow::anyhow!(
                 "PostgreSQL backend not enabled: '{uri}'
 
 The renews server was compiled without PostgreSQL support.
@@ -133,7 +133,7 @@ To use PostgreSQL:
             .into())
         }
     } else {
-        Err(format!(
+        Err(anyhow::anyhow!(
             "Unknown authentication backend: '{uri}'
 
 Supported database backends:

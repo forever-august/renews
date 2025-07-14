@@ -4,7 +4,6 @@ use crate::storage::DynStorage;
 use crate::{ConnectionState, Message};
 use anyhow::Result;
 use smallvec::SmallVec;
-use std::error::Error;
 use std::fmt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 
@@ -458,65 +457,4 @@ pub async fn write_numerical_response<W: AsyncWrite + Unpin>(
     let len = cursor.position() as usize;
     writer.write_all(&buf[..len]).await?;
     Ok(())
-}
-
-/// Storage wrapper functions that convert errors to anyhow::Error
-pub mod storage_helpers {
-    use super::*;
-
-    /// Extension trait to convert Box<dyn Error + Send + Sync> to anyhow::Error
-    pub trait AnyhowExt<T> {
-        fn to_anyhow(self) -> Result<T>;
-    }
-
-    impl<T> AnyhowExt<T> for std::result::Result<T, Box<dyn std::error::Error + Send + Sync>> {
-        fn to_anyhow(self) -> Result<T> {
-            self.map_err(anyhow::Error::from)
-        }
-    }
-
-    /// Wrapper for parse_range that converts errors to anyhow::Error
-    pub async fn parse_range_anyhow(
-        storage: &DynStorage,
-        group: &str,
-        spec: &str,
-    ) -> Result<Vec<u64>> {
-        crate::parse_range(storage, group, spec)
-            .await
-            .map_err(anyhow::Error::from)
-    }
-
-    /// Wrapper for get_article_by_id that converts errors to anyhow::Error
-    pub async fn get_article_by_id_anyhow(
-        storage: &DynStorage,
-        message_id: &str,
-    ) -> Result<Option<crate::Message>> {
-        storage
-            .get_article_by_id(message_id)
-            .await
-            .map_err(anyhow::Error::from)
-    }
-
-    /// Wrapper for get_article_by_number that converts errors to anyhow::Error
-    pub async fn get_article_by_number_anyhow(
-        storage: &DynStorage,
-        group: &str,
-        number: u64,
-    ) -> Result<Option<crate::Message>> {
-        storage
-            .get_article_by_number(group, number)
-            .await
-            .map_err(anyhow::Error::from)
-    }
-
-    /// Wrapper for generate_overview_line that converts errors to anyhow::Error
-    pub async fn generate_overview_line_anyhow(
-        storage: &dyn crate::storage::Storage,
-        article_number: u64,
-        article: &crate::Message,
-    ) -> Result<String> {
-        crate::overview::generate_overview_line(storage, article_number, article)
-            .await
-            .map_err(anyhow::Error::from)
-    }
 }

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -5,7 +6,6 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use tracing::{error, info};
 
 use crate::config::Config;
-use std::error::Error;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -40,7 +40,7 @@ fn port_from_addr(addr: &str, default_port: u16) -> u16 {
     }
     default_port
 }
-pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<()> {
     let (ws_addr_raw, nntp_port) = {
         let cfg_guard = cfg.read().await;
         match cfg_guard.ws_addr.as_deref() {
@@ -83,7 +83,7 @@ or disable the WebSocket bridge by removing the 'ws_addr' configuration.",
 async fn handle_client(
     stream: TcpStream,
     nntp_addr: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut ws_write, mut ws_read) = ws_stream.split();
     let tcp = TcpStream::connect(nntp_addr).await?;
@@ -103,7 +103,7 @@ async fn handle_client(
             }
         }
         nntp_write.shutdown().await?;
-        Ok::<_, Box<dyn Error + Send + Sync>>(())
+        Ok::<_, anyhow::Error>(())
     });
 
     let mut buf = [0u8; 1024];

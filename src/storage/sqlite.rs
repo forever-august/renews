@@ -3,6 +3,7 @@ use super::{
     common::{Headers, extract_message_id},
 };
 use crate::migrations::Migrator;
+use anyhow::Result;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -11,7 +12,7 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
-use std::{error::Error, str::FromStr};
+use std::str::FromStr;
 
 // SQL schemas for SQLite storage
 const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
@@ -55,10 +56,10 @@ impl SqliteStorage {
     /// # Errors
     ///
     /// Returns an error if the database connection fails or schema creation fails.
-    pub async fn new(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn new(path: &str) -> Result<Self> {
         let options = SqliteConnectOptions::from_str(path)
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Invalid SQLite connection URI '{path}': {e}
 
 Please ensure the URI is in the correct format:
@@ -74,7 +75,7 @@ Please ensure the URI is in the correct format:
             .connect_with(options)
             .await
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to connect to SQLite database '{path}': {e}
 
 Possible causes:
@@ -99,13 +100,13 @@ Possible causes:
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!("Failed to create messages table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!("Failed to create messages table in SQLite database '{path}': {e}")
                 })?;
             sqlx::query(GROUP_ARTICLES_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to create group_articles table in SQLite database '{path}': {e}"
                     )
                 })?;
@@ -113,18 +114,18 @@ Possible causes:
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!("Failed to create groups table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!("Failed to create groups table in SQLite database '{path}': {e}")
                 })?;
             sqlx::query(OVERVIEW_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!("Failed to create overview table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!("Failed to create overview table in SQLite database '{path}': {e}")
                 })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to set initial schema version for SQLite storage database '{path}': {e}"
                 )
             })?;
@@ -134,7 +135,7 @@ Possible causes:
             // Existing database: apply any pending migrations
             tracing::info!("Found existing SQLite storage database, checking for migrations");
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!("Failed to run storage migrations for SQLite database '{path}': {e}")
+                anyhow::anyhow!("Failed to run storage migrations for SQLite database '{path}': {e}")
             })?;
         }
 
@@ -145,7 +146,7 @@ Possible causes:
 #[async_trait]
 impl Storage for SqliteStorage {
     #[tracing::instrument(skip_all)]
-    async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn store_article(&self, article: &Message) -> Result<()> {
         let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
@@ -218,7 +219,7 @@ impl Storage for SqliteStorage {
         &self,
         group: &str,
         number: u64,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query(
             "SELECT m.headers, m.body FROM messages m \
              JOIN group_articles g ON m.message_id = g.message_id \
@@ -244,7 +245,7 @@ impl Storage for SqliteStorage {
     async fn get_article_by_id(
         &self,
         message_id: &str,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query("SELECT headers, body FROM messages WHERE message_id = ?")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -296,11 +297,11 @@ impl Storage for SqliteStorage {
                                 }
                             },
                             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                                yield Err(Box::new(e) as Box<dyn Error + Send + Sync>)
+                                yield Err(anyhow::Error::from(e))
                             }
                         }
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -311,7 +312,7 @@ impl Storage for SqliteStorage {
         &self,
         group: &str,
         moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         sqlx::query("INSERT OR IGNORE INTO groups (name, created_at, moderated) VALUES (?, ?, ?)")
             .bind(group)
@@ -327,7 +328,7 @@ impl Storage for SqliteStorage {
         &self,
         group: &str,
         moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("UPDATE groups SET moderated = ? WHERE name = ?")
             .bind(i32::from(moderated))
             .bind(group)
@@ -337,7 +338,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_group(&self, group: &str) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE group_name = ?")
             .bind(group)
             .execute(&self.pool)
@@ -358,7 +359,7 @@ impl Storage for SqliteStorage {
     async fn remove_groups_by_pattern(
         &self,
         pattern: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Get all group names that match the pattern
         let rows = sqlx::query("SELECT name FROM groups")
             .fetch_all(&self.pool)
@@ -381,7 +382,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn is_group_moderated(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn is_group_moderated(&self, group: &str) -> Result<bool> {
         let row = sqlx::query("SELECT moderated FROM groups WHERE name = ?")
             .bind(group)
             .fetch_optional(&self.pool)
@@ -395,7 +396,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn group_exists(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn group_exists(&self, group: &str) -> Result<bool> {
         let row = sqlx::query("SELECT 1 FROM groups WHERE name = ? LIMIT 1")
             .bind(group)
             .fetch_optional(&self.pool)
@@ -414,9 +415,9 @@ impl Storage for SqliteStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("name") {
                         Ok(name) => yield Ok(name),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -435,9 +436,9 @@ impl Storage for SqliteStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("name") {
                         Ok(name) => yield Ok(name),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -455,11 +456,11 @@ impl Storage for SqliteStorage {
                     Ok(r) => {
                         match (r.try_get::<String, _>("name"), r.try_get::<i64, _>("created_at")) {
                             (Ok(name), Ok(ts)) => yield Ok((name, ts)),
-                            (Err(e), _) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
-                            (_, Err(e)) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                            (Err(e), _) => yield Err(anyhow::Error::from(e)),
+                            (_, Err(e)) => yield Err(anyhow::Error::from(e)),
                         }
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -478,9 +479,9 @@ impl Storage for SqliteStorage {
                 match row {
                     Ok(r) => match r.try_get::<i64, _>("number") {
                         Ok(number) => yield Ok(u64::try_from(number).unwrap_or(0)),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -499,9 +500,9 @@ impl Storage for SqliteStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("message_id") {
                         Ok(message_id) => yield Ok(message_id),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -526,9 +527,9 @@ impl Storage for SqliteStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("message_id") {
                         Ok(message_id) => yield Ok(message_id),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -539,7 +540,7 @@ impl Storage for SqliteStorage {
         &self,
         group: &str,
         before: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE group_name = ? AND inserted_at < ?")
             .bind(group)
             .bind(before.timestamp())
@@ -549,7 +550,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn purge_orphan_messages(&self) -> Result<()> {
         sqlx::query(
             "DELETE FROM messages WHERE message_id NOT IN (SELECT DISTINCT message_id FROM group_articles)"
         )
@@ -562,7 +563,7 @@ impl Storage for SqliteStorage {
     async fn get_message_size(
         &self,
         message_id: &str,
-    ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<u64>> {
         if let Some(row) = sqlx::query("SELECT size FROM messages WHERE message_id = ?")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -578,7 +579,7 @@ impl Storage for SqliteStorage {
     async fn delete_article_by_id(
         &self,
         message_id: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE message_id = ?")
             .bind(message_id)
             .execute(&self.pool)
@@ -599,7 +600,7 @@ impl Storage for SqliteStorage {
         group: &str,
         start: u64,
         end: u64,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT overview_data FROM overview WHERE group_name = ? AND article_number >= ? AND article_number <= ? ORDER BY article_number",
         )

@@ -36,7 +36,7 @@ impl CommandHandler for AuthInfoHandler {
                 }
 
                 if let Some(ref username) = ctx.state.username {
-                    if ctx.auth.verify_user(username, &args[1]).await.to_anyhow()? {
+                    if ctx.auth.verify_user(username, &args[1]).await? {
                         ctx.state.authenticated = true;
                         write_simple(&mut ctx.writer, RESP_281_AUTH_OK).await?;
                     } else {

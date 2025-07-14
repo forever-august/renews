@@ -21,7 +21,6 @@
 //! - Article retention cleanup
 //!
 
-use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -46,7 +45,7 @@ use crate::storage::{self, Storage};
 use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
-type ServerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+type ServerResult<T> = anyhow::Result<T>;
 
 /// Shared server components
 #[derive(Clone)]
@@ -470,7 +469,7 @@ impl PeerManager {
 fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
     let cert_file = &mut BufReader::new(File::open(cert_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
-            format!(
+            anyhow::anyhow!(
                 "TLS certificate file not found: '{cert_path}'
 
 Please ensure the certificate file exists at the specified path.
@@ -478,7 +477,7 @@ For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/
             )
         }
         std::io::ErrorKind::PermissionDenied => {
-            format!(
+            anyhow::anyhow!(
                 "Permission denied reading TLS certificate file: '{cert_path}'
 
 Please ensure the file is readable by the current user.
@@ -489,7 +488,7 @@ You may need to run as root or adjust file permissions."
     })?);
     let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
-            format!(
+            anyhow::anyhow!(
                 "TLS private key file not found: '{key_path}'
 
 Please ensure the private key file exists at the specified path.
@@ -497,7 +496,7 @@ For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/
             )
         }
         std::io::ErrorKind::PermissionDenied => {
-            format!(
+            anyhow::anyhow!(
                 "Permission denied reading TLS private key file: '{key_path}'
 
 Please ensure the file is readable by the current user.
@@ -510,7 +509,7 @@ Note: Private key files should be protected (mode 600)."
 
     let certs = certs(cert_file)
         .map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to parse TLS certificate file '{cert_path}': {e}
 
 Please ensure the certificate file is in valid PEM format.
@@ -549,7 +548,7 @@ The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to create TLS configuration: {e}
 
 This error typically occurs when:
@@ -604,11 +603,11 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                                     Ok(listener)
                                 }
                                 Err(e) => {
-                                    Err(format!("failed to convert socket to tokio: {e}").into())
+                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}").into())
                                 }
                             },
                             Err(e) => {
-                                Err(format!("failed to set socket to non-blocking: {e}").into())
+                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}").into())
                             }
                         }
                     }
