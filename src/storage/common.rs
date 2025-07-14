@@ -39,7 +39,7 @@ pub fn parse_newsgroups_from_message(article: &Message) -> SmallVec<[String; 4]>
 pub fn reconstruct_message_from_row(
     headers_str: &str,
     body: &str,
-) -> Result<Message, Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<Message> {
     let Headers(headers) = serde_json::from_str(headers_str)?;
     Ok(Message {
         headers,

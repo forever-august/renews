@@ -39,7 +39,7 @@ impl Migrator for SqliteAuthMigrator {
             }
             Err(_) => {
                 // Table doesn't exist, definitely a fresh database
-                Err("Version table does not exist".into())
+                Err(anyhow::anyhow!("Version table does not exist"))
             }
         }
     }

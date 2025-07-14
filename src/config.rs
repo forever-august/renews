@@ -380,7 +380,7 @@ See 'examples/config.toml' for a valid configuration example."
         if self.runtime_threads == 0 {
             std::thread::available_parallelism()
                 .map(|n| n.get())
-                .map_err(|e| format!("Failed to determine number of CPU cores: {e}").into())
+                .map_err(|e| anyhow::anyhow!("Failed to determine number of CPU cores: {e}"))
         } else {
             Ok(self.runtime_threads)
         }

@@ -68,7 +68,7 @@ async fn cleanup_group_by_retention(
             storage
                 .purge_group_before(group, cutoff)
                 .await
-                .map_err(|e| format!("Failed to purge old articles from group '{group}': {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Failed to purge old articles from group '{group}': {e}"))?;
         } else {
             debug!(
                 "Group '{}' has zero retention period, skipping cleanup",

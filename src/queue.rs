@@ -49,7 +49,7 @@ impl ArticleQueue {
         self.sender
             .send_async(article)
             .await
-            .map_err(|e| format!("Failed to queue article: {e}").into())
+            .map_err(|e| anyhow::anyhow!("Failed to queue article: {e}"))
     }
 
     /// Get the receiver for worker tasks

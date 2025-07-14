@@ -2,7 +2,6 @@
 
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::prelude::*;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use tokio::io::{AsyncBufRead, AsyncWrite};

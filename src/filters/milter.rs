@@ -10,7 +10,7 @@ use crate::config::Config;
 use crate::storage::DynStorage;
 use anyhow::Result;
 use serde::Deserialize;
-
+use std::error::Error;
 use std::fmt;
 use std::io;
 use std::sync::Arc;

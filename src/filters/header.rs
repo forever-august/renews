@@ -29,7 +29,7 @@ impl ArticleFilter for HeaderFilter {
         let newsgroups = extract_newsgroups(article);
 
         if !has_from || !has_subject || newsgroups.is_empty() {
-            return Err("missing required headers".into());
+            return Err(anyhow::anyhow!("missing required headers"));
         }
 
         Ok(())

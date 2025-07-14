@@ -4,6 +4,7 @@ use crate::storage::DynStorage;
 use crate::{ConnectionState, Message};
 use anyhow::Result;
 use smallvec::SmallVec;
+use std::error::Error;
 use std::fmt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 

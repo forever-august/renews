@@ -2,7 +2,6 @@
 
 use super::utils::{write_lines, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::prelude::*;
 use crate::responses::*;
 use crate::{parse_datetime, wildmat};
 use futures_util::{StreamExt, TryStreamExt};

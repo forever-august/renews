@@ -172,7 +172,7 @@ mod tests {
             self.apply_count.fetch_add(1, Ordering::SeqCst);
 
             if self.should_fail.load(Ordering::SeqCst) {
-                return Err("Mock migration failure".into());
+                return Err(anyhow::anyhow!("Mock migration failure"));
             }
 
             Ok(())
@@ -205,7 +205,7 @@ mod tests {
             if self.can_read_version.load(Ordering::SeqCst) {
                 Ok(self.current_version.load(Ordering::SeqCst))
             } else {
-                Err("Cannot read version table".into())
+                Err(anyhow::anyhow!("Cannot read version table"))
             }
         }
 

@@ -177,9 +177,9 @@ pub async fn verify_pgp(
         None => {
             // No key could be discovered
             if stored_key.is_some() {
-                Err("Signature verification failed with stored key and no alternative key could be discovered".into())
+                Err(anyhow::anyhow!("Signature verification failed with stored key and no alternative key could be discovered"))
             } else {
-                Err("No PGP key found for user and no key could be discovered".into())
+                Err(anyhow::anyhow!("No PGP key found for user and no key could be discovered"))
             }
         }
     }
@@ -226,7 +226,7 @@ pub async fn handle_control(
         Some((_, v)) => v.clone(),
         None => return Ok(false),
     };
-    let cmd = parse_command(&control_val).ok_or("unknown control")?;
+    let cmd = parse_command(&control_val).ok_or_else(|| anyhow::anyhow!("unknown control"))?;
 
     if let ControlCommand::Cancel(ref id) = cmd {
         // try Cancel-Key authentication first
@@ -264,13 +264,13 @@ pub async fn handle_control(
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("X-PGP-Sig"))
         .map(|(_, v)| v.clone())
-        .ok_or("missing signature")?;
+        .ok_or_else(|| anyhow::anyhow!("missing signature"))?;
     if !auth.is_admin(from).await? {
-        return Err("not admin".into());
+        return Err(anyhow::anyhow!("not admin"));
     }
     let mut words = sig_header.split_whitespace();
-    let version = words.next().ok_or("bad signature")?;
-    let signed = words.next().ok_or("bad signature")?;
+    let version = words.next().ok_or_else(|| anyhow::anyhow!("bad signature"))?;
+    let signed = words.next().ok_or_else(|| anyhow::anyhow!("bad signature"))?;
     let sig_rest = words.collect::<Vec<_>>().join("\n");
     verify_pgp(
         msg,

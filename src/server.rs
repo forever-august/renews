@@ -611,7 +611,7 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                             }
                         }
                     }
-                    Err(e) => Err(format!(
+                    Err(e) => Err(anyhow::anyhow!(
                         "Failed to bind to address '{addr_config}': {e}
 
 This error typically occurs when:
@@ -622,11 +622,10 @@ This error typically occurs when:
 - For systemd socket activation, the socket is not available
 
 You can use 'systemd://socket_name' format for systemd socket activation."
-                    )
-                    .into()),
+                    )),
                 }
             }
-            Err(e) => Err(format!("Invalid systemd socket address '{addr_config}': {e}").into()),
+            Err(e) => Err(anyhow::anyhow!("Invalid systemd socket address '{addr_config}': {e}")),
         }
     } else {
         // For regular addresses, use our own parsing logic
@@ -634,7 +633,7 @@ You can use 'systemd://socket_name' format for systemd socket activation."
         info!("listening on {addr}");
         match TcpListener::bind(&addr).await {
             Ok(listener) => Ok(listener),
-            Err(e) => Err(format!(
+            Err(e) => Err(anyhow::anyhow!(
                 "Failed to bind to address '{}': {}
 
 This error typically occurs when:
@@ -648,8 +647,7 @@ You can use 'systemd://socket_name' format for systemd socket activation.",
                 e,
                 addr.split(':').next_back().unwrap_or("119"),
                 addr.split(':').next_back().unwrap_or("119")
-            )
-            .into()),
+            )),
         }
     }
 }

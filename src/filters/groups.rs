@@ -32,7 +32,7 @@ impl ArticleFilter for GroupExistenceFilter {
         let all_groups = stream.try_collect::<Vec<String>>().await?;
         for group in &newsgroups {
             if !all_groups.contains(group) {
-                return Err("group does not exist".into());
+                return Err(anyhow::anyhow!("group does not exist"));
             }
         }
 

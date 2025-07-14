@@ -155,18 +155,18 @@ impl PeerConnection {
         let addr = format!("{}:{}", connection_info.host, connection_info.port);
         let tcp = TcpStream::connect(&addr)
             .await
-            .map_err(|e| format!("Failed to connect to {addr}: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to connect to {addr}: {e}"))?;
 
         let connector =
-            create_tls_connector().map_err(|e| format!("Failed to create TLS connector: {e}"))?;
+            create_tls_connector().map_err(|e| anyhow::anyhow!("Failed to create TLS connector: {e}"))?;
 
         let server_name = rustls::ServerName::try_from(connection_info.host.as_str())
-            .map_err(|e| format!("Invalid server name '{}': {}", connection_info.host, e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid server name '{}': {}", connection_info.host, e))?;
 
         let tls_stream = connector
             .connect(server_name, tcp)
             .await
-            .map_err(|e| format!("TLS handshake failed for {addr}: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("TLS handshake failed for {addr}: {e}"))?;
 
         let (read_half, write_half) = tokio::io::split(tls_stream);
 
@@ -179,7 +179,7 @@ impl PeerConnection {
         // Read and validate greeting
         let greeting = connection.read_response().await?;
         if !greeting.starts_with("200") && !greeting.starts_with("201") {
-            return Err(format!("Unexpected greeting from {}: {}", addr, greeting.trim()).into());
+            return Err(anyhow::anyhow!("Unexpected greeting from {}: {}", addr, greeting.trim()));
         }
 
         // Authenticate if credentials are provided
@@ -187,7 +187,7 @@ impl PeerConnection {
             connection
                 .authenticate(creds)
                 .await
-                .map_err(|e| format!("Authentication failed for {addr}: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Authentication failed for {addr}: {e}"))?;
         }
 
         Ok(connection)
@@ -216,10 +216,10 @@ impl PeerConnection {
                 .await?;
             let response = self.read_response().await?;
             if !response.starts_with("281") {
-                return Err("Authentication failed".into());
+                return Err(anyhow::anyhow!("Authentication failed"));
             }
         } else if !response.starts_with("281") {
-            return Err("Authentication failed".into());
+            return Err(anyhow::anyhow!("Authentication failed"));
         }
 
         Ok(())
@@ -240,7 +240,7 @@ impl PeerConnection {
         // Read and validate final response
         let response = self.read_response().await?;
         if !response.starts_with("2") {
-            return Err(format!("Transfer failed: {}", response.trim()).into());
+            return Err(anyhow::anyhow!("Transfer failed: {}", response.trim()));
         }
 
         Ok(())
@@ -470,12 +470,12 @@ pub async fn add_peer_job(
 }
 
 async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
-    let msg_id = extract_message_id(article).ok_or("Article missing Message-ID header")?;
+    let msg_id = extract_message_id(article).ok_or_else(|| anyhow::anyhow!("Article missing Message-ID header"))?;
 
     let connection_info = parse_peer_address(host, 563);
     let mut connection = PeerConnection::connect(&connection_info)
         .await
-        .map_err(|e| format!("Failed to connect to peer {host}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to connect to peer {host}: {e}"))?;
 
     let result = connection.transfer_article(article, &msg_id).await;
 

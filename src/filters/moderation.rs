@@ -48,11 +48,11 @@ impl ArticleFilter for ModerationFilter {
                 }
 
                 if group_moderators.is_empty() {
-                    return Err("missing approval for moderated group".into());
+                    return Err(anyhow::anyhow!("missing approval for moderated group"));
                 }
 
                 if group_signatures.len() < group_moderators.len() {
-                    return Err("missing signature for moderator".into());
+                    return Err(anyhow::anyhow!("missing signature for moderator"));
                 }
 
                 // Verify signatures for this group's moderators

@@ -2,7 +2,6 @@
 
 use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::prelude::*;
 use crate::responses::*;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
