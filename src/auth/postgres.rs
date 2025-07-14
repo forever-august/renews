@@ -137,18 +137,45 @@ impl AuthProvider for PostgresAuth {
         username: &str,
         password: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        self.add_user_with_key(username, password, None).await
+    }
+
+    async fn add_user_with_key(
+        &self,
+        username: &str,
+        password: &str,
+        key: Option<&str>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(password.as_bytes(), &salt)?
             .to_string();
         sqlx::query(
-            "INSERT INTO users (username, password_hash) VALUES ($1, $2)\
-            ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash",
+            "INSERT INTO users (username, password_hash, key) VALUES ($1, $2, $3)\
+            ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, key = EXCLUDED.key",
         )
         .bind(username)
         .bind(hash)
+        .bind(key)
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    async fn update_password(
+        &self,
+        username: &str,
+        new_password: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(new_password.as_bytes(), &salt)?
+            .to_string();
+        sqlx::query("UPDATE users SET password_hash = $1 WHERE username = $2")
+            .bind(hash)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -207,6 +234,17 @@ impl AuthProvider for PostgresAuth {
             .await?;
         sqlx::query("UPDATE users SET key = $1 WHERE username = $2")
             .bind(key)
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn add_admin_without_key(
+        &self,
+        username: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        sqlx::query("INSERT INTO admins (username) VALUES ($1) ON CONFLICT (username) DO NOTHING")
             .bind(username)
             .execute(&self.pool)
             .await?;

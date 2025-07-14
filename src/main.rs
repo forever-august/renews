@@ -32,43 +32,114 @@ enum Command {
 
 #[derive(Subcommand)]
 enum AdminCommand {
-    /// Add a newsgroup
+    /// Add newsgroups
     AddGroup {
+        /// First group name
         group: String,
-        #[arg(long)]
-        moderated: bool,
+        /// Additional group names
+        #[arg(required = false)]
+        groups: Vec<String>,
     },
-    /// Remove a newsgroup
-    RemoveGroup { group: String },
-    /// Add a user
-    AddUser { username: String, password: String },
+    /// Remove newsgroups matching a wildmat pattern
+    RemoveGroup { 
+        /// Wildmat pattern for groups to remove
+        wildmat: String 
+    },
+    /// Add a user with optional PGP key
+    AddUser { 
+        user: String, 
+        pass: String,
+        /// Optional PGP public key
+        #[arg(long)]
+        pgp_key: Option<String>,
+    },
+    /// Update user password
+    UpdatePassword { 
+        user: String, 
+        new_pass: String 
+    },
     /// Remove a user
-    RemoveUser { username: String },
-    /// Grant admin privileges to a user with the provided PGP public key
-    AddAdmin { username: String, key: String },
+    RemoveUser { 
+        user: String 
+    },
+    /// Update user's PGP key
+    UpdateKey { 
+        user: String, 
+        pgp_key: String 
+    },
+    /// Set moderation status for a group
+    SetModerated { 
+        group: String, 
+        moderated: String,
+    },
+    /// Grant admin privileges to a user
+    AddAdmin { 
+        user: String 
+    },
     /// Revoke admin privileges from a user
-    RemoveAdmin { username: String },
-    /// Add a moderator pattern for a user
-    AddModerator { username: String, pattern: String },
-    /// Remove a moderator pattern for a user
-    RemoveModerator { username: String, pattern: String },
+    RemoveAdmin { 
+        user: String 
+    },
+    /// Add a moderator for a group
+    AddModerator { 
+        user: String, 
+        group: String 
+    },
+    /// Remove a moderator for a group
+    RemoveModerator { 
+        user: String, 
+        group: String 
+    },
 }
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
     let storage = storage::open(&cfg.db_path).await?;
     let auth = auth::open(&cfg.auth_db_path).await?;
     match cmd {
-        AdminCommand::AddGroup { group, moderated } => storage.add_group(&group, moderated).await?,
-        AdminCommand::RemoveGroup { group } => storage.remove_group(&group).await?,
-        AdminCommand::AddUser { username, password } => auth.add_user(&username, &password).await?,
-        AdminCommand::RemoveUser { username } => auth.remove_user(&username).await?,
-        AdminCommand::AddAdmin { username, key } => auth.add_admin(&username, &key).await?,
-        AdminCommand::RemoveAdmin { username } => auth.remove_admin(&username).await?,
-        AdminCommand::AddModerator { username, pattern } => {
-            auth.add_moderator(&username, &pattern).await?;
+        AdminCommand::AddGroup { group, groups } => {
+            // Add the first group
+            storage.add_group(&group, false).await?;
+            // Add any additional groups
+            for g in groups {
+                storage.add_group(&g, false).await?;
+            }
         }
-        AdminCommand::RemoveModerator { username, pattern } => {
-            auth.remove_moderator(&username, &pattern).await?;
+        AdminCommand::RemoveGroup { wildmat } => {
+            storage.remove_groups_by_pattern(&wildmat).await?;
+        }
+        AdminCommand::AddUser { user, pass, pgp_key } => {
+            auth.add_user_with_key(&user, &pass, pgp_key.as_deref()).await?;
+        }
+        AdminCommand::UpdatePassword { user, new_pass } => {
+            auth.update_password(&user, &new_pass).await?;
+        }
+        AdminCommand::RemoveUser { user } => {
+            auth.remove_user(&user).await?;
+        }
+        AdminCommand::UpdateKey { user, pgp_key } => {
+            auth.update_pgp_key(&user, &pgp_key).await?;
+        }
+        AdminCommand::SetModerated { group, moderated } => {
+            let is_moderated = match moderated.to_lowercase().as_str() {
+                "true" | "yes" | "1" => true,
+                "false" | "no" | "0" => false,
+                _ => {
+                    return Err(format!("Invalid boolean value: '{moderated}'. Use 'true' or 'false'.").into());
+                }
+            };
+            storage.set_group_moderated(&group, is_moderated).await?;
+        }
+        AdminCommand::AddAdmin { user } => {
+            auth.add_admin_without_key(&user).await?;
+        }
+        AdminCommand::RemoveAdmin { user } => {
+            auth.remove_admin(&user).await?;
+        }
+        AdminCommand::AddModerator { user, group } => {
+            auth.add_moderator(&user, &group).await?;
+        }
+        AdminCommand::RemoveModerator { user, group } => {
+            auth.remove_moderator(&user, &group).await?;
         }
     }
     Ok(())

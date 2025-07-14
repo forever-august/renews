@@ -54,8 +54,18 @@ pub trait Storage: Send + Sync {
         moderated: bool,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
+    /// Set moderation status for an existing newsgroup.
+    async fn set_group_moderated(
+        &self,
+        group: &str,
+        moderated: bool,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+
     /// Remove a newsgroup from the server's list
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+
+    /// Remove newsgroups matching a wildmat pattern from the server's list
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Retrieve all newsgroups carried by the server
     fn list_groups(&self) -> StringStream<'_>;

@@ -9,6 +9,17 @@ pub trait AuthProvider: Send + Sync {
         username: &str,
         password: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn add_user_with_key(
+        &self,
+        username: &str,
+        password: &str,
+        key: Option<&str>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn update_password(
+        &self,
+        username: &str,
+        new_password: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn remove_user(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn verify_user(
         &self,
@@ -20,6 +31,10 @@ pub trait AuthProvider: Send + Sync {
         &self,
         username: &str,
         key: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn add_admin_without_key(
+        &self,
+        username: &str,
     ) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn remove_admin(&self, username: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
     async fn update_pgp_key(

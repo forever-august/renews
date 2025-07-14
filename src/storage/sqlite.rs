@@ -323,6 +323,20 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
+    async fn set_group_moderated(
+        &self,
+        group: &str,
+        moderated: bool,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        sqlx::query("UPDATE groups SET moderated = ? WHERE name = ?")
+            .bind(i32::from(moderated))
+            .bind(group)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         sqlx::query("DELETE FROM group_articles WHERE group_name = ?")
             .bind(group)
@@ -337,6 +351,29 @@ impl Storage for SqliteStorage {
         )
         .execute(&self.pool)
         .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+        // Get all group names that match the pattern
+        let rows = sqlx::query("SELECT name FROM groups")
+            .fetch_all(&self.pool)
+            .await?;
+        
+        let mut matching_groups = Vec::new();
+        for row in rows {
+            let name: String = row.try_get("name")?;
+            if crate::wildmat::wildmat(pattern, &name) {
+                matching_groups.push(name);
+            }
+        }
+        
+        // Remove each matching group
+        for group in matching_groups {
+            self.remove_group(&group).await?;
+        }
+        
         Ok(())
     }
 
