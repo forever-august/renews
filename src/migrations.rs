@@ -70,11 +70,11 @@ pub trait Migrator: Send + Sync {
             .unwrap_or(0);
 
         if current_version > latest_version {
-            return Err(format!(
+            return Err(anyhow::anyhow!(
                 "Stored schema version {current_version} is higher than latest available version {latest_version}. \
                 This usually means you're trying to run an older version of the software \
                 against a newer database. Please upgrade to a compatible version."
-            ).into());
+            ));
         }
 
         if current_version == latest_version {
@@ -106,14 +106,13 @@ pub trait Migrator: Send + Sync {
                 migration.description()
             );
 
-            migration
-                .apply()
-                .await
-                .map_err(|e| format!("Failed to apply migration to version {target}: {e}"))?;
+            migration.apply().await.map_err(|e| {
+                anyhow::anyhow!("Failed to apply migration to version {target}: {e}")
+            })?;
 
             self.set_version(target)
                 .await
-                .map_err(|e| format!("Failed to update schema version to {target}: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Failed to update schema version to {target}: {e}"))?;
 
             tracing::info!("Successfully migrated to version {}", target);
         }

@@ -76,7 +76,7 @@ impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
                     }
                     Err(e) => {
                         tracing::warn!("Failed to serialize discovered key for {}: {}", user, e);
-                        Err(anyhow::anyhow!("Failed to serialize discovered key: {e}").into())
+                        Err(anyhow::anyhow!("Failed to serialize discovered key: {e}"))
                     }
                 }
             }

@@ -484,7 +484,7 @@ Please ensure the file is readable by the current user.
 You may need to run as root or adjust file permissions."
             )
         }
-        _ => format!("Failed to open TLS certificate file '{cert_path}': {e}"),
+        _ => anyhow::anyhow!("Failed to open TLS certificate file '{cert_path}': {e}"),
     })?);
     let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
@@ -504,7 +504,7 @@ You may need to run as root or adjust file permissions.
 Note: Private key files should be protected (mode 600)."
             )
         }
-        _ => format!("Failed to open TLS private key file '{key_path}': {e}"),
+        _ => anyhow::anyhow!("Failed to open TLS private key file '{key_path}': {e}"),
     })?);
 
     let certs = certs(cert_file)
@@ -521,7 +521,7 @@ The file should contain one or more certificates starting with '-----BEGIN CERTI
         .collect();
 
     let mut keys = pkcs8_private_keys(key_file).map_err(|e| {
-        format!(
+        anyhow::anyhow!(
             "Failed to parse TLS private key file '{key_path}': {e}
 
 Please ensure the private key file is in valid PKCS#8 PEM format.
@@ -533,13 +533,12 @@ If your key is in a different format, you may need to convert it:
     })?;
 
     if keys.is_empty() {
-        return Err(format!(
+        return Err(anyhow::anyhow!(
             "No valid private key found in TLS key file '{key_path}'
 
 Please ensure the file contains a valid PKCS#8 private key.
 The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
-        )
-        .into());
+        ));
     }
 
     let key = rustls::PrivateKey(keys.remove(0));
@@ -603,13 +602,11 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                                     Ok(listener)
                                 }
                                 Err(e) => {
-                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}")
-                                        .into())
+                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}"))
                                 }
                             },
                             Err(e) => {
-                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}")
-                                    .into())
+                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}"))
                             }
                         }
                     }

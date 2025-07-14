@@ -108,10 +108,9 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
                 "true" | "yes" | "1" => true,
                 "false" | "no" | "0" => false,
                 _ => {
-                    return Err(format!(
+                    return Err(anyhow::anyhow!(
                         "Invalid boolean value: '{moderated}'. Use 'true' or 'false'."
-                    )
-                    .into());
+                    ));
                 }
             };
             storage.set_group_moderated(&group, is_moderated).await?;

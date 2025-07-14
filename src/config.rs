@@ -228,7 +228,7 @@ impl Config {
             Ok(content) => content,
             Err(e) => {
                 return match e.kind() {
-                    std::io::ErrorKind::NotFound => Err(format!(
+                    std::io::ErrorKind::NotFound => Err(anyhow::anyhow!(
                         "Configuration file not found: '{path}'
 
 Please ensure the configuration file exists at the specified path.
@@ -237,21 +237,18 @@ You can:
 - Use --config <path> to specify a different location
 - Set the RENEWS_CONFIG environment variable
 - See the example configuration at 'examples/config.toml'"
-                    )
-                    .into()),
-                    std::io::ErrorKind::PermissionDenied => Err(format!(
+                    )),
+                    std::io::ErrorKind::PermissionDenied => Err(anyhow::anyhow!(
                         "Permission denied reading configuration file: '{path}'
 
 Please ensure the file is readable by the current user.
 You may need to check file permissions or run with appropriate privileges."
-                    )
-                    .into()),
-                    _ => Err(format!(
+                    )),
+                    _ => Err(anyhow::anyhow!(
                         "Failed to read configuration file '{path}': {e}
 
 Please ensure the file exists and is readable."
-                    )
-                    .into()),
+                    )),
                 };
             }
         };

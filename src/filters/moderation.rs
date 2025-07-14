@@ -57,10 +57,17 @@ impl ArticleFilter for ModerationFilter {
 
                 // Verify signatures for this group's moderators
                 for (i, approved) in group_moderators.iter().enumerate() {
-                    let sig_header = group_signatures.get(i).ok_or("missing signature")?.clone();
+                    let sig_header = group_signatures
+                        .get(i)
+                        .ok_or_else(|| anyhow::anyhow!("missing signature"))?
+                        .clone();
                     let mut words = sig_header.split_whitespace();
-                    let version = words.next().ok_or("bad signature")?;
-                    let signed = words.next().ok_or("bad signature")?;
+                    let version = words
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
+                    let signed = words
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
                     let sig_rest = words.collect::<Vec<_>>().join("\n");
 
                     let mut tmp_headers: SmallVec<[(String, String); 8]> = article

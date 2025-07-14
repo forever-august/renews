@@ -55,7 +55,7 @@ For SQLite URIs:
 - Relative paths are relative to the working directory
 
 You can change the authentication database path in your configuration file using the 'auth_db_path' setting."
-                ).into()
+                )
             })
     } else if uri.starts_with("postgres:") {
         #[cfg(feature = "postgres")]
@@ -91,8 +91,7 @@ The renews server was compiled without PostgreSQL support.
 To use PostgreSQL:
 1. Rebuild with: cargo build --features postgres
 2. Or use SQLite instead by changing 'auth_db_path' to a sqlite:// URI in your configuration"
-            )
-            .into())
+            ))
         }
     } else {
         Err(anyhow::anyhow!(
@@ -103,6 +102,6 @@ Supported database backends:
 - PostgreSQL: postgres://user:pass@host:port/database (requires --features postgres)
 
 You can change the authentication database URI in your configuration file using the 'auth_db_path' setting."
-        ).into())
+        ))
     }
 }

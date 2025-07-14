@@ -169,8 +169,7 @@ pub async fn verify_pgp(
                     // Keep original key if it existed
                     Err(anyhow::anyhow!(
                         "Signature verification failed even with discovered key: {e}"
-                    )
-                    .into())
+                    ))
                 }
             }
         }
