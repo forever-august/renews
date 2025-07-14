@@ -4,6 +4,7 @@
 //! using peer relationships. It supports both IHAVE and TAKETHIS transfer modes
 //! for efficient article distribution.
 
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::{StreamExt, TryStreamExt};
 use rustls_native_certs::load_native_certs;
@@ -11,9 +12,8 @@ use sqlx::{
     Row, SqlitePool,
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
-use std::sync::Arc;
-use anyhow::Result;
 use std::str::FromStr;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_cron_scheduler::{Job, JobScheduler};

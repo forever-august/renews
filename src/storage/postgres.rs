@@ -379,12 +379,15 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_groups_by_pattern(
+        &self,
+        pattern: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         // Get all group names that match the pattern
         let rows = sqlx::query("SELECT name FROM groups")
             .fetch_all(&self.pool)
             .await?;
-        
+
         let mut matching_groups = Vec::new();
         for row in rows {
             let name: String = row.try_get("name")?;
@@ -392,12 +395,12 @@ impl Storage for PostgresStorage {
                 matching_groups.push(name);
             }
         }
-        
+
         // Remove each matching group
         for group in matching_groups {
             self.remove_group(&group).await?;
         }
-        
+
         Ok(())
     }
 

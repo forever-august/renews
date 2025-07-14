@@ -2,7 +2,7 @@
 
 use super::utils::{
     ArticleOperation, get_header_value, handle_article_operation, metadata_value, resolve_articles,
-    write_response_with_values, write_simple, storage_helpers::*,
+    storage_helpers::*, write_response_with_values, write_simple,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
@@ -129,7 +129,8 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let overview_line = generate_overview_line_anyhow(ctx.storage.as_ref(), num, &article).await?;
+                    let overview_line =
+                        generate_overview_line_anyhow(ctx.storage.as_ref(), num, &article).await?;
                     ctx.writer
                         .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;

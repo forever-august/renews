@@ -1,5 +1,5 @@
 //! Prelude module that provides common traits and type conversions
-//! 
+//!
 //! This module should be imported as `use crate::prelude::*` in modules that need
 //! to convert between different error types.
 

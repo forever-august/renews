@@ -8,8 +8,8 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::storage::DynStorage;
-use smallvec::SmallVec;
 use anyhow::Result;
+use smallvec::SmallVec;
 
 /// Filter that validates moderated group requirements
 pub struct ModerationFilter;

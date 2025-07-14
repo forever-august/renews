@@ -79,19 +79,13 @@ impl fmt::Display for ArticleQueryError {
 impl Error for ArticleQueryError {}
 
 /// Write a simple response line to the writer.
-pub async fn write_simple<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    response: &str,
-) -> Result<()> {
+pub async fn write_simple<W: AsyncWrite + Unpin>(writer: &mut W, response: &str) -> Result<()> {
     writer.write_all(response.as_bytes()).await?;
     Ok(())
 }
 
 /// Send article headers to the writer.
-pub async fn send_headers<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    article: &Message,
-) -> Result<()> {
+pub async fn send_headers<W: AsyncWrite + Unpin>(writer: &mut W, article: &Message) -> Result<()> {
     for (name, val) in &article.headers {
         writer.write_all(name.as_bytes()).await?;
         writer.write_all(b": ").await?;
@@ -102,10 +96,7 @@ pub async fn send_headers<W: AsyncWrite + Unpin>(
 }
 
 /// Send article body to the writer with proper dot-stuffing.
-pub async fn send_body<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    body: &str,
-) -> Result<()> {
+pub async fn send_body<W: AsyncWrite + Unpin>(writer: &mut W, body: &str) -> Result<()> {
     for line in body.lines() {
         if line.starts_with('.') {
             writer.write_all(b".").await?;
@@ -348,10 +339,7 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
 }
 
 /// Write multiple response lines to the writer.
-pub async fn write_lines<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    lines: &[&str],
-) -> Result<()> {
+pub async fn write_lines<W: AsyncWrite + Unpin>(writer: &mut W, lines: &[&str]) -> Result<()> {
     for line in lines {
         writer.write_all(line.as_bytes()).await?;
     }
@@ -359,9 +347,7 @@ pub async fn write_lines<W: AsyncWrite + Unpin>(
 }
 
 /// Read a message from the reader until dot termination.
-pub async fn read_message<R: AsyncBufRead + Unpin>(
-    reader: &mut R,
-) -> Result<String> {
+pub async fn read_message<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<String> {
     let mut msg = String::new();
     let mut line = String::new();
 
@@ -495,7 +481,9 @@ pub mod storage_helpers {
         group: &str,
         spec: &str,
     ) -> Result<Vec<u64>> {
-        crate::parse_range(storage, group, spec).await.map_err(anyhow::Error::from)
+        crate::parse_range(storage, group, spec)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     /// Wrapper for get_article_by_id that converts errors to anyhow::Error
@@ -503,7 +491,10 @@ pub mod storage_helpers {
         storage: &DynStorage,
         message_id: &str,
     ) -> Result<Option<crate::Message>> {
-        storage.get_article_by_id(message_id).await.map_err(anyhow::Error::from)
+        storage
+            .get_article_by_id(message_id)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     /// Wrapper for get_article_by_number that converts errors to anyhow::Error
@@ -512,7 +503,10 @@ pub mod storage_helpers {
         group: &str,
         number: u64,
     ) -> Result<Option<crate::Message>> {
-        storage.get_article_by_number(group, number).await.map_err(anyhow::Error::from)
+        storage
+            .get_article_by_number(group, number)
+            .await
+            .map_err(anyhow::Error::from)
     }
 
     /// Wrapper for generate_overview_line that converts errors to anyhow::Error
@@ -521,6 +515,8 @@ pub mod storage_helpers {
         article_number: u64,
         article: &crate::Message,
     ) -> Result<String> {
-        crate::overview::generate_overview_line(storage, article_number, article).await.map_err(anyhow::Error::from)
+        crate::overview::generate_overview_line(storage, article_number, article)
+            .await
+            .map_err(anyhow::Error::from)
     }
 }

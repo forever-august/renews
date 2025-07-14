@@ -31,10 +31,10 @@ use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
 use tracing::{error, info};
 
+use dashmap::DashMap;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::JobScheduler;
-use dashmap::DashMap;
 
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
@@ -440,7 +440,8 @@ impl PeerManager {
         }
 
         // Remove obsolete peer tasks
-        let to_remove: Vec<String> = self.peer_jobs
+        let to_remove: Vec<String> = self
+            .peer_jobs
             .iter()
             .filter(|entry| !new_cfg.peers.iter().any(|p| &p.sitename == entry.key()))
             .map(|entry| entry.key().clone())

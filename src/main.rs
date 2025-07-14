@@ -41,55 +41,34 @@ enum AdminCommand {
         groups: Vec<String>,
     },
     /// Remove newsgroups matching a wildmat pattern
-    RemoveGroup { 
+    RemoveGroup {
         /// Wildmat pattern for groups to remove
-        wildmat: String 
+        wildmat: String,
     },
     /// Add a user with optional PGP key
-    AddUser { 
-        user: String, 
+    AddUser {
+        user: String,
         pass: String,
         /// Optional PGP public key
         #[arg(long)]
         pgp_key: Option<String>,
     },
     /// Update user password
-    UpdatePassword { 
-        user: String, 
-        new_pass: String 
-    },
+    UpdatePassword { user: String, new_pass: String },
     /// Remove a user
-    RemoveUser { 
-        user: String 
-    },
+    RemoveUser { user: String },
     /// Update user's PGP key
-    UpdateKey { 
-        user: String, 
-        pgp_key: String 
-    },
+    UpdateKey { user: String, pgp_key: String },
     /// Set moderation status for a group
-    SetModerated { 
-        group: String, 
-        moderated: String,
-    },
+    SetModerated { group: String, moderated: String },
     /// Grant admin privileges to a user
-    AddAdmin { 
-        user: String 
-    },
+    AddAdmin { user: String },
     /// Revoke admin privileges from a user
-    RemoveAdmin { 
-        user: String 
-    },
+    RemoveAdmin { user: String },
     /// Add a moderator for a group
-    AddModerator { 
-        user: String, 
-        group: String 
-    },
+    AddModerator { user: String, group: String },
     /// Remove a moderator for a group
-    RemoveModerator { 
-        user: String, 
-        group: String 
-    },
+    RemoveModerator { user: String, group: String },
 }
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
@@ -107,8 +86,13 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
         AdminCommand::RemoveGroup { wildmat } => {
             storage.remove_groups_by_pattern(&wildmat).await?;
         }
-        AdminCommand::AddUser { user, pass, pgp_key } => {
-            auth.add_user_with_key(&user, &pass, pgp_key.as_deref()).await?;
+        AdminCommand::AddUser {
+            user,
+            pass,
+            pgp_key,
+        } => {
+            auth.add_user_with_key(&user, &pass, pgp_key.as_deref())
+                .await?;
         }
         AdminCommand::UpdatePassword { user, new_pass } => {
             auth.update_password(&user, &new_pass).await?;
@@ -124,7 +108,10 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
                 "true" | "yes" | "1" => true,
                 "false" | "no" | "0" => false,
                 _ => {
-                    return Err(format!("Invalid boolean value: '{moderated}'. Use 'true' or 'false'.").into());
+                    return Err(format!(
+                        "Invalid boolean value: '{moderated}'. Use 'true' or 'false'."
+                    )
+                    .into());
                 }
             };
             storage.set_group_moderated(&group, is_moderated).await?;

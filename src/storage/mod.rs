@@ -65,7 +65,10 @@ pub trait Storage: Send + Sync {
     async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Remove newsgroups matching a wildmat pattern from the server's list
-    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn remove_groups_by_pattern(
+        &self,
+        pattern: &str,
+    ) -> Result<(), Box<dyn Error + Send + Sync>>;
 
     /// Retrieve all newsgroups carried by the server
     fn list_groups(&self) -> StringStream<'_>;

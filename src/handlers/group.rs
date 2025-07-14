@@ -393,7 +393,12 @@ where
     };
 
     if let Some(&new_num) = nums.get(new_pos) {
-        if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await.to_anyhow()? {
+        if let Some(article) = ctx
+            .storage
+            .get_article_by_number(group, new_num)
+            .await
+            .to_anyhow()?
+        {
             ctx.state.current_article = Some(new_num);
             let id = super::utils::extract_message_id(&article).unwrap_or_default();
             write_simple(
