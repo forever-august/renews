@@ -2,6 +2,7 @@
 
 use super::utils::{write_lines, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::prelude::*;
 use crate::responses::*;
 use crate::{parse_datetime, wildmat};
 use futures_util::{StreamExt, TryStreamExt};
@@ -18,13 +19,13 @@ impl CommandHandler for GroupHandler {
     {
         if let Some(group_name) = args.first() {
             // Check if the group exists using the storage interface
-            if !ctx.storage.group_exists(group_name).await? {
+            if !ctx.storage.group_exists(group_name).await.to_anyhow()? {
                 write_simple(&mut ctx.writer, RESP_411_NO_SUCH_GROUP).await?;
                 return Ok(());
             }
 
             let stream = ctx.storage.list_article_numbers(group_name);
-            let nums = stream.try_collect::<Vec<u64>>().await?;
+            let nums = stream.try_collect::<Vec<u64>>().await.to_anyhow()?;
             let count = nums.len();
             let high = nums.last().copied().unwrap_or(0);
             let low = nums.first().copied().unwrap_or(0);
@@ -106,7 +107,7 @@ impl CommandHandler for ListGroupHandler {
         write_simple(&mut ctx.writer, RESP_211_LISTGROUP).await?;
         let mut stream = ctx.storage.list_article_numbers(&group_name);
         while let Some(result) = stream.next().await {
-            let num = result?;
+            let num = result.to_anyhow()?;
             ctx.writer.write_all(num.to_string().as_bytes()).await?;
             ctx.writer.write_all(b"\r\n").await?;
         }
@@ -175,7 +176,7 @@ impl CommandHandler for NewGroupsHandler {
         write_simple(&mut ctx.writer, RESP_231_NEWGROUPS).await?;
         let mut stream = ctx.storage.list_groups_since(since);
         while let Some(result) = stream.next().await {
-            let group = result?;
+            let group = result.to_anyhow()?;
             ctx.writer.write_all(group.as_bytes()).await?;
             ctx.writer.write_all(b"\r\n").await?;
         }
@@ -219,11 +220,11 @@ impl CommandHandler for NewNewsHandler {
         write_simple(&mut ctx.writer, RESP_230_NEWNEWS).await?;
         let mut groups_stream = ctx.storage.list_groups();
         while let Some(result) = groups_stream.next().await {
-            let group = result?;
+            let group = result.to_anyhow()?;
             if wildmat::wildmat(&group, wildmat_pattern) {
                 let mut articles_stream = ctx.storage.list_article_ids_since(&group, since);
                 while let Some(article_result) = articles_stream.next().await {
-                    let article_id = article_result?;
+                    let article_id = article_result.to_anyhow()?;
                     ctx.writer.write_all(article_id.as_bytes()).await?;
                     ctx.writer.write_all(b"\r\n").await?;
                 }
@@ -248,7 +249,7 @@ where
     write_simple(&mut ctx.writer, RESP_215_LIST_FOLLOWS).await?;
     let mut groups_stream = ctx.storage.list_groups();
     while let Some(result) = groups_stream.next().await {
-        let group = result?;
+        let group = result.to_anyhow()?;
         if let Some(pat) = pattern {
             if !wildmat::wildmat(&group, pat) {
                 continue;
@@ -260,7 +261,7 @@ where
         let mut high = None;
 
         while let Some(result) = nums_stream.next().await {
-            let num = result?;
+            let num = result.to_anyhow()?;
             if low.is_none() {
                 low = Some(num);
             }
@@ -290,7 +291,7 @@ where
     write_simple(&mut ctx.writer, RESP_215_DESCRIPTIONS).await?;
     let mut groups_stream = ctx.storage.list_groups();
     while let Some(result) = groups_stream.next().await {
-        let group = result?;
+        let group = result.to_anyhow()?;
         ctx.writer
             .write_all(format!("{group} \r\n").as_bytes())
             .await?;
@@ -307,7 +308,7 @@ where
     write_simple(&mut ctx.writer, RESP_215_INFO_FOLLOWS).await?;
     let mut stream = ctx.storage.list_groups_with_times();
     while let Some(result) = stream.next().await {
-        let (group, time) = result?;
+        let (group, time) = result.to_anyhow()?;
         ctx.writer
             .write_all(format!("{group} {time} -\r\n").as_bytes())
             .await?;
@@ -373,7 +374,7 @@ where
     };
 
     let stream = ctx.storage.list_article_numbers(group);
-    let nums = stream.try_collect::<Vec<u64>>().await?;
+    let nums = stream.try_collect::<Vec<u64>>().await.to_anyhow()?;
     let pos = match nums.iter().position(|&n| n == current) {
         Some(pos) => pos,
         None => {
@@ -392,7 +393,7 @@ where
     };
 
     if let Some(&new_num) = nums.get(new_pos) {
-        if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await? {
+        if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await.to_anyhow()? {
             ctx.state.current_article = Some(new_num);
             let id = super::utils::extract_message_id(&article).unwrap_or_default();
             write_simple(

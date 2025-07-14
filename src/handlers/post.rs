@@ -2,10 +2,10 @@
 
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::prelude::*;
 use crate::queue::QueuedArticle;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
-use std::error::Error;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Handler for the POST command.
@@ -80,6 +80,6 @@ pub async fn validate_article(
     cfg: &crate::config::Config,
     article: &crate::Message,
     size: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     comprehensive_validate_article(storage, auth, cfg, article, size).await
 }

@@ -2,6 +2,7 @@
 
 use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::prelude::*;
 use crate::responses::*;
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
@@ -83,6 +84,6 @@ impl CommandHandler for QuitHandler {
     {
         write_simple(&mut ctx.writer, RESP_205_CLOSING).await?;
         // Return an error to signal the connection should close
-        Err("Connection closed by QUIT command".into())
+        Err(anyhow::anyhow!("Connection closed by QUIT command"))
     }
 }

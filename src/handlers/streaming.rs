@@ -2,6 +2,7 @@
 
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::prelude::*;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use tokio::io::{AsyncBufRead, AsyncWrite};
@@ -16,7 +17,7 @@ impl CommandHandler for IHaveHandler {
         W: AsyncWrite + Unpin,
     {
         if let Some(id) = args.first() {
-            if ctx.storage.get_article_by_id(id).await?.is_some() {
+            if ctx.storage.get_article_by_id(id).await.to_anyhow()?.is_some() {
                 write_simple(&mut ctx.writer, RESP_435_NOT_WANTED).await?;
                 return Ok(());
             }
