@@ -25,10 +25,7 @@ pub trait PgpKeyDiscovery: Send + Sync {
     /// Returns `Ok(Some(key_text))` if a valid key is found,
     /// `Ok(None)` if no key is found,
     /// or `Err(...)` if there's an error during the discovery process.
-    async fn discover_key(
-        &self,
-        user: &str,
-    ) -> Result<Option<String>>;
+    async fn discover_key(&self, user: &str) -> Result<Option<String>>;
 
     /// Validate that a key block can be parsed as a valid PGP key.
     async fn validate_key(&self, key_text: &str) -> Result<bool>;
@@ -65,10 +62,7 @@ impl Default for DefaultPgpKeyDiscovery {
 
 #[async_trait]
 impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
-    async fn discover_key(
-        &self,
-        user: &str,
-    ) -> Result<Option<String>> {
+    async fn discover_key(&self, user: &str) -> Result<Option<String>> {
         tracing::debug!("Attempting key discovery for user: {}", user);
 
         // Use pgp-lib's HTTP key discovery functionality

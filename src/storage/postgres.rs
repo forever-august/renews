@@ -68,7 +68,8 @@ Required connection components:
 - database: Target database name
 - user: PostgreSQL username
 - password: User password (if required)",
-                uri, e
+                uri,
+                e
             )
         })?;
 
@@ -94,7 +95,8 @@ Please verify:
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
 4. Connection settings in pg_hba.conf allow your connection method",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -115,7 +117,8 @@ Please verify:
                 .map_err(|e| {
                     anyhow::anyhow!(
                         "Failed to create messages table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(GROUP_ARTICLES_TABLE)
@@ -124,7 +127,8 @@ Please verify:
                 .map_err(|e| {
                     anyhow::anyhow!(
                         "Failed to create group_articles table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(GROUPS_TABLE)
@@ -133,7 +137,8 @@ Please verify:
                 .map_err(|e| {
                     anyhow::anyhow!(
                         "Failed to create groups table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(OVERVIEW_TABLE)
@@ -142,7 +147,8 @@ Please verify:
                 .map_err(|e| {
                     anyhow::anyhow!(
                         "Failed to create overview table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
 
@@ -150,7 +156,8 @@ Please verify:
             migrator.set_version(1).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to set initial schema version for PostgreSQL storage database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -161,7 +168,8 @@ Please verify:
             migrator.migrate_to_latest().await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to run storage migrations for PostgreSQL database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
         }
@@ -242,11 +250,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_number(
-        &self,
-        group: &str,
-        number: u64,
-    ) -> Result<Option<Message>> {
+    async fn get_article_by_number(&self, group: &str, number: u64) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query(
             "SELECT m.headers, m.body FROM messages m JOIN group_articles g ON m.message_id = g.message_id WHERE g.group_name = $1 AND g.number = $2",
         )
@@ -264,10 +268,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<Message>> {
+    async fn get_article_by_id(&self, message_id: &str) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query("SELECT headers, body FROM messages WHERE message_id = $1")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -330,11 +331,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn add_group(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()> {
+    async fn add_group(&self, group: &str, moderated: bool) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         sqlx::query(
             "INSERT INTO groups (name, created_at, moderated) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -348,11 +345,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn set_group_moderated(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()> {
+    async fn set_group_moderated(&self, group: &str, moderated: bool) -> Result<()> {
         sqlx::query("UPDATE groups SET moderated = $1 WHERE name = $2")
             .bind(moderated)
             .bind(group)
@@ -380,10 +373,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_groups_by_pattern(
-        &self,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<()> {
         // Get all group names that match the pattern
         let rows = sqlx::query("SELECT name FROM groups")
             .fetch_all(&self.pool)
@@ -584,10 +574,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_message_size(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<u64>> {
+    async fn get_message_size(&self, message_id: &str) -> Result<Option<u64>> {
         if let Some(row) = sqlx::query("SELECT size FROM messages WHERE message_id = $1")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -600,10 +587,7 @@ impl Storage for PostgresStorage {
         }
     }
 
-    async fn delete_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<()> {
+    async fn delete_article_by_id(&self, message_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE message_id = $1")
             .bind(message_id)
             .execute(&self.pool)
@@ -618,12 +602,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_overview_range(
-        &self,
-        group: &str,
-        start: u64,
-        end: u64,
-    ) -> Result<Vec<String>> {
+    async fn get_overview_range(&self, group: &str, start: u64, end: u64) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT overview_data FROM overview WHERE group_name = $1 AND article_number >= $2 AND article_number <= $3 ORDER BY article_number",
         )

@@ -167,19 +167,23 @@ pub async fn verify_pgp(
                 Err(e) => {
                     // Discovery found a key but verification still failed
                     // Keep original key if it existed
-                    Err(
-                        anyhow::anyhow!("Signature verification failed even with discovered key: {e}")
-                            .into(),
+                    Err(anyhow::anyhow!(
+                        "Signature verification failed even with discovered key: {e}"
                     )
+                    .into())
                 }
             }
         }
         None => {
             // No key could be discovered
             if stored_key.is_some() {
-                Err(anyhow::anyhow!("Signature verification failed with stored key and no alternative key could be discovered"))
+                Err(anyhow::anyhow!(
+                    "Signature verification failed with stored key and no alternative key could be discovered"
+                ))
             } else {
-                Err(anyhow::anyhow!("No PGP key found for user and no key could be discovered"))
+                Err(anyhow::anyhow!(
+                    "No PGP key found for user and no key could be discovered"
+                ))
             }
         }
     }
@@ -269,8 +273,12 @@ pub async fn handle_control(
         return Err(anyhow::anyhow!("not admin"));
     }
     let mut words = sig_header.split_whitespace();
-    let version = words.next().ok_or_else(|| anyhow::anyhow!("bad signature"))?;
-    let signed = words.next().ok_or_else(|| anyhow::anyhow!("bad signature"))?;
+    let version = words
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
+    let signed = words
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
     let sig_rest = words.collect::<Vec<_>>().join("\n");
     verify_pgp(
         msg,

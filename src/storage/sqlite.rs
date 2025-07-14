@@ -100,7 +100,9 @@ Possible causes:
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    anyhow::anyhow!("Failed to create messages table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!(
+                        "Failed to create messages table in SQLite database '{path}': {e}"
+                    )
                 })?;
             sqlx::query(GROUP_ARTICLES_TABLE)
                 .execute(&pool)
@@ -114,13 +116,17 @@ Possible causes:
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    anyhow::anyhow!("Failed to create groups table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!(
+                        "Failed to create groups table in SQLite database '{path}': {e}"
+                    )
                 })?;
             sqlx::query(OVERVIEW_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    anyhow::anyhow!("Failed to create overview table in SQLite database '{path}': {e}")
+                    anyhow::anyhow!(
+                        "Failed to create overview table in SQLite database '{path}': {e}"
+                    )
                 })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
@@ -135,7 +141,9 @@ Possible causes:
             // Existing database: apply any pending migrations
             tracing::info!("Found existing SQLite storage database, checking for migrations");
             migrator.migrate_to_latest().await.map_err(|e| {
-                anyhow::anyhow!("Failed to run storage migrations for SQLite database '{path}': {e}")
+                anyhow::anyhow!(
+                    "Failed to run storage migrations for SQLite database '{path}': {e}"
+                )
             })?;
         }
 
@@ -215,11 +223,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_number(
-        &self,
-        group: &str,
-        number: u64,
-    ) -> Result<Option<Message>> {
+    async fn get_article_by_number(&self, group: &str, number: u64) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query(
             "SELECT m.headers, m.body FROM messages m \
              JOIN group_articles g ON m.message_id = g.message_id \
@@ -242,10 +246,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<Message>> {
+    async fn get_article_by_id(&self, message_id: &str) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query("SELECT headers, body FROM messages WHERE message_id = ?")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -308,11 +309,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn add_group(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()> {
+    async fn add_group(&self, group: &str, moderated: bool) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         sqlx::query("INSERT OR IGNORE INTO groups (name, created_at, moderated) VALUES (?, ?, ?)")
             .bind(group)
@@ -324,11 +321,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn set_group_moderated(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()> {
+    async fn set_group_moderated(&self, group: &str, moderated: bool) -> Result<()> {
         sqlx::query("UPDATE groups SET moderated = ? WHERE name = ?")
             .bind(i32::from(moderated))
             .bind(group)
@@ -356,10 +349,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_groups_by_pattern(
-        &self,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<()> {
         // Get all group names that match the pattern
         let rows = sqlx::query("SELECT name FROM groups")
             .fetch_all(&self.pool)
@@ -560,10 +550,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_message_size(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<u64>> {
+    async fn get_message_size(&self, message_id: &str) -> Result<Option<u64>> {
         if let Some(row) = sqlx::query("SELECT size FROM messages WHERE message_id = ?")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -576,10 +563,7 @@ impl Storage for SqliteStorage {
         }
     }
 
-    async fn delete_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<()> {
+    async fn delete_article_by_id(&self, message_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE message_id = ?")
             .bind(message_id)
             .execute(&self.pool)
@@ -595,12 +579,7 @@ impl Storage for SqliteStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_overview_range(
-        &self,
-        group: &str,
-        start: u64,
-        end: u64,
-    ) -> Result<Vec<String>> {
+    async fn get_overview_range(&self, group: &str, start: u64, end: u64) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT overview_data FROM overview WHERE group_name = ? AND article_number >= ? AND article_number <= ? ORDER BY article_number",
         )

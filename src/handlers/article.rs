@@ -129,8 +129,12 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let overview_line =
-                        crate::overview::generate_overview_line(ctx.storage.as_ref(), num, &article).await?;
+                    let overview_line = crate::overview::generate_overview_line(
+                        ctx.storage.as_ref(),
+                        num,
+                        &article,
+                    )
+                    .await?;
                     ctx.writer
                         .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;

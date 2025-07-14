@@ -116,11 +116,7 @@ Possible causes:
 
 #[async_trait]
 impl AuthProvider for SqliteAuth {
-    async fn add_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<()> {
+    async fn add_user(&self, username: &str, password: &str) -> Result<()> {
         self.add_user_with_key(username, password, None).await
     }
 
@@ -143,11 +139,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn update_password(
-        &self,
-        username: &str,
-        new_password: &str,
-    ) -> Result<()> {
+    async fn update_password(&self, username: &str, new_password: &str) -> Result<()> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(new_password.as_bytes(), &salt)?
@@ -176,11 +168,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn verify_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<bool> {
+    async fn verify_user(&self, username: &str, password: &str) -> Result<bool> {
         if let Some(row) = sqlx::query("SELECT password_hash FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -204,11 +192,7 @@ impl AuthProvider for SqliteAuth {
         Ok(row.is_some())
     }
 
-    async fn add_admin(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()> {
+    async fn add_admin(&self, username: &str, key: &str) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
             .bind(username)
             .execute(&self.pool)
@@ -221,10 +205,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn add_admin_without_key(
-        &self,
-        username: &str,
-    ) -> Result<()> {
+    async fn add_admin_without_key(&self, username: &str) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO admins (username) VALUES (?)")
             .bind(username)
             .execute(&self.pool)
@@ -240,11 +221,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn update_pgp_key(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()> {
+    async fn update_pgp_key(&self, username: &str, key: &str) -> Result<()> {
         sqlx::query("UPDATE users SET key = ? WHERE username = ?")
             .bind(key)
             .bind(username)
@@ -253,10 +230,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn get_pgp_key(
-        &self,
-        username: &str,
-    ) -> Result<Option<String>> {
+    async fn get_pgp_key(&self, username: &str) -> Result<Option<String>> {
         if let Some(row) = sqlx::query("SELECT key FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -269,11 +243,7 @@ impl AuthProvider for SqliteAuth {
         }
     }
 
-    async fn add_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn add_moderator(&self, username: &str, pattern: &str) -> Result<()> {
         sqlx::query("INSERT OR REPLACE INTO moderators (username, pattern) VALUES (?, ?)")
             .bind(username)
             .bind(pattern)
@@ -282,11 +252,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn remove_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<()> {
         sqlx::query("DELETE FROM moderators WHERE username = ? AND pattern = ?")
             .bind(username)
             .bind(pattern)
@@ -295,11 +261,7 @@ impl AuthProvider for SqliteAuth {
         Ok(())
     }
 
-    async fn is_moderator(
-        &self,
-        username: &str,
-        group: &str,
-    ) -> Result<bool> {
+    async fn is_moderator(&self, username: &str, group: &str) -> Result<bool> {
         let rows = sqlx::query("SELECT pattern FROM moderators WHERE username = ?")
             .bind(username)
             .fetch_all(&self.pool)

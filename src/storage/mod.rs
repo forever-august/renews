@@ -17,53 +17,30 @@ pub trait Storage: Send + Sync {
     async fn store_article(&self, article: &Message) -> Result<()>;
 
     /// Retrieve an article by group name and article number
-    async fn get_article_by_number(
-        &self,
-        group: &str,
-        number: u64,
-    ) -> Result<Option<Message>>;
+    async fn get_article_by_number(&self, group: &str, number: u64) -> Result<Option<Message>>;
 
     /// Retrieve an article by its Message-ID header
-    async fn get_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<Message>>;
+    async fn get_article_by_id(&self, message_id: &str) -> Result<Option<Message>>;
 
     /// Retrieve multiple articles by their Message-ID headers in a single batch operation
     /// Returns a stream of (message_id, article) pairs for found articles only
     fn get_articles_by_ids<'a>(&'a self, message_ids: &'a [String]) -> ArticleStream<'a>;
 
     /// Retrieve overview information for a range of article numbers in a group
-    async fn get_overview_range(
-        &self,
-        group: &str,
-        start: u64,
-        end: u64,
-    ) -> Result<Vec<String>>;
+    async fn get_overview_range(&self, group: &str, start: u64, end: u64) -> Result<Vec<String>>;
 
     /// Add a newsgroup to the server's list. When `moderated` is true the group
     /// requires an `Approved` header on posted articles.
-    async fn add_group(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()>;
+    async fn add_group(&self, group: &str, moderated: bool) -> Result<()>;
 
     /// Set moderation status for an existing newsgroup.
-    async fn set_group_moderated(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<()>;
+    async fn set_group_moderated(&self, group: &str, moderated: bool) -> Result<()>;
 
     /// Remove a newsgroup from the server's list
     async fn remove_group(&self, group: &str) -> Result<()>;
 
     /// Remove newsgroups matching a wildmat pattern from the server's list
-    async fn remove_groups_by_pattern(
-        &self,
-        pattern: &str,
-    ) -> Result<()>;
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<()>;
 
     /// Retrieve all newsgroups carried by the server
     fn list_groups(&self) -> StringStream<'_>;
@@ -98,16 +75,10 @@ pub trait Storage: Send + Sync {
     async fn purge_orphan_messages(&self) -> Result<()>;
 
     /// Retrieve the stored size in bytes of a message by its Message-ID
-    async fn get_message_size(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<u64>>;
+    async fn get_message_size(&self, message_id: &str) -> Result<Option<u64>>;
 
     /// Delete an article by Message-ID from all groups
-    async fn delete_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<()>;
+    async fn delete_article_by_id(&self, message_id: &str) -> Result<()>;
 
     /// Check if a group is moderated.
     async fn is_group_moderated(&self, group: &str) -> Result<bool>;

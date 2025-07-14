@@ -80,10 +80,7 @@ or disable the WebSocket bridge by removing the 'ws_addr' configuration.",
     }
 }
 
-async fn handle_client(
-    stream: TcpStream,
-    nntp_addr: &str,
-) -> Result<()> {
+async fn handle_client(stream: TcpStream, nntp_addr: &str) -> Result<()> {
     let ws_stream = accept_async(stream).await?;
     let (mut ws_write, mut ws_read) = ws_stream.split();
     let tcp = TcpStream::connect(nntp_addr).await?;

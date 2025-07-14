@@ -603,11 +603,13 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                                     Ok(listener)
                                 }
                                 Err(e) => {
-                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}").into())
+                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}")
+                                        .into())
                                 }
                             },
                             Err(e) => {
-                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}").into())
+                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}")
+                                    .into())
                             }
                         }
                     }
@@ -625,7 +627,9 @@ You can use 'systemd://socket_name' format for systemd socket activation."
                     )),
                 }
             }
-            Err(e) => Err(anyhow::anyhow!("Invalid systemd socket address '{addr_config}': {e}")),
+            Err(e) => Err(anyhow::anyhow!(
+                "Invalid systemd socket address '{addr_config}': {e}"
+            )),
         }
     } else {
         // For regular addresses, use our own parsing logic

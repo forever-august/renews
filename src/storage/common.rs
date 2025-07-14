@@ -36,10 +36,7 @@ pub fn parse_newsgroups_from_message(article: &Message) -> SmallVec<[String; 4]>
 }
 
 /// Common logic for reconstructing a Message from database row data
-pub fn reconstruct_message_from_row(
-    headers_str: &str,
-    body: &str,
-) -> anyhow::Result<Message> {
+pub fn reconstruct_message_from_row(headers_str: &str, body: &str) -> anyhow::Result<Message> {
     let Headers(headers) = serde_json::from_str(headers_str)?;
     Ok(Message {
         headers,

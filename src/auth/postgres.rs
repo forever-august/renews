@@ -49,7 +49,8 @@ Required connection components:
 - database: Target database name
 - user: PostgreSQL username
 - password: User password (if required)",
-                uri, e
+                uri,
+                e
             )
         })?;
 
@@ -75,7 +76,8 @@ Please verify:
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
 4. Connection settings in pg_hba.conf allow your connection method",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -93,7 +95,8 @@ Please verify:
             sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to create users table in PostgreSQL authentication database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
             sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
@@ -107,7 +110,8 @@ Please verify:
             migrator.set_version(1).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to set initial schema version for PostgreSQL auth database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -122,7 +126,8 @@ Please verify:
             migrator.migrate_to_latest().await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to run auth migrations for PostgreSQL database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
         }
@@ -133,11 +138,7 @@ Please verify:
 
 #[async_trait]
 impl AuthProvider for PostgresAuth {
-    async fn add_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<()> {
+    async fn add_user(&self, username: &str, password: &str) -> Result<()> {
         self.add_user_with_key(username, password, None).await
     }
 
@@ -163,11 +164,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn update_password(
-        &self,
-        username: &str,
-        new_password: &str,
-    ) -> Result<()> {
+    async fn update_password(&self, username: &str, new_password: &str) -> Result<()> {
         let salt = SaltString::generate(&mut OsRng);
         let hash = Argon2::default()
             .hash_password(new_password.as_bytes(), &salt)?
@@ -196,11 +193,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn verify_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<bool> {
+    async fn verify_user(&self, username: &str, password: &str) -> Result<bool> {
         if let Some(row) = sqlx::query("SELECT password_hash FROM users WHERE username = $1")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -224,11 +217,7 @@ impl AuthProvider for PostgresAuth {
         Ok(row.is_some())
     }
 
-    async fn add_admin(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()> {
+    async fn add_admin(&self, username: &str, key: &str) -> Result<()> {
         sqlx::query("INSERT INTO admins (username) VALUES ($1) ON CONFLICT (username) DO NOTHING")
             .bind(username)
             .execute(&self.pool)
@@ -241,10 +230,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn add_admin_without_key(
-        &self,
-        username: &str,
-    ) -> Result<()> {
+    async fn add_admin_without_key(&self, username: &str) -> Result<()> {
         sqlx::query("INSERT INTO admins (username) VALUES ($1) ON CONFLICT (username) DO NOTHING")
             .bind(username)
             .execute(&self.pool)
@@ -260,11 +246,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn update_pgp_key(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()> {
+    async fn update_pgp_key(&self, username: &str, key: &str) -> Result<()> {
         sqlx::query("UPDATE users SET key = $1 WHERE username = $2")
             .bind(key)
             .bind(username)
@@ -273,10 +255,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn get_pgp_key(
-        &self,
-        username: &str,
-    ) -> Result<Option<String>> {
+    async fn get_pgp_key(&self, username: &str) -> Result<Option<String>> {
         if let Some(row) = sqlx::query("SELECT key FROM users WHERE username = $1")
             .bind(username)
             .fetch_optional(&self.pool)
@@ -289,11 +268,7 @@ impl AuthProvider for PostgresAuth {
         }
     }
 
-    async fn add_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn add_moderator(&self, username: &str, pattern: &str) -> Result<()> {
         sqlx::query(
             "INSERT INTO moderators (username, pattern) VALUES ($1, $2)\
             ON CONFLICT (username, pattern) DO UPDATE SET pattern = EXCLUDED.pattern",
@@ -305,11 +280,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn remove_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()> {
+    async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<()> {
         sqlx::query("DELETE FROM moderators WHERE username = $1 AND pattern = $2")
             .bind(username)
             .bind(pattern)
@@ -318,11 +289,7 @@ impl AuthProvider for PostgresAuth {
         Ok(())
     }
 
-    async fn is_moderator(
-        &self,
-        username: &str,
-        group: &str,
-    ) -> Result<bool> {
+    async fn is_moderator(&self, username: &str, group: &str) -> Result<bool> {
         let rows = sqlx::query("SELECT pattern FROM moderators WHERE username = $1")
             .bind(username)
             .fetch_all(&self.pool)

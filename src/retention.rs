@@ -15,10 +15,7 @@ use tracing::{debug, info, warn};
 /// # Errors
 ///
 /// Returns an error if there are issues accessing the storage or configuration.
-pub async fn cleanup_expired_articles(
-    storage: &dyn Storage,
-    cfg: &Config,
-) -> Result<()> {
+pub async fn cleanup_expired_articles(storage: &dyn Storage, cfg: &Config) -> Result<()> {
     info!("Starting retention cleanup");
     let now = Utc::now();
     let mut groups = storage.list_groups();
@@ -68,7 +65,9 @@ async fn cleanup_group_by_retention(
             storage
                 .purge_group_before(group, cutoff)
                 .await
-                .map_err(|e| anyhow::anyhow!("Failed to purge old articles from group '{group}': {e}"))?;
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to purge old articles from group '{group}': {e}")
+                })?;
         } else {
             debug!(
                 "Group '{}' has zero retention period, skipping cleanup",

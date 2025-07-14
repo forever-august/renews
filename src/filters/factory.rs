@@ -7,7 +7,6 @@ use super::{ArticleFilter, FilterChain};
 use crate::config::FilterConfig;
 use std::error::Error;
 
-
 /// Errors that can occur when creating filters from configuration
 #[derive(Debug, Clone)]
 pub enum FilterFactoryError {

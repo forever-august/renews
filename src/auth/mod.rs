@@ -4,63 +4,25 @@ use std::sync::Arc;
 
 #[async_trait]
 pub trait AuthProvider: Send + Sync {
-    async fn add_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<()>;
+    async fn add_user(&self, username: &str, password: &str) -> Result<()>;
     async fn add_user_with_key(
         &self,
         username: &str,
         password: &str,
         key: Option<&str>,
     ) -> Result<()>;
-    async fn update_password(
-        &self,
-        username: &str,
-        new_password: &str,
-    ) -> Result<()>;
+    async fn update_password(&self, username: &str, new_password: &str) -> Result<()>;
     async fn remove_user(&self, username: &str) -> Result<()>;
-    async fn verify_user(
-        &self,
-        username: &str,
-        password: &str,
-    ) -> Result<bool>;
+    async fn verify_user(&self, username: &str, password: &str) -> Result<bool>;
     async fn is_admin(&self, username: &str) -> Result<bool>;
-    async fn add_admin(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()>;
-    async fn add_admin_without_key(
-        &self,
-        username: &str,
-    ) -> Result<()>;
+    async fn add_admin(&self, username: &str, key: &str) -> Result<()>;
+    async fn add_admin_without_key(&self, username: &str) -> Result<()>;
     async fn remove_admin(&self, username: &str) -> Result<()>;
-    async fn update_pgp_key(
-        &self,
-        username: &str,
-        key: &str,
-    ) -> Result<()>;
-    async fn get_pgp_key(
-        &self,
-        username: &str,
-    ) -> Result<Option<String>>;
-    async fn add_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()>;
-    async fn remove_moderator(
-        &self,
-        username: &str,
-        pattern: &str,
-    ) -> Result<()>;
-    async fn is_moderator(
-        &self,
-        username: &str,
-        group: &str,
-    ) -> Result<bool>;
+    async fn update_pgp_key(&self, username: &str, key: &str) -> Result<()>;
+    async fn get_pgp_key(&self, username: &str) -> Result<Option<String>>;
+    async fn add_moderator(&self, username: &str, pattern: &str) -> Result<()>;
+    async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<()>;
+    async fn is_moderator(&self, username: &str, group: &str) -> Result<bool>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;

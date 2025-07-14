@@ -157,11 +157,13 @@ impl PeerConnection {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to connect to {addr}: {e}"))?;
 
-        let connector =
-            create_tls_connector().map_err(|e| anyhow::anyhow!("Failed to create TLS connector: {e}"))?;
+        let connector = create_tls_connector()
+            .map_err(|e| anyhow::anyhow!("Failed to create TLS connector: {e}"))?;
 
-        let server_name = rustls::ServerName::try_from(connection_info.host.as_str())
-            .map_err(|e| anyhow::anyhow!("Invalid server name '{}': {}", connection_info.host, e))?;
+        let server_name =
+            rustls::ServerName::try_from(connection_info.host.as_str()).map_err(|e| {
+                anyhow::anyhow!("Invalid server name '{}': {}", connection_info.host, e)
+            })?;
 
         let tls_stream = connector
             .connect(server_name, tcp)
@@ -179,7 +181,11 @@ impl PeerConnection {
         // Read and validate greeting
         let greeting = connection.read_response().await?;
         if !greeting.starts_with("200") && !greeting.starts_with("201") {
-            return Err(anyhow::anyhow!("Unexpected greeting from {}: {}", addr, greeting.trim()));
+            return Err(anyhow::anyhow!(
+                "Unexpected greeting from {}: {}",
+                addr,
+                greeting.trim()
+            ));
         }
 
         // Authenticate if credentials are provided
@@ -470,7 +476,8 @@ pub async fn add_peer_job(
 }
 
 async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
-    let msg_id = extract_message_id(article).ok_or_else(|| anyhow::anyhow!("Article missing Message-ID header"))?;
+    let msg_id = extract_message_id(article)
+        .ok_or_else(|| anyhow::anyhow!("Article missing Message-ID header"))?;
 
     let connection_info = parse_peer_address(host, 563);
     let mut connection = PeerConnection::connect(&connection_info)
