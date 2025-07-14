@@ -1,5 +1,4 @@
 use crate::storage::DynStorage;
-use anyhow::Result;
 use chrono::TimeZone;
 use futures_util::{TryStreamExt, future};
 use nom::IResult;
@@ -317,9 +316,9 @@ pub fn parse_datetime(
         return Err("invalid time");
     }
     let fmt = if date.len() == 6 { "%y%m%d" } else { "%Y%m%d" };
-    let naive_date = chrono::NaiveDate::parse_from_str(date, fmt).map_err(|_| anyhow::anyhow!("invalid date"))?;
+    let naive_date = chrono::NaiveDate::parse_from_str(date, fmt).map_err(|_| "invalid date")?;
     let naive_time =
-        chrono::NaiveTime::parse_from_str(time, "%H%M%S").map_err(|_| anyhow::anyhow!("invalid time"))?;
+        chrono::NaiveTime::parse_from_str(time, "%H%M%S").map_err(|_| "invalid time")?;
     let naive = naive_date.and_time(naive_time);
     Ok(if gmt {
         chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(naive, chrono::Utc)
@@ -342,19 +341,18 @@ pub async fn parse_range(
     storage: &DynStorage,
     group: &str,
     spec: &str,
-) -> Result<Vec<u64>> {
+) -> Result<Vec<u64>, Box<dyn std::error::Error + Send + Sync>> {
     if let Some((start_s, end_s)) = spec.split_once('-') {
-        let start: u64 = start_s.parse().map_err(|_| anyhow::anyhow!("invalid range start"))?;
+        let start: u64 = start_s.parse().map_err(|_| "invalid range")?;
         if end_s.is_empty() {
             let stream = storage.list_article_numbers(group);
             let nums = stream
                 .try_filter(|n| future::ready(*n >= start))
                 .try_collect::<Vec<u64>>()
-                .await
-                .map_err(anyhow::Error::from)?;
+                .await?;
             Ok(nums)
         } else {
-            let end: u64 = end_s.parse().map_err(|_| anyhow::anyhow!("invalid range end"))?;
+            let end: u64 = end_s.parse().map_err(|_| "invalid range")?;
             if end < start {
                 return Ok(Vec::new());
             }

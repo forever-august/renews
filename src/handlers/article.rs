@@ -2,11 +2,9 @@
 
 use super::utils::{
     ArticleOperation, get_header_value, handle_article_operation, metadata_value, resolve_articles,
-    write_response_with_values, write_simple,
+    write_response_with_values, write_simple, storage_helpers::*,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::overview::generate_overview_line;
-use crate::parse_range;
 use crate::responses::*;
 use anyhow::Result;
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
@@ -131,9 +129,7 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let overview_line =
-                        generate_overview_line(ctx.storage.as_ref(), num, &article).await
-                        .map_err(anyhow::Error::from)?;
+                    let overview_line = generate_overview_line_anyhow(ctx.storage.as_ref(), num, &article).await?;
                     ctx.writer
                         .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;
@@ -216,15 +212,15 @@ async fn collect_header_values(
     if let Some(arg) = range_or_msgid {
         if arg.starts_with('<') && arg.ends_with('>') {
             // Message-ID lookup
-            if let Some(article) = storage.get_article_by_id(arg).await.map_err(anyhow::Error::from)? {
+            if let Some(article) = get_article_by_id_anyhow(storage, arg).await? {
                 let val = get_field_value(storage, &article, field).await;
                 values.push((0, val));
             }
         } else if let Some(group) = state.current_group.as_deref() {
             // Range lookup
-            let nums = parse_range(storage, group, arg).await?;
+            let nums = parse_range_anyhow(storage, group, arg).await?;
             for n in nums {
-                if let Some(article) = storage.get_article_by_number(group, n).await.map_err(anyhow::Error::from)? {
+                if let Some(article) = get_article_by_number_anyhow(storage, group, n).await? {
                     let val = get_field_value(storage, &article, field).await;
                     values.push((n, val));
                 }
@@ -233,7 +229,7 @@ async fn collect_header_values(
     } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article)
     {
         // Current article lookup
-        if let Some(article) = storage.get_article_by_number(group, num).await.map_err(anyhow::Error::from)? {
+        if let Some(article) = get_article_by_number_anyhow(storage, group, num).await? {
             let val = get_field_value(storage, &article, field).await;
             values.push((num, val));
         }

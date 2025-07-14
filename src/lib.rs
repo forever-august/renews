@@ -12,6 +12,7 @@ pub mod handlers;
 mod migrations;
 pub mod overview;
 pub mod peers;
+pub mod prelude;
 pub mod queue;
 pub mod responses;
 pub mod retention;
