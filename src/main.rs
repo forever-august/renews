@@ -1,4 +1,4 @@
-use std::error::Error;
+use anyhow::Result;
 
 use clap::{Parser, Subcommand};
 use tokio::runtime::Runtime;
@@ -92,7 +92,7 @@ enum AdminCommand {
     },
 }
 
-async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
     let storage = storage::open(&cfg.db_path).await?;
     let auth = auth::open(&cfg.auth_db_path).await?;
     match cmd {
@@ -145,7 +145,7 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<(), Box<dyn Error 
     Ok(())
 }
 
-async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn run_init(cfg: &Config) -> Result<()> {
     storage::open(&cfg.db_path).await?;
     auth::open(&cfg.auth_db_path).await?;
     let peer_db = renews::peers::PeerDb::new(&cfg.peer_db_path).await?;
@@ -155,7 +155,7 @@ async fn run_init(cfg: &Config) -> Result<(), Box<dyn Error + Send + Sync>> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // Initialize systemd socket support

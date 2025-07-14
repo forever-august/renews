@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::storage::DynStorage;
 use smallvec::SmallVec;
-use std::error::Error;
+use anyhow::Result;
 
 /// Filter that validates moderated group requirements
 pub struct ModerationFilter;
@@ -23,7 +23,7 @@ impl ArticleFilter for ModerationFilter {
         _cfg: &Config,
         article: &Message,
         _size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Get newsgroups from the article
         let newsgroups = extract_newsgroups(article);
 

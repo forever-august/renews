@@ -15,13 +15,13 @@ use crate::config::Config;
 use crate::queue::ArticleQueue;
 use crate::storage::DynStorage;
 use crate::{Command, ConnectionState};
-use std::error::Error;
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 use tokio::sync::RwLock;
 
 /// Result type for command handlers.
-pub type HandlerResult = Result<(), Box<dyn Error + Send + Sync>>;
+pub type HandlerResult = Result<()>;
 
 /// Context passed to command handlers.
 pub struct HandlerContext<R, W> {

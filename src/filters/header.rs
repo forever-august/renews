@@ -8,7 +8,7 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::utils::{extract_newsgroups, has_header};
 use crate::storage::DynStorage;
-use std::error::Error;
+use anyhow::Result;
 
 /// Filter that validates required article headers
 pub struct HeaderFilter;
@@ -22,7 +22,7 @@ impl ArticleFilter for HeaderFilter {
         _cfg: &Config,
         article: &Message,
         _size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Check required headers
         let has_from = has_header(article, "From");
         let has_subject = has_header(article, "Subject");

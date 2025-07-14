@@ -9,6 +9,7 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
 use serde::Deserialize;
+use anyhow::Result;
 use std::error::Error;
 use std::fmt;
 use std::io;
@@ -279,7 +280,7 @@ impl ArticleFilter for MilterFilter {
         _cfg: &Config,
         article: &Message,
         _size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         self.process_article(article).await?;
         Ok(())
     }

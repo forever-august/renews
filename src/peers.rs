@@ -12,7 +12,8 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 use std::sync::Arc;
-use std::{error::Error, str::FromStr};
+use anyhow::Result;
+use std::str::FromStr;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -30,7 +31,7 @@ use crate::{
 };
 
 /// Result type for peer operations.
-type PeerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+type PeerResult<T> = Result<T>;
 
 /// Connection credentials for peer authentication.
 #[derive(Debug, Clone)]

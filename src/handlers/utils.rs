@@ -2,6 +2,7 @@
 
 use crate::storage::DynStorage;
 use crate::{ConnectionState, Message};
+use anyhow::Result;
 use smallvec::SmallVec;
 use std::error::Error;
 use std::fmt;
@@ -81,7 +82,7 @@ impl Error for ArticleQueryError {}
 pub async fn write_simple<W: AsyncWrite + Unpin>(
     writer: &mut W,
     response: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     writer.write_all(response.as_bytes()).await?;
     Ok(())
 }
@@ -90,7 +91,7 @@ pub async fn write_simple<W: AsyncWrite + Unpin>(
 pub async fn send_headers<W: AsyncWrite + Unpin>(
     writer: &mut W,
     article: &Message,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     for (name, val) in &article.headers {
         writer.write_all(name.as_bytes()).await?;
         writer.write_all(b": ").await?;
@@ -104,7 +105,7 @@ pub async fn send_headers<W: AsyncWrite + Unpin>(
 pub async fn send_body<W: AsyncWrite + Unpin>(
     writer: &mut W,
     body: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     for line in body.lines() {
         if line.starts_with('.') {
             writer.write_all(b".").await?;
@@ -242,7 +243,7 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
     state: &mut ConnectionState,
     args: &[String],
     operation: ArticleOperation,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     use crate::responses::*;
 
     match resolve_articles(storage, state, args.first().map(String::as_str)).await {
@@ -295,7 +296,7 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
 pub async fn handle_article_error<W: AsyncWrite + Unpin>(
     writer: &mut W,
     error: ArticleQueryError,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     use crate::responses::*;
 
     match error {
@@ -326,7 +327,7 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
     writer: &mut W,
     response: &str,
     values: &[(u64, Option<String>)],
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     writer.write_all(response.as_bytes()).await?;
     for (n, val) in values {
         // Use efficient direct writing instead of format!
@@ -350,7 +351,7 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
 pub async fn write_lines<W: AsyncWrite + Unpin>(
     writer: &mut W,
     lines: &[&str],
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<()> {
     for line in lines {
         writer.write_all(line.as_bytes()).await?;
     }
@@ -360,7 +361,7 @@ pub async fn write_lines<W: AsyncWrite + Unpin>(
 /// Read a message from the reader until dot termination.
 pub async fn read_message<R: AsyncBufRead + Unpin>(
     reader: &mut R,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+) -> Result<String> {
     let mut msg = String::new();
     let mut line = String::new();
 
@@ -391,14 +392,14 @@ pub async fn basic_validate_article(
     _cfg: &crate::config::Config,
     article: &crate::Message,
     _size: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     // Check required headers
     let has_from = has_header(article, "From");
     let has_subject = has_header(article, "Subject");
     let newsgroups = extract_newsgroups(article);
 
     if !has_from || !has_subject || newsgroups.is_empty() {
-        return Err("missing required headers".into());
+        return Err(anyhow::anyhow!("missing required headers"));
     }
 
     Ok(())
@@ -412,7 +413,7 @@ pub async fn comprehensive_validate_article(
     cfg: &crate::config::Config,
     article: &crate::Message,
     size: u64,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     validate_article_with_filters(
         storage,
         auth,
@@ -433,7 +434,7 @@ pub async fn validate_article_with_filters(
     article: &crate::Message,
     size: u64,
     filter_chain: &crate::filters::FilterChain,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     filter_chain
         .validate(storage, auth, cfg, article, size)
         .await
@@ -445,7 +446,7 @@ pub async fn write_response_with_args<W: AsyncWrite + Unpin>(
     prefix: &str,
     args: &[&str],
     suffix: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     writer.write_all(prefix.as_bytes()).await?;
     for (i, arg) in args.iter().enumerate() {
         if i > 0 {
@@ -463,7 +464,7 @@ pub async fn write_numerical_response<W: AsyncWrite + Unpin>(
     code: u16,
     number: u64,
     suffix: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     use std::io::Write;
     let mut buf = [0u8; 64];
     let mut cursor = std::io::Cursor::new(&mut buf[..]);

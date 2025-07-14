@@ -8,7 +8,7 @@ use crate::Message;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::storage::DynStorage;
-use std::error::Error;
+use anyhow::Result;
 
 pub mod factory;
 pub mod groups;
@@ -30,7 +30,7 @@ pub trait ArticleFilter: Send + Sync {
         cfg: &Config,
         article: &Message,
         size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>>;
+    ) -> Result<()>;
 
     /// Get a descriptive name for this filter (for logging/debugging)
     fn name(&self) -> &'static str;
@@ -63,7 +63,7 @@ impl FilterChain {
         cfg: &Config,
         article: &Message,
         size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         for filter in &self.filters {
             filter.validate(storage, auth, cfg, article, size).await?;
         }
