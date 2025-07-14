@@ -1,9 +1,9 @@
 use crate::Message;
 use crate::config::Config;
 use crate::storage::Storage;
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
-use std::error::Error;
 use tracing::{debug, info, warn};
 
 /// Clean up expired articles based on retention policies.
@@ -15,10 +15,7 @@ use tracing::{debug, info, warn};
 /// # Errors
 ///
 /// Returns an error if there are issues accessing the storage or configuration.
-pub async fn cleanup_expired_articles(
-    storage: &dyn Storage,
-    cfg: &Config,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn cleanup_expired_articles(storage: &dyn Storage, cfg: &Config) -> Result<()> {
     info!("Starting retention cleanup");
     let now = Utc::now();
     let mut groups = storage.list_groups();
@@ -55,7 +52,7 @@ async fn cleanup_group_by_retention(
     cfg: &Config,
     group: &str,
     now: DateTime<Utc>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     let retention = cfg.retention_for_group(group);
 
     if let Some(retention_duration) = retention {
@@ -68,7 +65,9 @@ async fn cleanup_group_by_retention(
             storage
                 .purge_group_before(group, cutoff)
                 .await
-                .map_err(|e| format!("Failed to purge old articles from group '{group}': {e}"))?;
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to purge old articles from group '{group}': {e}")
+                })?;
         } else {
             debug!(
                 "Group '{}' has zero retention period, skipping cleanup",
@@ -87,7 +86,7 @@ async fn cleanup_group_by_expires_header(
     storage: &dyn Storage,
     group: &str,
     now: DateTime<Utc>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> Result<()> {
     let mut stream = storage.list_article_ids(group);
 
     let mut expired_count = 0;

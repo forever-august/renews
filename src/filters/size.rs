@@ -8,7 +8,7 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::utils::extract_newsgroups;
 use crate::storage::DynStorage;
-use std::error::Error;
+use anyhow::Result;
 
 /// Filter that validates article size limits
 pub struct SizeFilter;
@@ -22,7 +22,7 @@ impl ArticleFilter for SizeFilter {
         cfg: &Config,
         article: &Message,
         size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Extract newsgroups from the article
         let newsgroups = extract_newsgroups(article);
 
@@ -30,7 +30,7 @@ impl ArticleFilter for SizeFilter {
         for group in &newsgroups {
             if let Some(max_size) = cfg.max_size_for_group(group) {
                 if size > max_size {
-                    return Err(format!("article too large for group {group}").into());
+                    return Err(anyhow::anyhow!("article too large for group {group}"));
                 }
             }
         }

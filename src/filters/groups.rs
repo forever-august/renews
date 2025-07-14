@@ -8,8 +8,8 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::utils::extract_newsgroups;
 use crate::storage::DynStorage;
+use anyhow::Result;
 use futures_util::TryStreamExt;
-use std::error::Error;
 
 /// Filter that validates newsgroups exist in the server
 pub struct GroupExistenceFilter;
@@ -23,7 +23,7 @@ impl ArticleFilter for GroupExistenceFilter {
         _cfg: &Config,
         article: &Message,
         _size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Get newsgroups from the article
         let newsgroups = extract_newsgroups(article);
 
@@ -32,7 +32,7 @@ impl ArticleFilter for GroupExistenceFilter {
         let all_groups = stream.try_collect::<Vec<String>>().await?;
         for group in &newsgroups {
             if !all_groups.contains(group) {
-                return Err("group does not exist".into());
+                return Err(anyhow::anyhow!("group does not exist"));
             }
         }
 

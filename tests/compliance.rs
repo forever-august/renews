@@ -1292,61 +1292,78 @@ async fn mode_stream_check_and_takethis() {
         .await;
 }
 
-// Note: The DATE command test was separated from capabilities_and_misc_commands 
+// Note: The DATE command test was separated from capabilities_and_misc_commands
 // to fix intermittent timing failures when expecting exact timestamp matches.
-// The original test generated a timestamp and expected the server to return 
+// The original test generated a timestamp and expected the server to return
 // the exact same value, but network/processing delays could cause mismatches
 // when the timestamp crossed a second boundary.
 #[tokio::test]
 async fn date_command_returns_valid_timestamp() {
     let (storage, auth) = utils::setup().await;
-    
+
     // Start time just before the test
     let before = Utc::now().format("%Y%m%d%H%M%S").to_string();
-    
+
     // Start the server
-    let (addr, _, handle) = utils::start_server(storage, auth, 
-        toml::from_str("addr=\":0\"").unwrap(), false).await;
-    
+    let (addr, _, handle) =
+        utils::start_server(storage, auth, toml::from_str("addr=\":0\"").unwrap(), false).await;
+
     // Connect to the server
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let (tcp_reader, tcp_writer) = stream.into_split();
     let mut tcp_reader = tokio::io::BufReader::new(tcp_reader);
     let mut tcp_writer = tcp_writer;
-    
+
     // Read the initial connection response
     let mut line = String::new();
     tcp_reader.read_line(&mut line).await.unwrap();
     assert!(line.starts_with("200") || line.starts_with("201"));
-    
+
     // Send DATE command
     tcp_writer.write_all(b"DATE\r\n").await.unwrap();
-    
+
     // Read DATE response
     line.clear();
     tcp_reader.read_line(&mut line).await.unwrap();
     let response = line.trim_end_matches(['\r', '\n']);
-    
+
     // Validate the response format: "111 YYYYMMDDHHMMSS"
-    assert!(response.starts_with("111 "), "DATE response should start with '111 ', got: {}", response);
-    
+    assert!(
+        response.starts_with("111 "),
+        "DATE response should start with '111 ', got: {}",
+        response
+    );
+
     let timestamp_part = &response[4..]; // Skip "111 "
-    assert_eq!(timestamp_part.len(), 14, "Timestamp should be 14 characters long, got: {}", timestamp_part);
-    
+    assert_eq!(
+        timestamp_part.len(),
+        14,
+        "Timestamp should be 14 characters long, got: {}",
+        timestamp_part
+    );
+
     // Validate that it's all digits
-    assert!(timestamp_part.chars().all(|c| c.is_ascii_digit()), 
-        "Timestamp should be all digits, got: {}", timestamp_part);
-    
+    assert!(
+        timestamp_part.chars().all(|c| c.is_ascii_digit()),
+        "Timestamp should be all digits, got: {}",
+        timestamp_part
+    );
+
     // Validate that it's within a reasonable range (within 5 seconds of when we started)
     let after = Utc::now().format("%Y%m%d%H%M%S").to_string();
-    assert!(timestamp_part >= before.as_str() && timestamp_part <= after.as_str(),
-        "Timestamp {} should be between {} and {}", timestamp_part, before, after);
-    
+    assert!(
+        timestamp_part >= before.as_str() && timestamp_part <= after.as_str(),
+        "Timestamp {} should be between {} and {}",
+        timestamp_part,
+        before,
+        after
+    );
+
     // Close the connection
     tcp_writer.write_all(b"QUIT\r\n").await.unwrap();
     line.clear();
     tcp_reader.read_line(&mut line).await.unwrap();
     assert!(line.trim_end_matches(['\r', '\n']).starts_with("205"));
-    
+
     handle.abort();
 }

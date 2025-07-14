@@ -5,10 +5,8 @@ use super::utils::{
     write_response_with_values, write_simple,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::overview::generate_overview_line;
-use crate::parse_range;
 use crate::responses::*;
-use std::error::Error;
+use anyhow::Result;
 use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
 
 /// Macro to create simple article command handlers.
@@ -131,8 +129,12 @@ impl CommandHandler for OverHandler {
             Ok(articles) => {
                 ctx.writer.write_all(RESP_224_OVERVIEW.as_bytes()).await?;
                 for (num, article) in articles {
-                    let overview_line =
-                        generate_overview_line(ctx.storage.as_ref(), num, &article).await?;
+                    let overview_line = crate::overview::generate_overview_line(
+                        ctx.storage.as_ref(),
+                        num,
+                        &article,
+                    )
+                    .await?;
                     ctx.writer
                         .write_all(format!("{overview_line}\r\n").as_bytes())
                         .await?;
@@ -209,7 +211,7 @@ async fn collect_header_values(
     state: &crate::ConnectionState,
     field: &str,
     range_or_msgid: Option<&str>,
-) -> Result<Vec<(u64, Option<String>)>, Box<dyn Error + Send + Sync>> {
+) -> Result<Vec<(u64, Option<String>)>> {
     let mut values = Vec::new();
 
     if let Some(arg) = range_or_msgid {
@@ -221,7 +223,7 @@ async fn collect_header_values(
             }
         } else if let Some(group) = state.current_group.as_deref() {
             // Range lookup
-            let nums = parse_range(storage, group, arg).await?;
+            let nums = crate::parse_range(storage, group, arg).await?;
             for n in nums {
                 if let Some(article) = storage.get_article_by_number(group, n).await? {
                     let val = get_field_value(storage, &article, field).await;

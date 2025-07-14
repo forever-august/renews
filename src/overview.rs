@@ -5,6 +5,7 @@
 
 use crate::Message;
 use crate::handlers::utils::{extract_message_id, get_header_value};
+use anyhow::Result;
 
 /// Standard overview format fields as defined in RFC2980.
 /// This determines the order and content of fields returned by OVER/XOVER commands
@@ -25,7 +26,7 @@ pub async fn generate_overview_line(
     storage: &dyn crate::storage::Storage,
     article_number: u64,
     article: &Message,
-) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<String> {
     let subject = get_header_value(article, "Subject").unwrap_or_default();
     let from = get_header_value(article, "From").unwrap_or_default();
     let date = get_header_value(article, "Date").unwrap_or_default();

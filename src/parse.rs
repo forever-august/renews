@@ -1,4 +1,5 @@
 use crate::storage::DynStorage;
+use anyhow;
 use chrono::TimeZone;
 use futures_util::{TryStreamExt, future};
 use nom::IResult;
@@ -341,9 +342,11 @@ pub async fn parse_range(
     storage: &DynStorage,
     group: &str,
     spec: &str,
-) -> Result<Vec<u64>, Box<dyn std::error::Error + Send + Sync>> {
+) -> anyhow::Result<Vec<u64>> {
     if let Some((start_s, end_s)) = spec.split_once('-') {
-        let start: u64 = start_s.parse().map_err(|_| "invalid range")?;
+        let start: u64 = start_s
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid range"))?;
         if end_s.is_empty() {
             let stream = storage.list_article_numbers(group);
             let nums = stream
@@ -352,7 +355,9 @@ pub async fn parse_range(
                 .await?;
             Ok(nums)
         } else {
-            let end: u64 = end_s.parse().map_err(|_| "invalid range")?;
+            let end: u64 = end_s
+                .parse()
+                .map_err(|_| anyhow::anyhow!("invalid range"))?;
             if end < start {
                 return Ok(Vec::new());
             }

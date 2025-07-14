@@ -8,8 +8,8 @@ use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::utils::{extract_newsgroups, get_header_values};
 use crate::storage::DynStorage;
+use anyhow::Result;
 use smallvec::SmallVec;
-use std::error::Error;
 
 /// Filter that validates moderated group requirements
 pub struct ModerationFilter;
@@ -23,7 +23,7 @@ impl ArticleFilter for ModerationFilter {
         _cfg: &Config,
         article: &Message,
         _size: u64,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         // Get newsgroups from the article
         let newsgroups = extract_newsgroups(article);
 
@@ -48,19 +48,26 @@ impl ArticleFilter for ModerationFilter {
                 }
 
                 if group_moderators.is_empty() {
-                    return Err("missing approval for moderated group".into());
+                    return Err(anyhow::anyhow!("missing approval for moderated group"));
                 }
 
                 if group_signatures.len() < group_moderators.len() {
-                    return Err("missing signature for moderator".into());
+                    return Err(anyhow::anyhow!("missing signature for moderator"));
                 }
 
                 // Verify signatures for this group's moderators
                 for (i, approved) in group_moderators.iter().enumerate() {
-                    let sig_header = group_signatures.get(i).ok_or("missing signature")?.clone();
+                    let sig_header = group_signatures
+                        .get(i)
+                        .ok_or_else(|| anyhow::anyhow!("missing signature"))?
+                        .clone();
                     let mut words = sig_header.split_whitespace();
-                    let version = words.next().ok_or("bad signature")?;
-                    let signed = words.next().ok_or("bad signature")?;
+                    let version = words
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
+                    let signed = words
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
                     let sig_rest = words.collect::<Vec<_>>().join("\n");
 
                     let mut tmp_headers: SmallVec<[(String, String); 8]> = article

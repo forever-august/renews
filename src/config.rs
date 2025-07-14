@@ -1,9 +1,9 @@
 use crate::wildmat::wildmat;
+use anyhow::Result;
 use chrono::Duration;
 use regex::Regex;
 use serde::Deserialize;
 use serde::de::{self, Deserializer, Visitor};
-use std::error::Error;
 use std::fmt;
 
 fn default_db_path() -> String {
@@ -50,7 +50,7 @@ pub fn default_pgp_key_servers() -> Vec<String> {
     ]
 }
 
-fn expand_placeholders(text: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+fn expand_placeholders(text: &str) -> Result<String> {
     let env_re = Regex::new(r"\$ENV\{([^}]+)\}")?;
     let file_re = Regex::new(r"\$FILE\{([^}]+)\}")?;
     let mut out = String::new();
@@ -223,12 +223,12 @@ impl Config {
     /// # Errors
     ///
     /// Returns an error if the file cannot be read or parsed.
-    pub fn from_file(path: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub fn from_file(path: &str) -> Result<Self> {
         let text = match std::fs::read_to_string(path) {
             Ok(content) => content,
             Err(e) => {
                 return match e.kind() {
-                    std::io::ErrorKind::NotFound => Err(format!(
+                    std::io::ErrorKind::NotFound => Err(anyhow::anyhow!(
                         "Configuration file not found: '{path}'
 
 Please ensure the configuration file exists at the specified path.
@@ -237,27 +237,24 @@ You can:
 - Use --config <path> to specify a different location
 - Set the RENEWS_CONFIG environment variable
 - See the example configuration at 'examples/config.toml'"
-                    )
-                    .into()),
-                    std::io::ErrorKind::PermissionDenied => Err(format!(
+                    )),
+                    std::io::ErrorKind::PermissionDenied => Err(anyhow::anyhow!(
                         "Permission denied reading configuration file: '{path}'
 
 Please ensure the file is readable by the current user.
 You may need to check file permissions or run with appropriate privileges."
-                    )
-                    .into()),
-                    _ => Err(format!(
+                    )),
+                    _ => Err(anyhow::anyhow!(
                         "Failed to read configuration file '{path}': {e}
 
 Please ensure the file exists and is readable."
-                    )
-                    .into()),
+                    )),
                 };
             }
         };
 
         let text = expand_placeholders(&text).map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to process configuration placeholders in '{path}': {e}
 
 Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid."
@@ -265,7 +262,7 @@ Please check that all $ENV{{...}} and $FILE{{...}} placeholders are valid."
         })?;
 
         let mut cfg: Config = toml::from_str(&text).map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to parse configuration file '{path}': {e}
 
 Please check the TOML syntax. Common issues:
@@ -376,11 +373,11 @@ See 'examples/config.toml' for a valid configuration example."
     /// # Errors
     ///
     /// Returns an error if the number of available cores cannot be determined when runtime_threads is 0.
-    pub fn get_runtime_threads(&self) -> Result<usize, Box<dyn Error + Send + Sync>> {
+    pub fn get_runtime_threads(&self) -> Result<usize> {
         if self.runtime_threads == 0 {
             std::thread::available_parallelism()
                 .map(|n| n.get())
-                .map_err(|e| format!("Failed to determine number of CPU cores: {e}").into())
+                .map_err(|e| anyhow::anyhow!("Failed to determine number of CPU cores: {e}"))
         } else {
             Ok(self.runtime_threads)
         }

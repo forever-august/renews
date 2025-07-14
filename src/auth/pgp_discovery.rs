@@ -4,9 +4,9 @@
 //! authentication system to automatically retrieve and validate public keys
 //! from key servers when needed.
 
+use anyhow::Result;
 use async_trait::async_trait;
 use pgp::native::{Deserializable, SignedPublicKey};
-use std::error::Error;
 
 /// Trait for PGP key discovery from various sources.
 #[async_trait]
@@ -25,13 +25,10 @@ pub trait PgpKeyDiscovery: Send + Sync {
     /// Returns `Ok(Some(key_text))` if a valid key is found,
     /// `Ok(None)` if no key is found,
     /// or `Err(...)` if there's an error during the discovery process.
-    async fn discover_key(
-        &self,
-        user: &str,
-    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>>;
+    async fn discover_key(&self, user: &str) -> Result<Option<String>>;
 
     /// Validate that a key block can be parsed as a valid PGP key.
-    async fn validate_key(&self, key_text: &str) -> Result<bool, Box<dyn Error + Send + Sync>>;
+    async fn validate_key(&self, key_text: &str) -> Result<bool>;
 }
 
 /// Default implementation of PGP key discovery using pgp-lib's key discovery features.
@@ -65,10 +62,7 @@ impl Default for DefaultPgpKeyDiscovery {
 
 #[async_trait]
 impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
-    async fn discover_key(
-        &self,
-        user: &str,
-    ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    async fn discover_key(&self, user: &str) -> Result<Option<String>> {
         tracing::debug!("Attempting key discovery for user: {}", user);
 
         // Use pgp-lib's HTTP key discovery functionality
@@ -82,7 +76,7 @@ impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
                     }
                     Err(e) => {
                         tracing::warn!("Failed to serialize discovered key for {}: {}", user, e);
-                        Err(format!("Failed to serialize discovered key: {e}").into())
+                        Err(anyhow::anyhow!("Failed to serialize discovered key: {e}"))
                     }
                 }
             }
@@ -93,7 +87,7 @@ impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
         }
     }
 
-    async fn validate_key(&self, key_text: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn validate_key(&self, key_text: &str) -> Result<bool> {
         match SignedPublicKey::from_string(key_text) {
             Ok(_) => Ok(true),
             Err(_) => Ok(false),

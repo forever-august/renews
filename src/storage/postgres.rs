@@ -3,6 +3,7 @@ use super::{
     common::{Headers, extract_message_id},
 };
 use crate::migrations::Migrator;
+use anyhow::Result;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -11,7 +12,7 @@ use sqlx::{
     PgPool, Row,
     postgres::{PgConnectOptions, PgPoolOptions},
 };
-use std::{error::Error, str::FromStr};
+use std::str::FromStr;
 
 // SQL schemas for PostgreSQL storage
 const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
@@ -51,9 +52,9 @@ pub struct PostgresStorage {
 impl PostgresStorage {
     #[tracing::instrument(skip_all)]
     /// Create a new Postgres storage backend.
-    pub async fn new(uri: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+    pub async fn new(uri: &str) -> Result<Self> {
         let opts = PgConnectOptions::from_str(uri).map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Invalid PostgreSQL connection URI '{}': {}
 
 Please ensure the URI is in the correct format:
@@ -67,7 +68,8 @@ Required connection components:
 - database: Target database name
 - user: PostgreSQL username
 - password: User password (if required)",
-                uri, e
+                uri,
+                e
             )
         })?;
 
@@ -76,7 +78,7 @@ Required connection components:
             .connect_with(opts)
             .await
             .map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to connect to PostgreSQL database '{}': {}
 
 Possible causes:
@@ -93,7 +95,8 @@ Please verify:
 2. Database exists: psql -l
 3. User has access privileges: GRANT CONNECT ON DATABASE dbname TO username;
 4. Connection settings in pg_hba.conf allow your connection method",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -112,44 +115,49 @@ Please verify:
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to create messages table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(GROUP_ARTICLES_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to create group_articles table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(GROUPS_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to create groups table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
             sqlx::query(OVERVIEW_TABLE)
                 .execute(&pool)
                 .await
                 .map_err(|e| {
-                    format!(
+                    anyhow::anyhow!(
                         "Failed to create overview table in PostgreSQL database '{}': {}",
-                        uri, e
+                        uri,
+                        e
                     )
                 })?;
 
             // Set current version (since pre-1.0, we use version 1 as the baseline)
             migrator.set_version(1).await.map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to set initial schema version for PostgreSQL storage database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
 
@@ -158,9 +166,10 @@ Please verify:
             // Existing database: apply any pending migrations
             tracing::info!("Found existing PostgreSQL storage database, checking for migrations");
             migrator.migrate_to_latest().await.map_err(|e| {
-                format!(
+                anyhow::anyhow!(
                     "Failed to run storage migrations for PostgreSQL database '{}': {}",
-                    uri, e
+                    uri,
+                    e
                 )
             })?;
         }
@@ -172,7 +181,7 @@ Please verify:
 #[async_trait]
 impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
-    async fn store_article(&self, article: &Message) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn store_article(&self, article: &Message) -> Result<()> {
         let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
@@ -241,11 +250,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_number(
-        &self,
-        group: &str,
-        number: u64,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+    async fn get_article_by_number(&self, group: &str, number: u64) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query(
             "SELECT m.headers, m.body FROM messages m JOIN group_articles g ON m.message_id = g.message_id WHERE g.group_name = $1 AND g.number = $2",
         )
@@ -263,10 +268,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<Message>, Box<dyn Error + Send + Sync>> {
+    async fn get_article_by_id(&self, message_id: &str) -> Result<Option<Message>> {
         if let Some(row) = sqlx::query("SELECT headers, body FROM messages WHERE message_id = $1")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -318,22 +320,18 @@ impl Storage for PostgresStorage {
                                 }
                             },
                             (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => {
-                                yield Err(Box::new(e) as Box<dyn Error + Send + Sync>)
+                                yield Err(anyhow::Error::from(e))
                             }
                         }
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
     }
 
     #[tracing::instrument(skip_all)]
-    async fn add_group(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn add_group(&self, group: &str, moderated: bool) -> Result<()> {
         let now = chrono::Utc::now().timestamp();
         sqlx::query(
             "INSERT INTO groups (name, created_at, moderated) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
@@ -347,11 +345,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn set_group_moderated(
-        &self,
-        group: &str,
-        moderated: bool,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn set_group_moderated(&self, group: &str, moderated: bool) -> Result<()> {
         sqlx::query("UPDATE groups SET moderated = $1 WHERE name = $2")
             .bind(moderated)
             .bind(group)
@@ -361,7 +355,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_group(&self, group: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_group(&self, group: &str) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE group_name = $1")
             .bind(group)
             .execute(&self.pool)
@@ -379,12 +373,12 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn remove_groups_by_pattern(&self, pattern: &str) -> Result<()> {
         // Get all group names that match the pattern
         let rows = sqlx::query("SELECT name FROM groups")
             .fetch_all(&self.pool)
             .await?;
-        
+
         let mut matching_groups = Vec::new();
         for row in rows {
             let name: String = row.try_get("name")?;
@@ -392,17 +386,17 @@ impl Storage for PostgresStorage {
                 matching_groups.push(name);
             }
         }
-        
+
         // Remove each matching group
         for group in matching_groups {
             self.remove_group(&group).await?;
         }
-        
+
         Ok(())
     }
 
     #[tracing::instrument(skip_all)]
-    async fn is_group_moderated(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn is_group_moderated(&self, group: &str) -> Result<bool> {
         let row = sqlx::query("SELECT moderated FROM groups WHERE name = $1")
             .bind(group)
             .fetch_optional(&self.pool)
@@ -416,7 +410,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn group_exists(&self, group: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
+    async fn group_exists(&self, group: &str) -> Result<bool> {
         let row = sqlx::query("SELECT 1 FROM groups WHERE name = $1 LIMIT 1")
             .bind(group)
             .fetch_optional(&self.pool)
@@ -435,9 +429,9 @@ impl Storage for PostgresStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("name") {
                         Ok(name) => yield Ok(name),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -456,9 +450,9 @@ impl Storage for PostgresStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("name") {
                         Ok(name) => yield Ok(name),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -476,11 +470,11 @@ impl Storage for PostgresStorage {
                     Ok(r) => {
                         match (r.try_get::<String, _>("name"), r.try_get::<i64, _>("created_at")) {
                             (Ok(name), Ok(ts)) => yield Ok((name, ts)),
-                            (Err(e), _) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
-                            (_, Err(e)) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                            (Err(e), _) => yield Err(anyhow::Error::from(e)),
+                            (_, Err(e)) => yield Err(anyhow::Error::from(e)),
                         }
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -499,9 +493,9 @@ impl Storage for PostgresStorage {
                 match row {
                     Ok(r) => match r.try_get::<i64, _>("number") {
                         Ok(number) => yield Ok(u64::try_from(number).unwrap_or(0)),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -520,9 +514,9 @@ impl Storage for PostgresStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("message_id") {
                         Ok(message_id) => yield Ok(message_id),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -547,9 +541,9 @@ impl Storage for PostgresStorage {
                 match row {
                     Ok(r) => match r.try_get::<String, _>("message_id") {
                         Ok(message_id) => yield Ok(message_id),
-                        Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                        Err(e) => yield Err(anyhow::Error::from(e)),
                     },
-                    Err(e) => yield Err(Box::new(e) as Box<dyn Error + Send + Sync>),
+                    Err(e) => yield Err(anyhow::Error::from(e)),
                 }
             }
         })
@@ -560,7 +554,7 @@ impl Storage for PostgresStorage {
         &self,
         group: &str,
         before: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE group_name = $1 AND inserted_at < $2")
             .bind(group)
             .bind(before.timestamp())
@@ -570,7 +564,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn purge_orphan_messages(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn purge_orphan_messages(&self) -> Result<()> {
         sqlx::query(
             "DELETE FROM messages WHERE message_id NOT IN (SELECT DISTINCT message_id FROM group_articles)",
         )
@@ -580,10 +574,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_message_size(
-        &self,
-        message_id: &str,
-    ) -> Result<Option<u64>, Box<dyn Error + Send + Sync>> {
+    async fn get_message_size(&self, message_id: &str) -> Result<Option<u64>> {
         if let Some(row) = sqlx::query("SELECT size FROM messages WHERE message_id = $1")
             .bind(message_id)
             .fetch_optional(&self.pool)
@@ -596,10 +587,7 @@ impl Storage for PostgresStorage {
         }
     }
 
-    async fn delete_article_by_id(
-        &self,
-        message_id: &str,
-    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn delete_article_by_id(&self, message_id: &str) -> Result<()> {
         sqlx::query("DELETE FROM group_articles WHERE message_id = $1")
             .bind(message_id)
             .execute(&self.pool)
@@ -614,12 +602,7 @@ impl Storage for PostgresStorage {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn get_overview_range(
-        &self,
-        group: &str,
-        start: u64,
-        end: u64,
-    ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
+    async fn get_overview_range(&self, group: &str, start: u64, end: u64) -> Result<Vec<String>> {
         let rows = sqlx::query(
             "SELECT overview_data FROM overview WHERE group_name = $1 AND article_number >= $2 AND article_number <= $3 ORDER BY article_number",
         )

@@ -12,6 +12,7 @@ pub mod handlers;
 mod migrations;
 pub mod overview;
 pub mod peers;
+pub mod prelude;
 pub mod queue;
 pub mod responses;
 pub mod retention;
@@ -37,7 +38,7 @@ use crate::config::Config;
 use crate::handlers::{HandlerContext, dispatch_command};
 use crate::queue::ArticleQueue;
 use crate::storage::DynStorage;
-use std::error::Error;
+use anyhow::Result;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
@@ -58,7 +59,7 @@ pub async fn handle_client<S>(
     cfg: Arc<RwLock<Config>>,
     is_tls: bool,
     queue: ArticleQueue,
-) -> Result<(), Box<dyn Error + Send + Sync>>
+) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {

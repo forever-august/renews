@@ -21,7 +21,6 @@
 //! - Article retention cleanup
 //!
 
-use std::error::Error;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -31,10 +30,10 @@ use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
 use tracing::{error, info};
 
+use dashmap::DashMap;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
 use tokio_cron_scheduler::JobScheduler;
-use dashmap::DashMap;
 
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
@@ -46,7 +45,7 @@ use crate::storage::{self, Storage};
 use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
-type ServerResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+type ServerResult<T> = anyhow::Result<T>;
 
 /// Shared server components
 #[derive(Clone)]
@@ -440,7 +439,8 @@ impl PeerManager {
         }
 
         // Remove obsolete peer tasks
-        let to_remove: Vec<String> = self.peer_jobs
+        let to_remove: Vec<String> = self
+            .peer_jobs
             .iter()
             .filter(|entry| !new_cfg.peers.iter().any(|p| &p.sitename == entry.key()))
             .map(|entry| entry.key().clone())
@@ -469,7 +469,7 @@ impl PeerManager {
 fn load_tls_config(cert_path: &str, key_path: &str) -> ServerResult<rustls::ServerConfig> {
     let cert_file = &mut BufReader::new(File::open(cert_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
-            format!(
+            anyhow::anyhow!(
                 "TLS certificate file not found: '{cert_path}'
 
 Please ensure the certificate file exists at the specified path.
@@ -477,18 +477,18 @@ For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/
             )
         }
         std::io::ErrorKind::PermissionDenied => {
-            format!(
+            anyhow::anyhow!(
                 "Permission denied reading TLS certificate file: '{cert_path}'
 
 Please ensure the file is readable by the current user.
 You may need to run as root or adjust file permissions."
             )
         }
-        _ => format!("Failed to open TLS certificate file '{cert_path}': {e}"),
+        _ => anyhow::anyhow!("Failed to open TLS certificate file '{cert_path}': {e}"),
     })?);
     let key_file = &mut BufReader::new(File::open(key_path).map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => {
-            format!(
+            anyhow::anyhow!(
                 "TLS private key file not found: '{key_path}'
 
 Please ensure the private key file exists at the specified path.
@@ -496,7 +496,7 @@ For Let's Encrypt certificates, this is typically '/etc/letsencrypt/live/domain/
             )
         }
         std::io::ErrorKind::PermissionDenied => {
-            format!(
+            anyhow::anyhow!(
                 "Permission denied reading TLS private key file: '{key_path}'
 
 Please ensure the file is readable by the current user.
@@ -504,12 +504,12 @@ You may need to run as root or adjust file permissions.
 Note: Private key files should be protected (mode 600)."
             )
         }
-        _ => format!("Failed to open TLS private key file '{key_path}': {e}"),
+        _ => anyhow::anyhow!("Failed to open TLS private key file '{key_path}': {e}"),
     })?);
 
     let certs = certs(cert_file)
         .map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to parse TLS certificate file '{cert_path}': {e}
 
 Please ensure the certificate file is in valid PEM format.
@@ -521,7 +521,7 @@ The file should contain one or more certificates starting with '-----BEGIN CERTI
         .collect();
 
     let mut keys = pkcs8_private_keys(key_file).map_err(|e| {
-        format!(
+        anyhow::anyhow!(
             "Failed to parse TLS private key file '{key_path}': {e}
 
 Please ensure the private key file is in valid PKCS#8 PEM format.
@@ -533,13 +533,12 @@ If your key is in a different format, you may need to convert it:
     })?;
 
     if keys.is_empty() {
-        return Err(format!(
+        return Err(anyhow::anyhow!(
             "No valid private key found in TLS key file '{key_path}'
 
 Please ensure the file contains a valid PKCS#8 private key.
 The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
-        )
-        .into());
+        ));
     }
 
     let key = rustls::PrivateKey(keys.remove(0));
@@ -548,7 +547,7 @@ The file should have content starting with '-----BEGIN PRIVATE KEY-----'."
         .with_no_client_auth()
         .with_single_cert(certs, key)
         .map_err(|e| {
-            format!(
+            anyhow::anyhow!(
                 "Failed to create TLS configuration: {e}
 
 This error typically occurs when:
@@ -603,15 +602,15 @@ async fn get_listener(addr_config: &str) -> ServerResult<TcpListener> {
                                     Ok(listener)
                                 }
                                 Err(e) => {
-                                    Err(format!("failed to convert socket to tokio: {e}").into())
+                                    Err(anyhow::anyhow!("failed to convert socket to tokio: {e}"))
                                 }
                             },
                             Err(e) => {
-                                Err(format!("failed to set socket to non-blocking: {e}").into())
+                                Err(anyhow::anyhow!("failed to set socket to non-blocking: {e}"))
                             }
                         }
                     }
-                    Err(e) => Err(format!(
+                    Err(e) => Err(anyhow::anyhow!(
                         "Failed to bind to address '{addr_config}': {e}
 
 This error typically occurs when:
@@ -622,11 +621,12 @@ This error typically occurs when:
 - For systemd socket activation, the socket is not available
 
 You can use 'systemd://socket_name' format for systemd socket activation."
-                    )
-                    .into()),
+                    )),
                 }
             }
-            Err(e) => Err(format!("Invalid systemd socket address '{addr_config}': {e}").into()),
+            Err(e) => Err(anyhow::anyhow!(
+                "Invalid systemd socket address '{addr_config}': {e}"
+            )),
         }
     } else {
         // For regular addresses, use our own parsing logic
@@ -634,7 +634,7 @@ You can use 'systemd://socket_name' format for systemd socket activation."
         info!("listening on {addr}");
         match TcpListener::bind(&addr).await {
             Ok(listener) => Ok(listener),
-            Err(e) => Err(format!(
+            Err(e) => Err(anyhow::anyhow!(
                 "Failed to bind to address '{}': {}
 
 This error typically occurs when:
@@ -648,8 +648,7 @@ You can use 'systemd://socket_name' format for systemd socket activation.",
                 e,
                 addr.split(':').next_back().unwrap_or("119"),
                 addr.split(':').next_back().unwrap_or("119")
-            )
-            .into()),
+            )),
         }
     }
 }

@@ -1,5 +1,5 @@
+use anyhow::Result;
 use async_trait::async_trait;
-use std::error::Error;
 
 /// Represents a single database migration step.
 ///
@@ -16,7 +16,7 @@ pub trait Migration: Send + Sync {
     /// Apply this migration to the database.
     ///
     /// Should be idempotent - running multiple times should not cause issues.
-    async fn apply(&self) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn apply(&self) -> Result<()>;
 }
 
 /// Manages database schema versions and applies migrations.
@@ -28,10 +28,10 @@ pub trait Migrator: Send + Sync {
     /// Get the current schema version stored in the backend.
     ///
     /// Returns 0 if no version is stored (fresh install).
-    async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>>;
+    async fn get_current_version(&self) -> Result<u32>;
 
     /// Set the schema version in the backend.
-    async fn set_version(&self, version: u32) -> Result<(), Box<dyn Error + Send + Sync>>;
+    async fn set_version(&self, version: u32) -> Result<()>;
 
     /// Get all available migrations for this backend, ordered by target version.
     fn get_migrations(&self) -> Vec<Box<dyn Migration>>;
@@ -54,7 +54,7 @@ pub trait Migrator: Send + Sync {
     ///
     /// Returns an error if any migration fails or if the stored version
     /// is higher than the latest available version.
-    async fn migrate_to_latest(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+    async fn migrate_to_latest(&self) -> Result<()> {
         let current_version = self.get_current_version().await?;
         let migrations = self.get_migrations();
 
@@ -70,11 +70,11 @@ pub trait Migrator: Send + Sync {
             .unwrap_or(0);
 
         if current_version > latest_version {
-            return Err(format!(
+            return Err(anyhow::anyhow!(
                 "Stored schema version {current_version} is higher than latest available version {latest_version}. \
                 This usually means you're trying to run an older version of the software \
                 against a newer database. Please upgrade to a compatible version."
-            ).into());
+            ));
         }
 
         if current_version == latest_version {
@@ -106,14 +106,13 @@ pub trait Migrator: Send + Sync {
                 migration.description()
             );
 
-            migration
-                .apply()
-                .await
-                .map_err(|e| format!("Failed to apply migration to version {target}: {e}"))?;
+            migration.apply().await.map_err(|e| {
+                anyhow::anyhow!("Failed to apply migration to version {target}: {e}")
+            })?;
 
             self.set_version(target)
                 .await
-                .map_err(|e| format!("Failed to update schema version to {target}: {e}"))?;
+                .map_err(|e| anyhow::anyhow!("Failed to update schema version to {target}: {e}"))?;
 
             tracing::info!("Successfully migrated to version {}", target);
         }
@@ -168,11 +167,11 @@ mod tests {
             &self.description
         }
 
-        async fn apply(&self) -> Result<(), Box<dyn Error + Send + Sync>> {
+        async fn apply(&self) -> Result<()> {
             self.apply_count.fetch_add(1, Ordering::SeqCst);
 
             if self.should_fail.load(Ordering::SeqCst) {
-                return Err("Mock migration failure".into());
+                return Err(anyhow::anyhow!("Mock migration failure"));
             }
 
             Ok(())
@@ -201,15 +200,15 @@ mod tests {
 
     #[async_trait]
     impl Migrator for MockMigrator {
-        async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>> {
+        async fn get_current_version(&self) -> Result<u32> {
             if self.can_read_version.load(Ordering::SeqCst) {
                 Ok(self.current_version.load(Ordering::SeqCst))
             } else {
-                Err("Cannot read version table".into())
+                Err(anyhow::anyhow!("Cannot read version table"))
             }
         }
 
-        async fn set_version(&self, version: u32) -> Result<(), Box<dyn Error + Send + Sync>> {
+        async fn set_version(&self, version: u32) -> Result<()> {
             self.current_version.store(version, Ordering::SeqCst);
             self.can_read_version.store(true, Ordering::SeqCst);
             Ok(())
@@ -271,11 +270,11 @@ mod tests {
 
         #[async_trait]
         impl Migrator for HighVersionMigrator {
-            async fn get_current_version(&self) -> Result<u32, Box<dyn Error + Send + Sync>> {
+            async fn get_current_version(&self) -> Result<u32> {
                 Ok(10) // High version
             }
 
-            async fn set_version(&self, _version: u32) -> Result<(), Box<dyn Error + Send + Sync>> {
+            async fn set_version(&self, _version: u32) -> Result<()> {
                 Ok(())
             }
 
