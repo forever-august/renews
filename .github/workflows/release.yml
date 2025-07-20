@@ -9,27 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    name: Create release
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: ncipollo/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag: ${{ github.ref }}
-          name: Release ${{ github.ref }}
-          draft: true
-          allowUpdates: true
-          updateOnlyUnreleased: true
-
-  build-packages:
+  build-release:
     name: Build packages
-    needs: create-release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -66,39 +47,23 @@ jobs:
           cp dist/man/renews.1 renews-${{ github.ref_name }}/usr/share/man/man1/
           cp examples/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
           cp examples/config.toml renews-${{ github.ref_name }}/etc/renews/config.toml.example
-          cp LICENSE-MIT renews-${{ github.ref_name }}/
+          cp LICENSE renews-${{ github.ref_name }}/
           cp README.md renews-${{ github.ref_name }}/
           cp dist/install.sh renews-${{ github.ref_name }}/
           cp dist/uninstall.sh renews-${{ github.ref_name }}/
           
           tar -czf renews-${{ github.ref_name }}-linux-x86_64.tar.gz renews-${{ github.ref_name }}/
 
-      - name: Upload DEB package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create Release
+        uses: ncipollo/release-action@v1.18.0
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/debian/renews_0.1.0-1_amd64.deb
-          asset_name: renews_0.1.0-1_amd64.deb
-          asset_content_type: application/vnd.debian.binary-package
-
-      - name: Upload RPM package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: target/generate-rpm/renews-0.1.0-1.x86_64.rpm
-          asset_name: renews-0.1.0-1.x86_64.rpm
-          asset_content_type: application/x-rpm
-
-      - name: Upload tarball
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: renews-${{ github.ref_name }}-linux-x86_64.tar.gz
-          asset_name: renews-${{ github.ref_name }}-linux-x86_64.tar.gz
-          asset_content_type: application/gzip
+          tag: ${{ github.ref }}
+          name: ${{ github.ref_name }}
+          draft: true
+          allowUpdates: true
+          updateOnlyUnreleased: true
+          omitBodyDuringUpdate: true
+          omitDraftDuringUpdate: true
+          omitNameDuringUpdate: true
+          omitPrereleaseDuringUpdate: true
+          artifacts: target/debian/*.deb,target/generate-rpm/*.rpm,*.tar.gz

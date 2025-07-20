@@ -1,13 +1,13 @@
 [package]
 name = "renews"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "Modern NNTP (Network News Transfer Protocol) server implemented in Rust"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/Chemiseblanc/renews"
-repository = "https://github.com/Chemiseblanc/renews"
-authors = ["Renews development team"]
+homepage = "https://github.com/forever-august/renews"
+repository = "https://github.com/forever-august/renews"
+authors = ["Matthew Gibson <matt@mgibson.ca>"]
 keywords = ["nntp", "news", "server", "network", "protocol"]
 categories = ["network-programming", "command-line-utilities"]
 
@@ -53,6 +53,7 @@ dashmap = "5.5"
 systemd_socket = "0.1"
 
 [features]
+default = ["postgres"]
 websocket = ["tokio-tungstenite"]
 postgres = ["sqlx/postgres"]
 
@@ -63,10 +64,9 @@ tokio-test = "0.4"
 serial_test = "2"
 
 [package.metadata.deb]
-maintainer = "Renews development team <https://github.com/Chemiseblanc/renews>"
-copyright = "2024, Renews development team"
-license-file = ["LICENSE-MIT", "5"]
-changelog = "debian/changelog"
+maintainer = "Matthew Gibson <matt@mgibson.ca>"
+copyright = "2025, Matthew Gibson"
+license-file = "LICENSE"
 extended-description = """\
 Renews is a modern, lightweight NNTP (Network News Transfer Protocol) server 
 implemented in Rust. It provides a complete newsgroup server solution with a focus 
@@ -115,7 +115,7 @@ conf-files = ["/etc/renews/config.toml"]
 systemd-units = { unit-name = "renews", enable = false }
 
 [package.metadata.generate-rpm]
-license = "MIT OR Apache-2.0"
+license = "Apache-2.0"
 summary = "Modern NNTP server implemented in Rust"
 description = """\
 Renews is a modern, lightweight NNTP (Network News Transfer Protocol) server 
@@ -126,7 +126,7 @@ Renews implements the NNTP protocol as defined in RFC 3977, storing articles in 
 database and supporting configurable newsgroups with flexible retention policies. 
 The server is designed for both standalone operation and distributed newsgroup 
 synchronization with peer servers."""
-url = "https://github.com/Chemiseblanc/renews"
+url = "https://github.com/forever-august/renews"
 group = "Applications/Internet"
 requires = { systemd = "*" }
 assets = [
