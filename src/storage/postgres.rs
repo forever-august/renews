@@ -182,7 +182,7 @@ Please verify:
 impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
     async fn store_article(&self, article: &Message) -> Result<()> {
-        let msg_id = extract_message_id(article).ok_or("missing Message-ID")?;
+        let msg_id = extract_message_id(article).ok_or_else(|| anyhow::anyhow!("missing Message-ID"))?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
         // Store the message once

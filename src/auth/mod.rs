@@ -79,7 +79,7 @@ For PostgreSQL URIs, use format:
 postgres://username:password@host:port/database
 
 You can change the authentication database URI in your configuration file using the 'auth_db_path' setting."
-                    ).into()
+                    )
                 })
         }
         #[cfg(not(feature = "postgres"))]
