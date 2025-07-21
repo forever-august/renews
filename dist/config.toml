@@ -15,11 +15,11 @@ idle_timeout_secs = 600 # How long to wait between commands before disconnecting
 
 # TLS Settings
 # For systemd socket activation, use systemd://<socket_name> format
-tls_addr = "systemd://renews-nntps.socket"
+# tls_addr = "systemd://renews-nntps.socket"
 # Alternative direct binding (comment out the above and uncomment below if not using systemd)
 # tls_addr = ":563"
-# tls_cert = "/etc/letsencrypt/fullchain.pem"
-# tls_key  = "/etc/letsencrypt/privkey.pem"
+# tls_cert = "/etc/letsencrypt/live/example.com/fullchain.pem"
+# tls_key  = "/etc/letsencrypt/live/example.com/privkey.pem"
 
 # PGP key discovery servers for signature verification
 # These servers are queried when looking up PGP public keys for admin control messages
@@ -36,7 +36,7 @@ tls_addr = "systemd://renews-nntps.socket"
 
 # Storage Settings
 # Currently sqlite and postgres are supported
-# sqlite:   sqlite:path/to/file.db
+# sqlite:   sqlite://path/to/file.db
 # postgres: postgres://user@pass:db_host.com/database
 db_path      = "sqlite:///var/lib/renews/news.db"
 auth_db_path = "sqlite:///var/lib/renews/auth.db"
@@ -50,22 +50,23 @@ peer_sync_schedule = "0 0 * * * *"                 # Default: sync every hour
 [[group]]
 pattern = "*"
 retention_days = 7
+max_article_bytes = "128K"
 
 [[group]]
 group = "comp.lang.rust"
 retention_days = 60
-max_article_bytes = "2M"
+max_article_bytes = "1M"
 
 # Peer configuration
-[[peer]]
-sitename = "peeruser:peerpass@peer.example.com" # Peer name with credentials
-patterns = ["*"]                                # Sync all groups
-sync_schedule = "0 */30 * * * *"                # Sync every 30 minutes
+# [[peer]]
+# sitename = "peeruser:peerpass@peer.example.com" # Peer name with credentials
+# patterns = ["*"]                                # Sync all groups
+# sync_schedule = "0 */30 * * * *"                # Sync every 30 minutes
 
-[[peer]]
-sitename = "daily-peer.example.com"
-patterns = ["daily.*"]
-sync_schedule = "0 0 2 * * *"       # Sync daily at 2 AM
+# [[peer]]
+# sitename = "daily-peer.example.com"
+# patterns = ["daily.*"]
+# sync_schedule = "0 0 2 * * *"       # Sync daily at 2 AM
 
 # Filter pipeline configuration
 # If not specified, the default filter chain is used (all filters)

@@ -45,8 +45,10 @@ jobs:
           
           cp target/release/renews renews-${{ github.ref_name }}/usr/bin/
           cp dist/man/renews.1 renews-${{ github.ref_name }}/usr/share/man/man1/
-          cp examples/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
-          cp examples/config.toml renews-${{ github.ref_name }}/etc/renews/config.toml.example
+          cp dist/systemd/renews.service renews-${{ github.ref_name }}/lib/systemd/system/
+          cp dist/systemd/renews-nntp.socket renews-${{ github.ref_name }}/lib/systemd/system/
+          cp dist/systemd/renews-nntps.socket renews-${{ github.ref_name }}/lib/systemd/system/
+          cp dist/config.toml renews-${{ github.ref_name }}/etc/renews/config.toml
           cp LICENSE renews-${{ github.ref_name }}/
           cp README.md renews-${{ github.ref_name }}/
           cp dist/install.sh renews-${{ github.ref_name }}/
