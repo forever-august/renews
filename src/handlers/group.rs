@@ -2,23 +2,22 @@
 
 use super::utils::{write_lines, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::error::StorageError;
 use crate::responses::*;
 use crate::{parse_datetime, wildmat};
 use futures_util::{StreamExt, TryStreamExt};
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 /// Handler for the GROUP command.
 pub struct GroupHandler;
 
 impl CommandHandler for GroupHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(group_name) = args.first() {
             // Check if the group exists using the storage interface
             if !ctx.storage.group_exists(group_name).await? {
+                let err = StorageError::GroupNotFound(group_name.clone());
+                tracing::debug!(error = %err, "Group lookup failed");
                 write_simple(&mut ctx.writer, RESP_411_NO_SUCH_GROUP).await?;
                 return Ok(());
             }
@@ -29,8 +28,8 @@ impl CommandHandler for GroupHandler {
             let high = nums.last().copied().unwrap_or(0);
             let low = nums.first().copied().unwrap_or(0);
 
-            ctx.state.current_group = Some(group_name.clone());
-            ctx.state.current_article = nums.first().copied();
+            ctx.session
+                .select_group(group_name.clone(), nums.first().copied());
 
             write_simple(
                 &mut ctx.writer,
@@ -48,11 +47,7 @@ impl CommandHandler for GroupHandler {
 pub struct ListHandler;
 
 impl CommandHandler for ListHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(keyword) = args.first() {
             match keyword.as_str() {
                 "ACTIVE" => {
@@ -89,15 +84,11 @@ impl CommandHandler for ListHandler {
 pub struct ListGroupHandler;
 
 impl CommandHandler for ListGroupHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         let group_name = if let Some(name) = args.first() {
             name.clone()
-        } else if let Some(ref current) = ctx.state.current_group {
-            current.clone()
+        } else if let Some(current) = ctx.session.current_group() {
+            current.to_string()
         } else {
             write_simple(&mut ctx.writer, RESP_412_NO_GROUP).await?;
             return Ok(());
@@ -119,11 +110,7 @@ impl CommandHandler for ListGroupHandler {
 pub struct NextHandler;
 
 impl CommandHandler for NextHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         navigate_article(ctx, NavigationDirection::Next).await
     }
 }
@@ -132,11 +119,7 @@ impl CommandHandler for NextHandler {
 pub struct LastHandler;
 
 impl CommandHandler for LastHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         navigate_article(ctx, NavigationDirection::Previous).await
     }
 }
@@ -145,11 +128,7 @@ impl CommandHandler for LastHandler {
 pub struct NewGroupsHandler;
 
 impl CommandHandler for NewGroupsHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.len() < 2 {
             write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await?;
             return Ok(());
@@ -188,11 +167,7 @@ impl CommandHandler for NewGroupsHandler {
 pub struct NewNewsHandler;
 
 impl CommandHandler for NewNewsHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.len() < 3 {
             write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await?;
             return Ok(());
@@ -237,22 +212,15 @@ impl CommandHandler for NewNewsHandler {
 
 // Helper functions for LIST subcommands
 
-async fn handle_list_active<R, W>(
-    ctx: &mut HandlerContext<R, W>,
-    pattern: Option<&String>,
-) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_list_active(ctx: &mut HandlerContext, pattern: Option<&String>) -> HandlerResult {
     write_simple(&mut ctx.writer, RESP_215_LIST_FOLLOWS).await?;
     let mut groups_stream = ctx.storage.list_groups();
     while let Some(result) = groups_stream.next().await {
         let group = result?;
-        if let Some(pat) = pattern {
-            if !wildmat::wildmat(&group, pat) {
-                continue;
-            }
+        if let Some(pat) = pattern
+            && !wildmat::wildmat(&group, pat)
+        {
+            continue;
         }
 
         let mut nums_stream = ctx.storage.list_article_numbers(&group);
@@ -282,11 +250,7 @@ where
     Ok(())
 }
 
-async fn handle_list_newsgroups<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_list_newsgroups(ctx: &mut HandlerContext) -> HandlerResult {
     write_simple(&mut ctx.writer, RESP_215_DESCRIPTIONS).await?;
     let mut groups_stream = ctx.storage.list_groups();
     while let Some(result) = groups_stream.next().await {
@@ -299,11 +263,7 @@ where
     Ok(())
 }
 
-async fn handle_list_active_times<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_list_active_times(ctx: &mut HandlerContext) -> HandlerResult {
     write_simple(&mut ctx.writer, RESP_215_INFO_FOLLOWS).await?;
     let mut stream = ctx.storage.list_groups_with_times();
     while let Some(result) = stream.next().await {
@@ -317,11 +277,7 @@ where
     Ok(())
 }
 
-async fn handle_list_overview_fmt<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_list_overview_fmt(ctx: &mut HandlerContext) -> HandlerResult {
     use crate::overview::get_overview_format_lines;
 
     ctx.writer
@@ -337,11 +293,7 @@ where
     Ok(())
 }
 
-async fn handle_list_headers<R, W>(ctx: &mut HandlerContext<R, W>) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_list_headers(ctx: &mut HandlerContext) -> HandlerResult {
     write_lines(
         &mut ctx.writer,
         &[
@@ -356,32 +308,24 @@ where
 }
 
 /// Navigate to the next or previous article in the current group.
-async fn navigate_article<R, W>(
-    ctx: &mut HandlerContext<R, W>,
+async fn navigate_article(
+    ctx: &mut HandlerContext,
     direction: NavigationDirection,
-) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
-    let (group, current) = match (&ctx.state.current_group, ctx.state.current_article) {
-        (Some(group), Some(current)) => (group.as_str(), current),
+) -> HandlerResult {
+    let (group, current) = match (ctx.session.current_group(), ctx.session.current_article()) {
+        (Some(group), Some(current)) => (group.to_string(), current),
         _ => {
             write_simple(&mut ctx.writer, RESP_412_NO_GROUP).await?;
             return Ok(());
         }
     };
 
-    let stream = ctx.storage.list_article_numbers(group);
+    let stream = ctx.storage.list_article_numbers(&group);
     let nums = stream.try_collect::<Vec<u64>>().await?;
     let pos = match nums.iter().position(|&n| n == current) {
         Some(pos) => pos,
         None => {
-            let response = match direction {
-                NavigationDirection::Next => RESP_421_NO_NEXT,
-                NavigationDirection::Previous => RESP_422_NO_PREV,
-            };
-            write_simple(&mut ctx.writer, response).await?;
+            write_simple(&mut ctx.writer, direction.error_response()).await?;
             return Ok(());
         }
     };
@@ -392,8 +336,8 @@ where
     };
 
     if let Some(&new_num) = nums.get(new_pos) {
-        if let Some(article) = ctx.storage.get_article_by_number(group, new_num).await? {
-            ctx.state.current_article = Some(new_num);
+        if let Some(article) = ctx.storage.get_article_by_number(&group, new_num).await? {
+            ctx.session.set_current_article(new_num);
             let id = super::utils::extract_message_id(&article).unwrap_or_default();
             write_simple(
                 &mut ctx.writer,
@@ -401,18 +345,10 @@ where
             )
             .await?;
         } else {
-            let response = match direction {
-                NavigationDirection::Next => RESP_421_NO_NEXT,
-                NavigationDirection::Previous => RESP_422_NO_PREV,
-            };
-            write_simple(&mut ctx.writer, response).await?;
+            write_simple(&mut ctx.writer, direction.error_response()).await?;
         }
     } else {
-        let response = match direction {
-            NavigationDirection::Next => RESP_421_NO_NEXT,
-            NavigationDirection::Previous => RESP_422_NO_PREV,
-        };
-        write_simple(&mut ctx.writer, response).await?;
+        write_simple(&mut ctx.writer, direction.error_response()).await?;
     }
 
     Ok(())
@@ -422,4 +358,13 @@ where
 enum NavigationDirection {
     Next,
     Previous,
+}
+
+impl NavigationDirection {
+    fn error_response(&self) -> &'static str {
+        match self {
+            Self::Next => RESP_421_NO_NEXT,
+            Self::Previous => RESP_422_NO_PREV,
+        }
+    }
 }

@@ -10,45 +10,46 @@ pub mod post;
 pub mod streaming;
 pub mod utils;
 
+use crate::Command;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::queue::ArticleQueue;
+use crate::session::Session;
 use crate::storage::DynStorage;
-use crate::{Command, ConnectionState};
 use anyhow::Result;
+use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{AsyncBufRead, AsyncWrite};
 use tokio::sync::RwLock;
+
+/// Type-erased async buffered reader
+pub type DynReader = Pin<Box<dyn AsyncBufRead + Send>>;
+
+/// Type-erased async writer
+pub type DynWriter = Pin<Box<dyn AsyncWrite + Send>>;
 
 /// Result type for command handlers.
 pub type HandlerResult = Result<()>;
 
 /// Context passed to command handlers.
-pub struct HandlerContext<R, W> {
-    pub reader: R,
-    pub writer: W,
+pub struct HandlerContext {
+    pub reader: DynReader,
+    pub writer: DynWriter,
     pub storage: DynStorage,
     pub auth: DynAuth,
     pub config: Arc<RwLock<Config>>,
-    pub state: ConnectionState,
+    pub session: Session,
     pub queue: ArticleQueue,
 }
 
 /// Trait for command handlers.
 #[allow(async_fn_in_trait)]
 pub trait CommandHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin;
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult;
 }
 
 /// Dispatch a command to the appropriate handler.
-pub async fn dispatch_command<R, W>(ctx: &mut HandlerContext<R, W>, cmd: &Command) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+pub async fn dispatch_command(ctx: &mut HandlerContext, cmd: &Command) -> HandlerResult {
     match cmd.name.to_ascii_uppercase().as_str() {
         // Article retrieval commands
         "ARTICLE" => article::ArticleHandler::handle(ctx, &cmd.args).await,

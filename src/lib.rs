@@ -7,6 +7,7 @@ pub use parse::{
 pub mod auth;
 pub mod config;
 pub mod control;
+pub mod error;
 pub mod filters;
 pub mod handlers;
 mod migrations;
@@ -17,26 +18,17 @@ pub mod queue;
 pub mod responses;
 pub mod retention;
 pub mod server;
+pub mod session;
 pub mod storage;
 pub mod wildmat;
 #[cfg(feature = "websocket")]
 pub mod ws;
 
-#[derive(Default)]
-pub struct ConnectionState {
-    pub current_group: Option<String>,
-    pub current_article: Option<u64>,
-    pub authenticated: bool,
-    pub username: Option<String>,
-    pub is_tls: bool,
-    pub in_stream_mode: bool,
-    pub allow_posting_insecure: bool,
-}
-
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::{HandlerContext, dispatch_command};
 use crate::queue::ArticleQueue;
+use crate::session::Session;
 use crate::storage::DynStorage;
 use anyhow::Result;
 use std::sync::Arc;
@@ -44,6 +36,14 @@ use std::time::Duration;
 use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
 use tracing::debug;
+
+/// Per-connection cached configuration values.
+/// These are read once at connection start and not updated mid-connection.
+struct ConnectionConfig {
+    #[allow(dead_code)]
+    site_name: String,
+    idle_timeout: Duration,
+}
 
 /// Handle a client connection.
 ///
@@ -61,30 +61,32 @@ pub async fn handle_client<S>(
     queue: ArticleQueue,
 ) -> Result<()>
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     use crate::responses::*;
 
     let (read_half, write_half) = io::split(socket);
     let reader = BufReader::new(read_half);
 
-    // Read the config to get the allow_posting_insecure_connections flag
-    let allow_posting_insecure = {
+    // Cache configuration values at connection start so they don't change mid-connection
+    let (connection_config, allow_posting_insecure) = {
         let cfg_guard = cfg.read().await;
-        cfg_guard.allow_posting_insecure_connections
+        (
+            ConnectionConfig {
+                site_name: cfg_guard.site_name.clone(),
+                idle_timeout: Duration::from_secs(cfg_guard.idle_timeout_secs),
+            },
+            cfg_guard.allow_posting_insecure_connections,
+        )
     };
 
     let mut ctx = HandlerContext {
-        reader,
-        writer: write_half,
+        reader: Box::pin(reader),
+        writer: Box::pin(write_half),
         storage,
         auth,
         config: cfg,
-        state: ConnectionState {
-            is_tls,
-            allow_posting_insecure,
-            ..Default::default()
-        },
+        session: Session::new(is_tls, allow_posting_insecure),
         queue,
     };
 
@@ -101,15 +103,12 @@ where
     loop {
         line.clear();
 
-        // Get the current idle timeout from config
-        let timeout_duration = {
-            let cfg_guard = ctx.config.read().await;
-            Duration::from_secs(cfg_guard.idle_timeout_secs)
-        };
-
-        // Apply timeout to the read operation
-        let read_result =
-            tokio::time::timeout(timeout_duration, ctx.reader.read_line(&mut line)).await;
+        // Apply timeout to the read operation using cached idle_timeout
+        let read_result = tokio::time::timeout(
+            connection_config.idle_timeout,
+            ctx.reader.read_line(&mut line),
+        )
+        .await;
 
         let n = match read_result {
             Ok(Ok(n)) => n,
@@ -118,7 +117,7 @@ where
                 // Timeout occurred
                 debug!(
                     "Connection timed out after {} seconds",
-                    timeout_duration.as_secs()
+                    connection_config.idle_timeout.as_secs()
                 );
                 break;
             }

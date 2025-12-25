@@ -3,17 +3,13 @@
 use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 /// Handler for the DATE command.
 pub struct DateHandler;
 
 impl CommandHandler for DateHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         use chrono::Utc;
         let now = Utc::now().format("%Y%m%d%H%M%S").to_string();
         write_simple(&mut ctx.writer, &format!("111 {now}\r\n")).await?;
@@ -25,11 +21,7 @@ impl CommandHandler for DateHandler {
 pub struct HelpHandler;
 
 impl CommandHandler for HelpHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         ctx.writer
             .write_all(RESP_100_HELP_FOLLOWS.as_bytes())
             .await?;
@@ -43,11 +35,7 @@ impl CommandHandler for HelpHandler {
 pub struct CapabilitiesHandler;
 
 impl CommandHandler for CapabilitiesHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         ctx.writer
             .write_all(RESP_101_CAPABILITIES.as_bytes())
             .await?;
@@ -57,7 +45,7 @@ impl CommandHandler for CapabilitiesHandler {
             .await?;
         ctx.writer.write_all(RESP_CAP_READER.as_bytes()).await?;
 
-        if ctx.state.is_tls {
+        if ctx.session.is_tls() {
             ctx.writer.write_all(RESP_CAP_POST.as_bytes()).await?;
         }
 
@@ -76,11 +64,7 @@ impl CommandHandler for CapabilitiesHandler {
 pub struct QuitHandler;
 
 impl CommandHandler for QuitHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
         write_simple(&mut ctx.writer, RESP_205_CLOSING).await?;
         // Return an error to signal the connection should close
         Err(anyhow::anyhow!("Connection closed by QUIT command"))

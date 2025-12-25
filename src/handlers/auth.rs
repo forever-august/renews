@@ -2,18 +2,14 @@
 
 use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::error::AuthError;
 use crate::responses::*;
-use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Handler for the AUTHINFO command.
 pub struct AuthInfoHandler;
 
 impl CommandHandler for AuthInfoHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.is_empty() {
             write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await?;
             return Ok(());
@@ -25,7 +21,7 @@ impl CommandHandler for AuthInfoHandler {
                     write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await?;
                     return Ok(());
                 }
-                ctx.state.username = Some(args[1].clone());
+                ctx.session.set_pending_username(args[1].clone());
                 write_simple(&mut ctx.writer, RESP_381_PASSWORD_REQ).await?;
             }
             "PASS" => {
@@ -34,11 +30,14 @@ impl CommandHandler for AuthInfoHandler {
                     return Ok(());
                 }
 
-                if let Some(ref username) = ctx.state.username {
-                    if ctx.auth.verify_user(username, &args[1]).await? {
-                        ctx.state.authenticated = true;
+                if let Some(username) = ctx.session.pending_username() {
+                    let username = username.to_string(); // Clone to avoid borrow issues
+                    if ctx.auth.verify_user(&username, &args[1]).await? {
+                        ctx.session.confirm_authentication();
                         write_simple(&mut ctx.writer, RESP_281_AUTH_OK).await?;
                     } else {
+                        let err = AuthError::InvalidCredentials(username);
+                        tracing::info!(error = %err, "Authentication failed");
                         write_simple(&mut ctx.writer, RESP_481_AUTH_REJECTED).await?;
                     }
                 } else {
@@ -57,11 +56,7 @@ impl CommandHandler for AuthInfoHandler {
 pub struct ModeHandler;
 
 impl CommandHandler for ModeHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.is_empty() {
             write_simple(&mut ctx.writer, RESP_501_MISSING_MODE).await?;
             return Ok(());
@@ -69,7 +64,7 @@ impl CommandHandler for ModeHandler {
 
         match args[0].to_ascii_uppercase().as_str() {
             "READER" => {
-                if ctx.state.is_tls || ctx.state.allow_posting_insecure {
+                if ctx.session.allows_posting_attempt() {
                     write_simple(&mut ctx.writer, RESP_200_POSTING_ALLOWED).await?;
                 } else {
                     write_simple(&mut ctx.writer, RESP_201_POSTING_PROHIBITED).await?;

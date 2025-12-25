@@ -2,28 +2,26 @@
 
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::error::{AuthError, NntpError};
 use crate::prelude::*;
 use crate::queue::QueuedArticle;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
-use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Handler for the POST command.
 pub struct PostHandler;
 
 impl CommandHandler for PostHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, _args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
-        if !ctx.state.is_tls && !ctx.state.allow_posting_insecure {
+    async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
+        if !ctx.session.allows_posting_attempt() {
             write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
             return Ok(());
         }
 
-        if !ctx.state.authenticated {
-            write_simple(&mut ctx.writer, RESP_480_AUTH_REQUIRED).await?;
+        if !ctx.session.is_authenticated() {
+            let err = NntpError::Auth(AuthError::Required);
+            tracing::debug!(error = %err, "Post rejected: authentication required");
+            write_simple(&mut ctx.writer, &err.to_response()).await?;
             return Ok(());
         }
 
@@ -46,12 +44,15 @@ impl CommandHandler for PostHandler {
 
         // Comprehensive validation before queuing for POST (to maintain expected behavior)
         let size = msg.len() as u64;
-        if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
+        match comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
             .await
-            .is_err()
         {
-            write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
-            return Ok(());
+            Ok(()) => { /* validation passed, continue */ }
+            Err(e) => {
+                tracing::info!(error = %e, "Article validation failed");
+                write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
+                return Ok(());
+            }
         }
         drop(cfg_guard);
 

@@ -1,7 +1,8 @@
 //! Utility functions for command handlers.
 
+use crate::Message;
+use crate::session::Session;
 use crate::storage::DynStorage;
-use crate::{ConnectionState, Message};
 use anyhow::Result;
 use smallvec::SmallVec;
 use std::error::Error;
@@ -131,7 +132,7 @@ pub async fn metadata_value(storage: &DynStorage, msg: &Message, name: &str) -> 
 /// Resolve articles based on argument (number, range, or message-id).
 pub async fn resolve_articles(
     storage: &DynStorage,
-    state: &mut ConnectionState,
+    session: &mut Session,
     arg: Option<&str>,
 ) -> Result<Vec<(u64, Message)>, ArticleQueryError> {
     let mut articles = Vec::new();
@@ -148,9 +149,9 @@ pub async fn resolve_articles(
             } else {
                 return Err(ArticleQueryError::MessageIdNotFound);
             }
-        } else if let Some(group) = state.current_group.as_deref() {
+        } else if let Some(group) = session.current_group().map(|s| s.to_string()) {
             // Article number or range
-            let nums = crate::parse_range(storage, group, arg)
+            let nums = crate::parse_range(storage, &group, arg)
                 .await
                 .map_err(|_| ArticleQueryError::RangeEmpty)?;
 
@@ -160,12 +161,12 @@ pub async fn resolve_articles(
 
             for n in nums {
                 if let Some(article) = storage
-                    .get_article_by_number(group, n)
+                    .get_article_by_number(&group, n)
                     .await
                     .map_err(|_| ArticleQueryError::NotFoundByNumber)?
                 {
                     articles.push((n, article));
-                    state.current_article = Some(n);
+                    session.set_current_article(n);
                 }
             }
 
@@ -177,8 +178,7 @@ pub async fn resolve_articles(
         } else {
             return Err(ArticleQueryError::InvalidId);
         }
-    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article)
-    {
+    } else if let (Some(group), Some(num)) = (session.current_group(), session.current_article()) {
         // Use current article
         if let Some(article) = storage
             .get_article_by_number(group, num)
@@ -189,7 +189,7 @@ pub async fn resolve_articles(
         } else {
             return Err(ArticleQueryError::NoCurrentArticle);
         }
-    } else if state.current_group.is_none() {
+    } else if session.current_group().is_none() {
         return Err(ArticleQueryError::NoGroup);
     } else {
         return Err(ArticleQueryError::NoCurrentArticle);
@@ -231,31 +231,25 @@ impl ArticleOperation {
 pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
     writer: &mut W,
     storage: &DynStorage,
-    state: &mut ConnectionState,
+    session: &mut Session,
     args: &[String],
     operation: ArticleOperation,
 ) -> Result<()> {
     use crate::responses::*;
 
-    match resolve_articles(storage, state, args.first().map(String::as_str)).await {
+    match resolve_articles(storage, session, args.first().map(String::as_str)).await {
         Ok(articles) => {
             for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or_default();
-                // Use efficient response building instead of format!
-                use std::io::Write;
-                let mut buf = [0u8; 256];
-                let mut cursor = std::io::Cursor::new(&mut buf[..]);
-                write!(
-                    &mut cursor,
+                // Use format! to handle arbitrarily long message-IDs
+                let response_line = format!(
                     "{} {} {} {}\r\n",
                     operation.response_code(),
                     num,
                     id,
                     operation.response_suffix()
-                )
-                .unwrap();
-                let len = cursor.position() as usize;
-                writer.write_all(&buf[..len]).await?;
+                );
+                writer.write_all(response_line.as_bytes()).await?;
 
                 match operation {
                     ArticleOperation::Full => {
@@ -321,17 +315,14 @@ pub async fn write_response_with_values<W: AsyncWrite + Unpin>(
 ) -> Result<()> {
     writer.write_all(response.as_bytes()).await?;
     for (n, val) in values {
-        // Use efficient direct writing instead of format!
-        use std::io::Write;
-        let mut buf = [0u8; 64];
-        let mut cursor = std::io::Cursor::new(&mut buf[..]);
-        if let Some(v) = val {
-            write!(&mut cursor, "{n} {v}\r\n").unwrap();
+        // Use format! for variable-length values to avoid buffer overflow
+        // Header values (especially References) can be arbitrarily long
+        let line = if let Some(v) = val {
+            format!("{n} {v}\r\n")
         } else {
-            write!(&mut cursor, "{n}\r\n").unwrap();
-        }
-        let len = cursor.position() as usize;
-        writer.write_all(&buf[..len]).await?;
+            format!("{n}\r\n")
+        };
+        writer.write_all(line.as_bytes()).await?;
     }
     use crate::responses::RESP_DOT_CRLF;
     writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;
@@ -441,21 +432,5 @@ pub async fn write_response_with_args<W: AsyncWrite + Unpin>(
         writer.write_all(arg.as_bytes()).await?;
     }
     writer.write_all(suffix.as_bytes()).await?;
-    Ok(())
-}
-
-/// Write a simple numerical response efficiently
-pub async fn write_numerical_response<W: AsyncWrite + Unpin>(
-    writer: &mut W,
-    code: u16,
-    number: u64,
-    suffix: &str,
-) -> Result<()> {
-    use std::io::Write;
-    let mut buf = [0u8; 64];
-    let mut cursor = std::io::Cursor::new(&mut buf[..]);
-    write!(&mut cursor, "{code} {number}{suffix}").unwrap();
-    let len = cursor.position() as usize;
-    writer.write_all(&buf[..len]).await?;
     Ok(())
 }

@@ -4,17 +4,12 @@ use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
-use tokio::io::{AsyncBufRead, AsyncWrite};
 
 /// Handler for the IHAVE command.
 pub struct IHaveHandler;
 
 impl CommandHandler for IHaveHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 write_simple(&mut ctx.writer, RESP_435_NOT_WANTED).await?;
@@ -86,11 +81,7 @@ impl CommandHandler for IHaveHandler {
 pub struct CheckHandler;
 
 impl CommandHandler for CheckHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 write_simple(&mut ctx.writer, &format!("438 {id}\r\n")).await?;
@@ -108,11 +99,7 @@ impl CommandHandler for CheckHandler {
 pub struct TakeThisHandler;
 
 impl CommandHandler for TakeThisHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             let msg = read_message(&mut ctx.reader).await?;
             let Ok((_, mut article)) = parse_message(&msg) else {

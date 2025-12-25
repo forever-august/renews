@@ -6,8 +6,7 @@ use super::utils::{
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
-use anyhow::Result;
-use tokio::io::{AsyncBufRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 
 /// Macro to create simple article command handlers.
 macro_rules! article_handler {
@@ -15,15 +14,11 @@ macro_rules! article_handler {
         pub struct $name;
 
         impl CommandHandler for $name {
-            async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-            where
-                R: AsyncBufRead + Unpin,
-                W: AsyncWrite + Unpin,
-            {
+            async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
                 handle_article_operation(
                     &mut ctx.writer,
                     &ctx.storage,
-                    &mut ctx.state,
+                    &mut ctx.session,
                     args,
                     $operation,
                 )
@@ -43,11 +38,7 @@ article_handler!(StatHandler, ArticleOperation::Stat);
 pub struct HdrHandler;
 
 impl CommandHandler for HdrHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.is_empty() {
             return write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await;
         }
@@ -60,16 +51,23 @@ impl CommandHandler for HdrHandler {
         }
 
         // Collect header values for the specified field
-        let values = collect_header_values(
+        match collect_header_values(
             &ctx.storage,
-            &ctx.state,
+            &ctx.session,
             field,
             args.get(1).map(|s| s.as_str()),
         )
-        .await?;
-
-        // Send response
-        write_response_with_values(&mut ctx.writer, RESP_225_HEADERS, &values).await
+        .await
+        {
+            Ok(values) => {
+                // Send response
+                write_response_with_values(&mut ctx.writer, RESP_225_HEADERS, &values).await
+            }
+            Err(error) => {
+                use super::utils::handle_article_error;
+                handle_article_error(&mut ctx.writer, error).await
+            }
+        }
     }
 }
 
@@ -77,11 +75,7 @@ impl CommandHandler for HdrHandler {
 pub struct XPatHandler;
 
 impl CommandHandler for XPatHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if args.len() < 3 {
             return write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await;
         }
@@ -91,17 +85,26 @@ impl CommandHandler for XPatHandler {
         let patterns: Vec<&str> = args[2..].iter().map(String::as_str).collect();
 
         let values =
-            collect_header_values(&ctx.storage, &ctx.state, field, Some(range_or_msgid)).await?;
+            match collect_header_values(&ctx.storage, &ctx.session, field, Some(range_or_msgid))
+                .await
+            {
+                Ok(values) => values,
+                Err(error) => {
+                    use super::utils::handle_article_error;
+                    handle_article_error(&mut ctx.writer, error).await?;
+                    return Ok(());
+                }
+            };
 
         write_simple(&mut ctx.writer, RESP_221_HEADER_FOLLOWS).await?;
 
         for (n, val) in values {
-            if let Some(v) = val {
-                if patterns.iter().any(|pat| crate::wildmat::wildmat(pat, &v)) {
-                    ctx.writer
-                        .write_all(format!("{n} {v}\r\n").as_bytes())
-                        .await?;
-                }
+            if let Some(v) = val
+                && patterns.iter().any(|pat| crate::wildmat::wildmat(pat, &v))
+            {
+                ctx.writer
+                    .write_all(format!("{n} {v}\r\n").as_bytes())
+                    .await?;
             }
         }
 
@@ -114,14 +117,10 @@ impl CommandHandler for XPatHandler {
 pub struct OverHandler;
 
 impl CommandHandler for OverHandler {
-    async fn handle<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-    where
-        R: AsyncBufRead + Unpin,
-        W: AsyncWrite + Unpin,
-    {
+    async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         match resolve_articles(
             &ctx.storage,
-            &mut ctx.state,
+            &mut ctx.session,
             args.first().map(String::as_str),
         )
         .await
@@ -151,15 +150,11 @@ impl CommandHandler for OverHandler {
 }
 
 /// Handle the special case of HDR with ":" for all headers.
-async fn handle_all_headers<R, W>(ctx: &mut HandlerContext<R, W>, args: &[String]) -> HandlerResult
-where
-    R: AsyncBufRead + Unpin,
-    W: AsyncWrite + Unpin,
-{
+async fn handle_all_headers(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
     // Use the existing resolve_articles function to handle the complex logic
     let articles = match resolve_articles(
         &ctx.storage,
-        &mut ctx.state,
+        &mut ctx.session,
         args.get(1).map(String::as_str),
     )
     .await
@@ -208,36 +203,80 @@ async fn get_field_value(
 /// Collect header values for HDR/XPAT commands.
 async fn collect_header_values(
     storage: &crate::storage::DynStorage,
-    state: &crate::ConnectionState,
+    session: &crate::session::Session,
     field: &str,
     range_or_msgid: Option<&str>,
-) -> Result<Vec<(u64, Option<String>)>> {
+) -> std::result::Result<Vec<(u64, Option<String>)>, super::utils::ArticleQueryError> {
+    use super::utils::ArticleQueryError;
+
     let mut values = Vec::new();
 
     if let Some(arg) = range_or_msgid {
         if arg.starts_with('<') && arg.ends_with('>') {
             // Message-ID lookup
-            if let Some(article) = storage.get_article_by_id(arg).await? {
+            if let Some(article) = storage
+                .get_article_by_id(arg)
+                .await
+                .map_err(|_| ArticleQueryError::MessageIdNotFound)?
+            {
                 let val = get_field_value(storage, &article, field).await;
                 values.push((0, val));
+            } else {
+                return Err(ArticleQueryError::MessageIdNotFound);
             }
-        } else if let Some(group) = state.current_group.as_deref() {
-            // Range lookup
-            let nums = crate::parse_range(storage, group, arg).await?;
+        } else if let Some(group) = session.current_group() {
+            // Range lookup - check if it's an article number first
+            let nums = crate::parse_range(storage, group, arg)
+                .await
+                .map_err(|_| ArticleQueryError::RangeEmpty)?;
+
+            if nums.is_empty() {
+                return Err(ArticleQueryError::RangeEmpty);
+            }
+
             for n in nums {
-                if let Some(article) = storage.get_article_by_number(group, n).await? {
+                if let Some(article) = storage
+                    .get_article_by_number(group, n)
+                    .await
+                    .map_err(|_| ArticleQueryError::NotFoundByNumber)?
+                {
                     let val = get_field_value(storage, &article, field).await;
                     values.push((n, val));
                 }
             }
+
+            if values.is_empty() {
+                return Err(ArticleQueryError::NotFoundByNumber);
+            }
+        } else {
+            // No group selected - check if this looks like an article number or range
+            // Article numbers and ranges are numeric (possibly with '-' for ranges)
+            let looks_like_number_or_range = arg.chars().all(|c| c.is_ascii_digit() || c == '-');
+
+            if looks_like_number_or_range {
+                // Article number/range provided but no group selected
+                return Err(ArticleQueryError::NoGroup);
+            } else {
+                // Invalid argument format
+                return Err(ArticleQueryError::InvalidId);
+            }
         }
-    } else if let (Some(group), Some(num)) = (state.current_group.as_deref(), state.current_article)
-    {
+    } else if let (Some(group), Some(num)) = (session.current_group(), session.current_article()) {
         // Current article lookup
-        if let Some(article) = storage.get_article_by_number(group, num).await? {
+        if let Some(article) = storage
+            .get_article_by_number(group, num)
+            .await
+            .map_err(|_| ArticleQueryError::NoCurrentArticle)?
+        {
             let val = get_field_value(storage, &article, field).await;
             values.push((num, val));
+        } else {
+            return Err(ArticleQueryError::NoCurrentArticle);
         }
+    } else if session.current_group().is_none() {
+        return Err(ArticleQueryError::NoGroup);
+    } else {
+        return Err(ArticleQueryError::NoCurrentArticle);
     }
 
     Ok(values)
