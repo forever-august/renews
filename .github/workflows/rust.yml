@@ -11,10 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - run: cargo build
 
   test:
@@ -24,17 +22,17 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: nightly
-          override: false
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-llvm-cov
       - name: Setup LCOV
         uses: hrishikesh-kadam/setup-lcov@v1
       - name: Run Tests
-        run: cargo +nightly llvm-cov --workspace --lcov --output-path lcov.info --branch
+        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
       - name: Report code coverage
         uses: zgosalvez/github-actions-report-lcov@v4
         with:
