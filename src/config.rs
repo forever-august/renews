@@ -189,7 +189,7 @@ pub struct Config {
     pub allow_posting_insecure_connections: bool,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct GroupRule {
     #[serde(default)]
     pub group: Option<String>,
@@ -201,7 +201,7 @@ pub struct GroupRule {
     pub max_article_bytes: Option<u64>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct PeerRule {
     pub sitename: String,
     #[serde(default)]
@@ -210,7 +210,7 @@ pub struct PeerRule {
     pub sync_schedule: Option<String>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FilterConfig {
     pub name: String,
     #[serde(flatten)]
@@ -288,13 +288,12 @@ See 'examples/config.toml' for a valid configuration example."
             .group_settings
             .iter()
             .find(|r| r.group.as_deref() == Some(group))
+            && let Some(days) = rule.retention_days
         {
-            if let Some(days) = rule.retention_days {
-                if days > 0 {
-                    return Some(Duration::days(days));
-                }
-                return None;
+            if days > 0 {
+                return Some(Duration::days(days));
             }
+            return None;
         }
 
         // Then check for pattern matches, looking for the most specific pattern that has retention_days
@@ -319,12 +318,11 @@ See 'examples/config.toml' for a valid configuration example."
             (wildcard_count, -(pattern.len() as i32))
         });
 
-        if let Some(rule) = matches.first() {
-            if let Some(days) = rule.retention_days {
-                if days > 0 {
-                    return Some(Duration::days(days));
-                }
-            }
+        if let Some(rule) = matches.first()
+            && let Some(days) = rule.retention_days
+            && days > 0
+        {
+            return Some(Duration::days(days));
         }
 
         None
@@ -337,10 +335,9 @@ See 'examples/config.toml' for a valid configuration example."
             .group_settings
             .iter()
             .find(|r| r.group.as_deref() == Some(group))
+            && rule.max_article_bytes.is_some()
         {
-            if rule.max_article_bytes.is_some() {
-                return rule.max_article_bytes;
-            }
+            return rule.max_article_bytes;
         }
 
         // Then check for pattern matches, looking for the most specific pattern that has max_article_bytes
@@ -398,6 +395,102 @@ See 'examples/config.toml' for a valid configuration example."
         self.runtime_threads = other.runtime_threads;
         self.pgp_key_servers = other.pgp_key_servers;
         self.allow_posting_insecure_connections = other.allow_posting_insecure_connections;
+    }
+}
+
+/// Configuration that cannot change after server startup
+#[derive(Debug, Clone)]
+pub struct StaticConfig {
+    pub addr: String,
+    pub tls_addr: Option<String>,
+    pub tls_cert: Option<String>,
+    pub tls_key: Option<String>,
+    pub db_path: String,
+    pub auth_db_path: String,
+    pub peer_db_path: String,
+    pub article_queue_capacity: usize,
+    pub article_worker_count: usize,
+    pub runtime_threads: usize,
+    #[cfg(feature = "websocket")]
+    pub ws_addr: Option<String>,
+}
+
+/// Configuration that can be hot-reloaded via SIGHUP
+#[derive(Debug, Clone)]
+pub struct DynamicConfig {
+    pub site_name: String,
+    pub idle_timeout_secs: u64,
+    pub allow_posting_insecure_connections: bool,
+    pub group_settings: Vec<GroupRule>,
+    pub filters: Vec<FilterConfig>,
+    pub peers: Vec<PeerRule>,
+    pub peer_sync_schedule: Option<String>,
+    pub pgp_key_servers: Vec<String>,
+}
+
+/// Combined server configuration
+pub struct ServerConfig {
+    pub static_cfg: StaticConfig,
+    pub dynamic_cfg: tokio::sync::RwLock<DynamicConfig>,
+}
+
+impl From<&Config> for StaticConfig {
+    fn from(cfg: &Config) -> Self {
+        Self {
+            addr: cfg.addr.clone(),
+            tls_addr: cfg.tls_addr.clone(),
+            tls_cert: cfg.tls_cert.clone(),
+            tls_key: cfg.tls_key.clone(),
+            db_path: cfg.db_path.clone(),
+            auth_db_path: cfg.auth_db_path.clone(),
+            peer_db_path: cfg.peer_db_path.clone(),
+            article_queue_capacity: cfg.article_queue_capacity,
+            article_worker_count: cfg.article_worker_count,
+            runtime_threads: cfg.runtime_threads,
+            #[cfg(feature = "websocket")]
+            ws_addr: cfg.ws_addr.clone(),
+        }
+    }
+}
+
+impl From<&Config> for DynamicConfig {
+    fn from(cfg: &Config) -> Self {
+        Self {
+            site_name: cfg.site_name.clone(),
+            idle_timeout_secs: cfg.idle_timeout_secs,
+            allow_posting_insecure_connections: cfg.allow_posting_insecure_connections,
+            group_settings: cfg.group_settings.clone(),
+            filters: cfg.filters.clone(),
+            peers: cfg.peers.clone(),
+            peer_sync_schedule: Some(cfg.peer_sync_schedule.clone()),
+            pgp_key_servers: cfg.pgp_key_servers.clone(),
+        }
+    }
+}
+
+impl ServerConfig {
+    /// Create a new `ServerConfig` from a configuration file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed.
+    pub fn from_file(path: &str) -> anyhow::Result<Self> {
+        let raw = Config::from_file(path)?;
+        Ok(Self {
+            static_cfg: StaticConfig::from(&raw),
+            dynamic_cfg: tokio::sync::RwLock::new(DynamicConfig::from(&raw)),
+        })
+    }
+
+    /// Reload the dynamic configuration from a file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be read or parsed.
+    pub async fn reload_dynamic(&self, path: &str) -> anyhow::Result<()> {
+        let raw = Config::from_file(path)?;
+        *self.dynamic_cfg.write().await = DynamicConfig::from(&raw);
+        Ok(())
     }
 }
 
