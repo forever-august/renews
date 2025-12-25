@@ -297,6 +297,44 @@ trait MilterConnection: Send + Sync {
     async fn read_response(&mut self) -> Result<u8, MilterError>;
 }
 
+/// Macro to implement MilterConnection for types with a `stream` field
+macro_rules! impl_milter_connection {
+    ($type:ty) => {
+        #[async_trait::async_trait]
+        impl MilterConnection for $type {
+            async fn send_command(&mut self, cmd: u8, data: &[u8]) -> Result<(), MilterError> {
+                let len = (data.len() + 1) as u32;
+                self.stream.write_all(&len.to_be_bytes()).await?;
+                self.stream.write_all(&[cmd]).await?;
+                self.stream.write_all(data).await?;
+                self.stream.flush().await?;
+                Ok(())
+            }
+
+            async fn read_response(&mut self) -> Result<u8, MilterError> {
+                let mut len_buf = [0u8; 4];
+                self.stream.read_exact(&mut len_buf).await?;
+                let len = u32::from_be_bytes(len_buf);
+
+                if len == 0 {
+                    return Err(MilterError::ProtocolError(
+                        "Invalid response length".to_string(),
+                    ));
+                }
+
+                let mut response = vec![0u8; len as usize];
+                self.stream.read_exact(&mut response).await?;
+
+                if response.is_empty() {
+                    return Err(MilterError::ProtocolError("Empty response".to_string()));
+                }
+
+                Ok(response[0])
+            }
+        }
+    };
+}
+
 /// TCP-based Milter connection
 struct TcpMilterConnection {
     stream: TcpStream,
@@ -308,39 +346,7 @@ impl TcpMilterConnection {
     }
 }
 
-#[async_trait::async_trait]
-impl MilterConnection for TcpMilterConnection {
-    async fn send_command(&mut self, cmd: u8, data: &[u8]) -> Result<(), MilterError> {
-        // Milter protocol: 4-byte length + 1-byte command + data
-        let len = (data.len() + 1) as u32;
-        self.stream.write_all(&len.to_be_bytes()).await?;
-        self.stream.write_all(&[cmd]).await?;
-        self.stream.write_all(data).await?;
-        self.stream.flush().await?;
-        Ok(())
-    }
-
-    async fn read_response(&mut self) -> Result<u8, MilterError> {
-        let mut len_buf = [0u8; 4];
-        self.stream.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf);
-
-        if len == 0 {
-            return Err(MilterError::ProtocolError(
-                "Invalid response length".to_string(),
-            ));
-        }
-
-        let mut response = vec![0u8; len as usize];
-        self.stream.read_exact(&mut response).await?;
-
-        if response.is_empty() {
-            return Err(MilterError::ProtocolError("Empty response".to_string()));
-        }
-
-        Ok(response[0])
-    }
-}
+impl_milter_connection!(TcpMilterConnection);
 
 /// TLS-based Milter connection
 struct TlsMilterConnection {
@@ -353,39 +359,7 @@ impl TlsMilterConnection {
     }
 }
 
-#[async_trait::async_trait]
-impl MilterConnection for TlsMilterConnection {
-    async fn send_command(&mut self, cmd: u8, data: &[u8]) -> Result<(), MilterError> {
-        // Milter protocol: 4-byte length + 1-byte command + data
-        let len = (data.len() + 1) as u32;
-        self.stream.write_all(&len.to_be_bytes()).await?;
-        self.stream.write_all(&[cmd]).await?;
-        self.stream.write_all(data).await?;
-        self.stream.flush().await?;
-        Ok(())
-    }
-
-    async fn read_response(&mut self) -> Result<u8, MilterError> {
-        let mut len_buf = [0u8; 4];
-        self.stream.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf);
-
-        if len == 0 {
-            return Err(MilterError::ProtocolError(
-                "Invalid response length".to_string(),
-            ));
-        }
-
-        let mut response = vec![0u8; len as usize];
-        self.stream.read_exact(&mut response).await?;
-
-        if response.is_empty() {
-            return Err(MilterError::ProtocolError("Empty response".to_string()));
-        }
-
-        Ok(response[0])
-    }
-}
+impl_milter_connection!(TlsMilterConnection);
 
 /// Unix socket-based Milter connection
 struct UnixMilterConnection {
@@ -398,39 +372,7 @@ impl UnixMilterConnection {
     }
 }
 
-#[async_trait::async_trait]
-impl MilterConnection for UnixMilterConnection {
-    async fn send_command(&mut self, cmd: u8, data: &[u8]) -> Result<(), MilterError> {
-        // Milter protocol: 4-byte length + 1-byte command + data
-        let len = (data.len() + 1) as u32;
-        self.stream.write_all(&len.to_be_bytes()).await?;
-        self.stream.write_all(&[cmd]).await?;
-        self.stream.write_all(data).await?;
-        self.stream.flush().await?;
-        Ok(())
-    }
-
-    async fn read_response(&mut self) -> Result<u8, MilterError> {
-        let mut len_buf = [0u8; 4];
-        self.stream.read_exact(&mut len_buf).await?;
-        let len = u32::from_be_bytes(len_buf);
-
-        if len == 0 {
-            return Err(MilterError::ProtocolError(
-                "Invalid response length".to_string(),
-            ));
-        }
-
-        let mut response = vec![0u8; len as usize];
-        self.stream.read_exact(&mut response).await?;
-
-        if response.is_empty() {
-            return Err(MilterError::ProtocolError("Empty response".to_string()));
-        }
-
-        Ok(response[0])
-    }
-}
+impl_milter_connection!(UnixMilterConnection);
 
 #[cfg(test)]
 mod tests {
