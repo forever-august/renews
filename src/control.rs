@@ -138,16 +138,14 @@ pub async fn verify_pgp(
     // First try with existing stored key
     let stored_key = auth.get_pgp_key(user).await?;
 
-    if let Some(key_text) = &stored_key {
-        if let Ok(verification_result) =
+    if let Some(key_text) = &stored_key
+        && let Ok(verification_result) =
             try_verify_with_key(msg, key_text, version, signed_headers, sig_data).await
-        {
-            if verification_result.is_ok() {
-                return Ok(());
-            }
-            // If verification failed with stored key, try discovery
-        }
+        && verification_result.is_ok()
+    {
+        return Ok(());
     }
+    // If verification failed with stored key, try discovery
 
     // Attempt key discovery if no key exists or verification failed
     match discovery.discover_key(user).await? {
@@ -238,19 +236,18 @@ pub async fn handle_control(
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case("Cancel-Key"))
         {
-            if let Some(orig) = storage.get_article_by_id(id).await? {
-                if let Some((_, lock_val)) = orig
+            if let Some(orig) = storage.get_article_by_id(id).await?
+                && let Some((_, lock_val)) = orig
                     .headers
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("Cancel-Lock"))
-                {
-                    let keys = parse_elements(key_val);
-                    let locks = parse_elements(lock_val);
-                    if verify_cancel(&keys, &locks) {
-                        storage.delete_article_by_id(id).await?;
-                    }
-                    return Ok(true);
+            {
+                let keys = parse_elements(key_val);
+                let locks = parse_elements(lock_val);
+                if verify_cancel(&keys, &locks) {
+                    storage.delete_article_by_id(id).await?;
                 }
+                return Ok(true);
             }
             return Ok(true);
         }

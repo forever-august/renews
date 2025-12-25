@@ -56,11 +56,11 @@ where
     }
 
     let mut class = String::new();
-    if let Some(&first) = chars.peek() {
-        if first == '!' || first == '^' {
-            class.push('^');
-            chars.next();
-        }
+    if let Some(&first) = chars.peek()
+        && (first == '!' || first == '^')
+    {
+        class.push('^');
+        chars.next();
     }
     while let Some(ch) = chars.next() {
         if ch == ']' {

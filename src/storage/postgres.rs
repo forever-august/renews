@@ -1,13 +1,12 @@
 use super::{
     ArticleStream, Message, Storage, StringStream, StringTimestampStream, U64Stream,
-    common::{Headers, extract_message_id},
+    common::{Headers, extract_message_id, parse_newsgroups_from_message},
 };
 use crate::migrations::Migrator;
 use anyhow::Result;
 use async_stream::stream;
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use smallvec::SmallVec;
 use sqlx::{
     PgPool, Row,
     postgres::{PgConnectOptions, PgPoolOptions},
@@ -182,7 +181,8 @@ Please verify:
 impl Storage for PostgresStorage {
     #[tracing::instrument(skip_all)]
     async fn store_article(&self, article: &Message) -> Result<()> {
-        let msg_id = extract_message_id(article).ok_or_else(|| anyhow::anyhow!("missing Message-ID"))?;
+        let msg_id =
+            extract_message_id(article).ok_or_else(|| anyhow::anyhow!("missing Message-ID"))?;
         let headers = serde_json::to_string(&Headers(article.headers.clone()))?;
 
         // Store the message once
@@ -197,18 +197,7 @@ impl Storage for PostgresStorage {
         .await?;
 
         // Extract newsgroups from headers
-        let newsgroups: SmallVec<[String; 4]> = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .map(|(_, v)| {
-                v.split(',')
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect::<SmallVec<[String; 4]>>()
-            })
-            .unwrap_or_default();
+        let newsgroups = parse_newsgroups_from_message(article);
 
         // Associate with each group and create overview data
         let now = chrono::Utc::now().timestamp();

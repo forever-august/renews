@@ -94,13 +94,13 @@ async fn cleanup_group_by_expires_header(
         let id = result?;
         match storage.get_article_by_id(&id).await {
             Ok(Some(article)) => {
-                if let Some(expires_time) = parse_expires_header(&article) {
-                    if expires_time <= now {
-                        if let Err(e) = storage.delete_article_by_id(&id).await {
-                            warn!("Failed to delete expired article '{}': {}", id, e);
-                        } else {
-                            expired_count += 1;
-                        }
+                if let Some(expires_time) = parse_expires_header(&article)
+                    && expires_time <= now
+                {
+                    if let Err(e) = storage.delete_article_by_id(&id).await {
+                        warn!("Failed to delete expired article '{}': {}", id, e);
+                    } else {
+                        expired_count += 1;
                     }
                 }
             }

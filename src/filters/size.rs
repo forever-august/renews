@@ -28,10 +28,10 @@ impl ArticleFilter for SizeFilter {
 
         // Check size limit for each newsgroup
         for group in &newsgroups {
-            if let Some(max_size) = cfg.max_size_for_group(group) {
-                if size > max_size {
-                    return Err(anyhow::anyhow!("article too large for group {group}"));
-                }
+            if let Some(max_size) = cfg.max_size_for_group(group)
+                && size > max_size
+            {
+                return Err(anyhow::anyhow!("article too large for group {group}"));
             }
         }
 

@@ -51,7 +51,7 @@ pub async fn run_ws_bridge(cfg: Arc<RwLock<Config>>) -> Result<()> {
     let addr = listen_addr(&ws_addr_raw);
     info!("listening WebSocket on {addr}");
     let listener = TcpListener::bind(&addr).await.map_err(|e| {
-        format!(
+        anyhow::anyhow!(
             "Failed to bind to WebSocket address '{}': {}
 
 This error typically occurs when:
