@@ -564,16 +564,10 @@ pub fn create_minimal_config() -> Config {
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),
-        allow_posting_insecure_connections: false,
+        allow_auth_insecure_connections: false,
+        allow_anonymous_posting: false,
         runtime_threads: 4,
     }
-}
-
-/// Create a test configuration with insecure posting enabled
-pub fn create_insecure_posting_config() -> Config {
-    let mut config = create_minimal_config();
-    config.allow_posting_insecure_connections = true;
-    config
 }
 
 /// Create a test configuration with specific limits for failure testing

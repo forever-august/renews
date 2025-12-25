@@ -69,14 +69,15 @@ where
     let reader = BufReader::new(read_half);
 
     // Cache configuration values at connection start so they don't change mid-connection
-    let (connection_config, allow_posting_insecure) = {
+    let (connection_config, allow_auth_insecure, allow_anonymous_posting) = {
         let cfg_guard = cfg.read().await;
         (
             ConnectionConfig {
                 site_name: cfg_guard.site_name.clone(),
                 idle_timeout: Duration::from_secs(cfg_guard.idle_timeout_secs),
             },
-            cfg_guard.allow_posting_insecure_connections,
+            cfg_guard.allow_auth_insecure_connections,
+            cfg_guard.allow_anonymous_posting,
         )
     };
 
@@ -86,12 +87,12 @@ where
         storage,
         auth,
         config: cfg,
-        session: Session::new(is_tls, allow_posting_insecure),
+        session: Session::new(is_tls, allow_auth_insecure, allow_anonymous_posting),
         queue,
     };
 
-    // Send greeting
-    if is_tls || allow_posting_insecure {
+    // Send greeting - reflects current posting ability
+    if ctx.session.can_post() {
         ctx.writer.write_all(RESP_200_READY.as_bytes()).await?;
     } else {
         ctx.writer

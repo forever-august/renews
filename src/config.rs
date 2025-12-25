@@ -186,7 +186,10 @@ pub struct Config {
     pub pgp_key_servers: Vec<String>,
 
     #[serde(default)]
-    pub allow_posting_insecure_connections: bool,
+    pub allow_auth_insecure_connections: bool,
+
+    #[serde(default)]
+    pub allow_anonymous_posting: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -394,7 +397,8 @@ See 'examples/config.toml' for a valid configuration example."
         self.ws_addr = other.ws_addr;
         self.runtime_threads = other.runtime_threads;
         self.pgp_key_servers = other.pgp_key_servers;
-        self.allow_posting_insecure_connections = other.allow_posting_insecure_connections;
+        self.allow_auth_insecure_connections = other.allow_auth_insecure_connections;
+        self.allow_anonymous_posting = other.allow_anonymous_posting;
     }
 }
 
@@ -420,7 +424,8 @@ pub struct StaticConfig {
 pub struct DynamicConfig {
     pub site_name: String,
     pub idle_timeout_secs: u64,
-    pub allow_posting_insecure_connections: bool,
+    pub allow_auth_insecure_connections: bool,
+    pub allow_anonymous_posting: bool,
     pub group_settings: Vec<GroupRule>,
     pub filters: Vec<FilterConfig>,
     pub peers: Vec<PeerRule>,
@@ -458,7 +463,8 @@ impl From<&Config> for DynamicConfig {
         Self {
             site_name: cfg.site_name.clone(),
             idle_timeout_secs: cfg.idle_timeout_secs,
-            allow_posting_insecure_connections: cfg.allow_posting_insecure_connections,
+            allow_auth_insecure_connections: cfg.allow_auth_insecure_connections,
+            allow_anonymous_posting: cfg.allow_anonymous_posting,
             group_settings: cfg.group_settings.clone(),
             filters: cfg.filters.clone(),
             peers: cfg.peers.clone(),

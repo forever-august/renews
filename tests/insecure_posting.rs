@@ -1,122 +1,179 @@
-//! Tests for the allow-posting-insecure-connections feature
+//! Tests for posting and authentication security features
 
 use renews::{config::Config, session::Session};
 
 mod utils;
-use utils::{create_insecure_posting_config, create_minimal_config};
+use utils::create_minimal_config;
 
-/// Test that the session logic works correctly for secure mode
+/// Test that the session logic works correctly for secure mode (default config)
 #[tokio::test]
 async fn test_session_secure_mode() {
     let config = create_minimal_config();
-    assert!(!config.allow_posting_insecure_connections);
+    assert!(!config.allow_auth_insecure_connections);
+    assert!(!config.allow_anonymous_posting);
 
-    // Simulate non-TLS connection logic
-    let is_tls = false;
-    let allow_posting_insecure = config.allow_posting_insecure_connections;
+    // Simulate non-TLS connection with default config
+    let session = Session::new(
+        false, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
 
-    let session = Session::new(is_tls, allow_posting_insecure);
-
-    // In secure mode, non-TLS should not allow posting
+    // In secure mode, non-TLS should not allow auth
     assert!(!session.is_tls());
-    assert!(!session.allows_posting_attempt());
-
-    // POST should be rejected (simulating the logic in PostHandler)
-    // can_post() requires authentication, so we test allows_posting_attempt() instead
-    assert!(!session.allows_posting_attempt());
-
-    // MODE READER should return "posting prohibited"
-    assert!(!session.allows_posting_attempt());
+    assert!(!session.can_post()); // Not authenticated, no anonymous posting
+    assert!(!session.can_authenticate());
 }
 
-/// Test that the session logic works correctly for insecure mode
+/// Test that anonymous posting works when enabled
 #[tokio::test]
-async fn test_session_insecure_mode() {
-    let config = create_insecure_posting_config();
-    assert!(config.allow_posting_insecure_connections);
+async fn test_session_anonymous_posting() {
+    let mut config = create_minimal_config();
+    config.allow_anonymous_posting = true;
 
-    // Simulate non-TLS connection logic
-    let is_tls = false;
-    let allow_posting_insecure = config.allow_posting_insecure_connections;
+    // Simulate TLS connection with anonymous posting enabled
+    let session = Session::new(
+        true, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
 
-    let session = Session::new(is_tls, allow_posting_insecure);
-
-    // In insecure mode, non-TLS should allow posting attempt
-    assert!(!session.is_tls());
-    assert!(session.allows_posting_attempt());
-
-    // MODE READER should return "posting allowed"
-    assert!(session.allows_posting_attempt());
+    // With TLS and anonymous posting, can_post() should be true without auth
+    assert!(session.is_tls());
+    assert!(session.can_post());
+    assert!(!session.is_authenticated());
 }
 
-/// Test that TLS connections always allow posting regardless of the flag
+/// Test that anonymous posting on non-TLS connections works when enabled
 #[tokio::test]
-async fn test_tls_always_allows_posting() {
-    let config = create_minimal_config(); // Flag is false
-    assert!(!config.allow_posting_insecure_connections);
+async fn test_session_anonymous_posting_non_tls() {
+    let mut config = create_minimal_config();
+    config.allow_anonymous_posting = true;
+
+    // Simulate non-TLS connection with anonymous posting enabled
+    let session = Session::new(
+        false, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
+
+    // With anonymous posting enabled, can_post() should be true regardless of TLS
+    assert!(!session.is_tls());
+    assert!(session.can_post());
+    assert!(!session.is_authenticated());
+}
+
+/// Test that TLS connections can authenticate but need auth to post (by default)
+#[tokio::test]
+async fn test_tls_requires_auth_to_post() {
+    let config = create_minimal_config();
+    assert!(!config.allow_anonymous_posting);
 
     // Simulate TLS connection
-    let is_tls = true;
-    let allow_posting_insecure = config.allow_posting_insecure_connections;
+    let mut session = Session::new(
+        true, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
 
-    let session = Session::new(is_tls, allow_posting_insecure);
-
-    // TLS should always allow posting attempt
+    // TLS allows authentication
     assert!(session.is_tls());
+    assert!(session.can_authenticate());
 
-    // POST should be allowed because of TLS (after authentication)
-    assert!(session.allows_posting_attempt());
+    // But cannot post without authentication (anonymous posting disabled)
+    assert!(!session.can_post());
 
-    // MODE READER should return "posting allowed"
-    assert!(session.allows_posting_attempt());
+    // After authentication, can post
+    session.authenticate("testuser".to_string());
+    assert!(session.can_post());
 }
 
-/// Test connection greeting logic for secure mode
+/// Test that insecure auth connections work when enabled
 #[tokio::test]
-async fn test_greeting_logic_secure_mode() {
+async fn test_session_insecure_auth() {
+    let mut config = create_minimal_config();
+    config.allow_auth_insecure_connections = true;
+
+    // Simulate non-TLS connection with insecure auth enabled
+    let mut session = Session::new(
+        false, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
+
+    // With insecure auth enabled, can authenticate on non-TLS
+    assert!(!session.is_tls());
+    assert!(session.can_authenticate());
+    assert!(!session.can_post()); // Still need to authenticate
+
+    // After authentication, can post
+    session.authenticate("testuser".to_string());
+    assert!(session.can_post());
+}
+
+/// Test connection greeting logic - default config (no anonymous posting)
+#[tokio::test]
+async fn test_greeting_logic_default() {
     let config = create_minimal_config();
-    let is_tls = false;
-    let allow_posting_insecure = config.allow_posting_insecure_connections;
 
-    // Simulate the greeting logic from lib.rs
-    let should_send_posting_ok = is_tls || allow_posting_insecure;
-    assert!(!should_send_posting_ok);
+    // Non-TLS connection with default config
+    let session = Session::new(
+        false, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
 
-    // This would result in RESP_201_READY_NO_POST being sent
+    // Greeting should indicate no posting (201)
+    assert!(!session.can_post());
+
+    // TLS connection with default config
+    let session_tls = Session::new(
+        true, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
+
+    // Still no posting until authenticated (201)
+    assert!(!session_tls.can_post());
 }
 
-/// Test connection greeting logic for insecure mode
+/// Test connection greeting logic - anonymous posting enabled
 #[tokio::test]
-async fn test_greeting_logic_insecure_mode() {
-    let config = create_insecure_posting_config();
-    let is_tls = false;
-    let allow_posting_insecure = config.allow_posting_insecure_connections;
+async fn test_greeting_logic_anonymous_posting() {
+    let mut config = create_minimal_config();
+    config.allow_anonymous_posting = true;
 
-    // Simulate the greeting logic from lib.rs
-    let should_send_posting_ok = is_tls || allow_posting_insecure;
-    assert!(should_send_posting_ok);
+    // TLS connection with anonymous posting
+    let session = Session::new(
+        true, // is_tls
+        config.allow_auth_insecure_connections,
+        config.allow_anonymous_posting,
+    );
 
-    // This would result in RESP_200_READY being sent
+    // Greeting should indicate posting allowed (200)
+    assert!(session.can_post());
 }
 
-/// Test configuration parsing includes the new field
+/// Test configuration parsing includes all security fields
 #[test]
-fn test_config_parsing_includes_insecure_flag() {
+fn test_config_parsing_includes_security_flags() {
     let toml = r#"
 addr = ":119"
 db_path = "sqlite:///:memory:"
 auth_db_path = "sqlite:///:memory:"
 peer_db_path = "sqlite:///:memory:"
-allow_posting_insecure_connections = true
+allow_auth_insecure_connections = true
+allow_anonymous_posting = true
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
-    assert!(config.allow_posting_insecure_connections);
+    assert!(config.allow_auth_insecure_connections);
+    assert!(config.allow_anonymous_posting);
 }
 
-/// Test that the flag defaults to false
+/// Test that all flags default to false
 #[test]
-fn test_config_flag_defaults_to_false() {
+fn test_config_flags_default_to_false() {
     let toml = r#"
 addr = ":119"
 db_path = "sqlite:///:memory:"
@@ -125,37 +182,25 @@ peer_db_path = "sqlite:///:memory:"
 "#;
 
     let config: Config = toml::from_str(toml).unwrap();
-    assert!(!config.allow_posting_insecure_connections);
+    assert!(!config.allow_auth_insecure_connections);
+    assert!(!config.allow_anonymous_posting);
 }
 
-/// Test that config update runtime preserves the flag
+/// Test that config update runtime preserves all flags
 #[test]
-fn test_config_update_runtime_preserves_flag() {
+fn test_config_update_runtime_preserves_flags() {
     let mut config1 = create_minimal_config();
-    let config2 = create_insecure_posting_config();
+    let mut config2 = create_minimal_config();
+    config2.allow_auth_insecure_connections = true;
+    config2.allow_anonymous_posting = true;
 
-    assert!(!config1.allow_posting_insecure_connections);
-    assert!(config2.allow_posting_insecure_connections);
+    assert!(!config1.allow_auth_insecure_connections);
+    assert!(!config1.allow_anonymous_posting);
 
     // Update config1 with config2
     config1.update_runtime(config2.clone());
 
-    // The flag should be updated
-    assert!(config1.allow_posting_insecure_connections);
-}
-
-/// Test that CLI flag overrides config file setting
-#[test]
-fn test_cli_flag_override_logic() {
-    // Simulate the CLI override logic from main.rs
-    let mut config = create_minimal_config();
-    assert!(!config.allow_posting_insecure_connections);
-
-    // Simulate CLI flag being provided
-    let cli_flag_provided = true;
-    if cli_flag_provided {
-        config.allow_posting_insecure_connections = true;
-    }
-
-    assert!(config.allow_posting_insecure_connections);
+    // All flags should be updated
+    assert!(config1.allow_auth_insecure_connections);
+    assert!(config1.allow_anonymous_posting);
 }

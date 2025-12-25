@@ -42,7 +42,8 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         group_settings: vec![],
         filters: vec![],
         pgp_key_servers: renews::config::default_pgp_key_servers(),
-        allow_posting_insecure_connections: false,
+        allow_auth_insecure_connections: false,
+        allow_anonymous_posting: false,
     };
 
     // Since we can't easily test with TLS in this setup, we'll create a simplified server
@@ -100,7 +101,7 @@ async fn test_full_queue_integration() {
     // Read greeting
     let mut line = String::new();
     reader.read_line(&mut line).await.unwrap();
-    assert!(line.starts_with("200")); // Should be ready for posting since is_tls=true
+    assert!(line.starts_with("201")); // No posting until authenticated
 
     // Authenticate
     writer

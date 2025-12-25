@@ -113,6 +113,41 @@ tls_cert = "/path/to/certificate.pem" # PEM format certificate
 tls_key = "/path/to/private.key"      # PEM format private key
 ```
 
+### Security Settings
+
+Control authentication and posting security:
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `allow_auth_insecure_connections` | Allow AUTHINFO on non-TLS connections | `false` |
+| `allow_anonymous_posting` | Allow posting without authentication | `false` |
+
+**Security behavior:**
+
+By default, Renews requires TLS for authentication to prevent credential leakage. The server will reject `AUTHINFO` commands on non-TLS connections with response code 483 (Secure connection required).
+
+Posting requires authentication by default. The initial greeting and `MODE READER` response reflect the current posting ability:
+- `200` - Posting allowed (authenticated or anonymous posting enabled)
+- `201` - Posting not allowed (not authenticated, anonymous posting disabled)
+
+The `CAPABILITIES` response dynamically reflects available features:
+- `POST` capability shown only when the session can currently post
+- `AUTHINFO USER` capability shown only when authentication is available and user is not yet authenticated
+
+**Example configurations:**
+
+```toml
+# Default secure configuration (recommended)
+# - Requires TLS for authentication
+# - Requires authentication for posting
+
+# Allow authentication without TLS (NOT RECOMMENDED - credentials sent in plaintext)
+allow_auth_insecure_connections = true
+
+# Allow anonymous posting (no authentication required)
+allow_anonymous_posting = true
+```
+
 ### Article Retention
 
 Global defaults:

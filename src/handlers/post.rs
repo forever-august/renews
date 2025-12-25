@@ -13,15 +13,20 @@ pub struct PostHandler;
 
 impl CommandHandler for PostHandler {
     async fn handle(ctx: &mut HandlerContext, _args: &[String]) -> HandlerResult {
-        if !ctx.session.allows_posting_attempt() {
-            write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
-            return Ok(());
-        }
-
-        if !ctx.session.is_authenticated() {
-            let err = NntpError::Auth(AuthError::Required);
-            tracing::debug!(error = %err, "Post rejected: authentication required");
-            write_simple(&mut ctx.writer, &err.to_response()).await?;
+        // Check if posting is allowed on this connection
+        if !ctx.session.can_post() {
+            // Determine appropriate error: connection security vs authentication
+            if !ctx.session.is_tls() {
+                // Non-TLS connection - check if posting would be allowed with TLS
+                // If anonymous posting is enabled, the issue is connection security
+                // Otherwise, the issue could be either, but we prioritize the security message
+                write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
+            } else {
+                // TLS connection but not authenticated (and anonymous posting disabled)
+                let err = NntpError::Auth(AuthError::Required);
+                tracing::debug!(error = %err, "Post rejected: authentication required");
+                write_simple(&mut ctx.writer, &err.to_response()).await?;
+            }
             return Ok(());
         }
 

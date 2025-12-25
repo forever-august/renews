@@ -8,11 +8,12 @@ pub struct Session {
     username: Option<String>,
     is_tls: bool,
     in_stream_mode: bool,
-    allow_posting_insecure: bool,
+    allow_auth_insecure: bool,
+    allow_anonymous_posting: bool,
 }
 
 impl Session {
-    pub fn new(is_tls: bool, allow_posting_insecure: bool) -> Self {
+    pub fn new(is_tls: bool, allow_auth_insecure: bool, allow_anonymous_posting: bool) -> Self {
         Self {
             current_group: None,
             current_article: None,
@@ -20,7 +21,8 @@ impl Session {
             username: None,
             is_tls,
             in_stream_mode: false,
-            allow_posting_insecure,
+            allow_auth_insecure,
+            allow_anonymous_posting,
         }
     }
 
@@ -78,15 +80,18 @@ impl Session {
         self.username.as_deref()
     }
 
-    // Posting permissions
-    pub fn can_post(&self) -> bool {
-        self.authenticated && (self.is_tls || self.allow_posting_insecure)
+    // Authentication permissions
+    /// Check if authentication is allowed on this connection.
+    /// Returns true if TLS or if insecure auth is explicitly allowed.
+    pub fn can_authenticate(&self) -> bool {
+        self.is_tls || self.allow_auth_insecure
     }
 
-    /// Check if posting can be attempted (TLS or insecure posting allowed).
-    /// This is the pre-authentication check for MODE READER response.
-    pub fn allows_posting_attempt(&self) -> bool {
-        self.is_tls || self.allow_posting_insecure
+    // Posting permissions
+    /// Check if the session can currently post articles.
+    /// Requires either authentication or anonymous posting to be enabled.
+    pub fn can_post(&self) -> bool {
+        self.authenticated || self.allow_anonymous_posting
     }
 
     pub fn is_tls(&self) -> bool {

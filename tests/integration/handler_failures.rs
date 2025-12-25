@@ -271,13 +271,14 @@ async fn test_newnews_command_invalid_args() {
 async fn test_authinfo_command_invalid_args() {
     let (storage, auth) = setup().await;
 
+    // AUTHINFO requires TLS, so run over TLS
     ClientMock::new()
         .expect("AUTHINFO", "501 not enough arguments")
         .expect("AUTHINFO INVALID", "501 Syntax error")
         .expect("AUTHINFO USER", "501 not enough arguments")
         .expect("AUTHINFO PASS", "501 not enough arguments")
         .expect("QUIT", "205 closing connection")
-        .run(storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 
@@ -285,11 +286,12 @@ async fn test_authinfo_command_invalid_args() {
 async fn test_authinfo_command_wrong_sequence() {
     let (storage, auth) = setup().await;
 
+    // AUTHINFO requires TLS, so run over TLS
     ClientMock::new()
         // Try AUTHINFO PASS without USER first - actual response is 481
         .expect("AUTHINFO PASS password", "481 Authentication rejected")
         .expect("QUIT", "205 closing connection")
-        .run(storage, auth)
+        .run_tls(storage, auth)
         .await;
 }
 

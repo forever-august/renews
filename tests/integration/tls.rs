@@ -12,7 +12,12 @@ async fn tls_quit() {
 #[tokio::test]
 async fn tls_mode_reader() {
     let (storage, auth) = utils::setup().await;
+    auth.add_user("user", "pass").await.unwrap();
+    // MODE READER returns 201 until authenticated
     ClientMock::new()
+        .expect("MODE READER", "201 Posting prohibited")
+        .expect("AUTHINFO USER user", "381 password required")
+        .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
         .run_tls(storage, auth)
         .await;
@@ -22,8 +27,9 @@ async fn tls_mode_reader() {
 async fn tls_post_requires_auth() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc", false).await.unwrap();
+    // MODE READER returns 201 until authenticated
     ClientMock::new()
-        .expect("MODE READER", "200 Posting allowed")
+        .expect("MODE READER", "201 Posting prohibited")
         .expect("GROUP misc", "211 0 0 0 misc")
         .expect("POST", "480 authentication required")
         .run_tls(storage.clone(), auth)

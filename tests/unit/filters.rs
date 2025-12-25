@@ -162,7 +162,6 @@ idle_timeout_secs = 600
 article_queue_capacity = 100
 article_worker_count = 1
 site_name = "test.local"
-allow_posting_insecure_connections = false
 "#;
     toml::from_str(toml).unwrap()
 }

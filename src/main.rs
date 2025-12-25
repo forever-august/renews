@@ -16,9 +16,6 @@ struct Args {
     /// Initialize databases and exit
     #[arg(long)]
     init: bool,
-    /// Allow posting without TLS for development
-    #[arg(long)]
-    allow_posting_insecure_connections: bool,
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -152,18 +149,13 @@ fn main() -> Result<()> {
     let args = Args::parse();
     let cfg_path = args.config.clone();
 
-    let mut cfg_initial = match Config::from_file(&cfg_path) {
+    let cfg_initial = match Config::from_file(&cfg_path) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
     };
-
-    // Override config with CLI flag if provided
-    if args.allow_posting_insecure_connections {
-        cfg_initial.allow_posting_insecure_connections = true;
-    }
 
     // Create the runtime based on the configuration
     let runtime_threads = match cfg_initial.get_runtime_threads() {

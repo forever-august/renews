@@ -10,6 +10,12 @@ pub struct AuthInfoHandler;
 
 impl CommandHandler for AuthInfoHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
+        // Reject authentication on insecure connections unless explicitly allowed
+        if !ctx.session.can_authenticate() {
+            write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
+            return Ok(());
+        }
+
         if args.is_empty() {
             write_simple(&mut ctx.writer, RESP_501_NOT_ENOUGH).await?;
             return Ok(());
@@ -64,7 +70,7 @@ impl CommandHandler for ModeHandler {
 
         match args[0].to_ascii_uppercase().as_str() {
             "READER" => {
-                if ctx.session.allows_posting_attempt() {
+                if ctx.session.can_post() {
                     write_simple(&mut ctx.writer, RESP_200_POSTING_ALLOWED).await?;
                 } else {
                     write_simple(&mut ctx.writer, RESP_201_POSTING_PROHIBITED).await?;

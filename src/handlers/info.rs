@@ -45,8 +45,14 @@ impl CommandHandler for CapabilitiesHandler {
             .await?;
         ctx.writer.write_all(RESP_CAP_READER.as_bytes()).await?;
 
-        if ctx.session.is_tls() {
+        // Show POST capability only if user can currently post
+        if ctx.session.can_post() {
             ctx.writer.write_all(RESP_CAP_POST.as_bytes()).await?;
+        }
+
+        // Show AUTHINFO capability only if auth is available and user not yet authenticated
+        if ctx.session.can_authenticate() && !ctx.session.is_authenticated() {
+            ctx.writer.write_all(RESP_CAP_AUTHINFO.as_bytes()).await?;
         }
 
         ctx.writer.write_all(RESP_CAP_NEWNEWS.as_bytes()).await?;

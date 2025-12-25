@@ -113,7 +113,7 @@ async fn test_xover_command_basic() {
         auth: Arc::new(auth),
         config,
         session: {
-            let mut s = Session::new(false, false);
+            let mut s = Session::new(false, false, false);
             s.select_group("test.group".to_string(), Some(1));
             s
         },
@@ -160,7 +160,7 @@ async fn test_xover_without_group() {
         storage,
         auth: Arc::new(auth),
         config,
-        session: Session::new(false, false),
+        session: Session::new(false, false, false),
         queue,
     };
 
@@ -209,7 +209,7 @@ async fn test_xover_single_article() {
         auth: Arc::new(auth),
         config,
         session: {
-            let mut s = Session::new(false, false);
+            let mut s = Session::new(false, false, false);
             s.select_group("test.group".to_string(), Some(1));
             s
         },
@@ -265,7 +265,7 @@ async fn test_xover_current_article() {
         auth: Arc::new(auth),
         config,
         session: {
-            let mut s = Session::new(false, false);
+            let mut s = Session::new(false, false, false);
             s.select_group("test.group".to_string(), Some(1));
             s
         },
