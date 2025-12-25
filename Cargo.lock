@@ -2025,6 +2025,7 @@ dependencies = [
  "sqlx",
  "systemd_socket",
  "tempfile",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-cron-scheduler",
  "tokio-rustls",
