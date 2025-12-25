@@ -24,11 +24,13 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use std::net::SocketAddr;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_rustls::{TlsAcceptor, rustls};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use dashmap::DashMap;
 use tokio::signal::unix::{SignalKind, signal};
@@ -46,6 +48,51 @@ use crate::ws;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 
 type ServerResult<T> = anyhow::Result<T>;
+
+/// Tracks active connections for graceful shutdown
+pub struct ConnectionTracker {
+    active_count: AtomicUsize,
+    shutdown_signal: tokio::sync::broadcast::Sender<()>,
+}
+
+impl ConnectionTracker {
+    pub fn new() -> (Self, tokio::sync::broadcast::Receiver<()>) {
+        let (tx, rx) = tokio::sync::broadcast::channel(1);
+        (
+            Self {
+                active_count: AtomicUsize::new(0),
+                shutdown_signal: tx,
+            },
+            rx,
+        )
+    }
+
+    pub fn connection_started(&self) {
+        self.active_count.fetch_add(1, Ordering::SeqCst);
+    }
+
+    pub fn connection_ended(&self) {
+        self.active_count.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    pub fn active_connections(&self) -> usize {
+        self.active_count.load(Ordering::SeqCst)
+    }
+
+    pub fn signal_shutdown(&self) {
+        let _ = self.shutdown_signal.send(());
+    }
+
+    pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<()> {
+        self.shutdown_signal.subscribe()
+    }
+}
+
+impl Default for ConnectionTracker {
+    fn default() -> Self {
+        Self::new().0
+    }
+}
 
 /// Shared server components
 #[derive(Clone)]
@@ -297,6 +344,10 @@ impl Server {
 
     /// Start all server services
     pub async fn run(self, cfg_path: String) -> ServerResult<()> {
+        // Create connection tracker for graceful shutdown
+        let (tracker, _shutdown_rx) = ConnectionTracker::new();
+        let tracker = Arc::new(tracker);
+
         // Start worker pool first
         let _worker_handles = self.worker_pool.start().await;
 
@@ -311,8 +362,54 @@ impl Server {
 
         // Wait for shutdown signal
         tokio::signal::ctrl_c().await?;
-        info!("shutdown signal received");
+        info!("Shutdown signal received, starting graceful shutdown...");
 
+        // Signal all components to stop accepting new work
+        tracker.signal_shutdown();
+
+        // Phase 1: Drain article queue (30 second timeout)
+        let drain_start = std::time::Instant::now();
+        let drain_timeout = Duration::from_secs(30);
+        let queue_len = self.components.queue.len();
+        if queue_len > 0 {
+            info!("Draining article queue ({} items)...", queue_len);
+        }
+        while !self.components.queue.is_empty() {
+            if drain_start.elapsed() > drain_timeout {
+                warn!(
+                    "Queue drain timeout exceeded ({} items remaining), proceeding with shutdown",
+                    self.components.queue.len()
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if queue_len > 0 && self.components.queue.is_empty() {
+            info!("Article queue drained successfully");
+        }
+
+        // Phase 2: Wait for active connections (30 second timeout)
+        let conn_start = std::time::Instant::now();
+        let conn_timeout = Duration::from_secs(30);
+        let active = tracker.active_connections();
+        if active > 0 {
+            info!("Waiting for {} active connections to finish...", active);
+        }
+        while tracker.active_connections() > 0 {
+            if conn_start.elapsed() > conn_timeout {
+                warn!(
+                    "Connection timeout exceeded ({} connections remaining), forcing shutdown",
+                    tracker.active_connections()
+                );
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if active > 0 && tracker.active_connections() == 0 {
+            info!("All connections closed gracefully");
+        }
+
+        info!("Shutdown complete");
         Ok(())
     }
 }
@@ -447,10 +544,10 @@ impl PeerManager {
             .collect();
 
         for name in to_remove {
-            if let Some((_, job_uuid)) = self.peer_jobs.remove(&name) {
-                if let Err(e) = self.scheduler.remove(&job_uuid).await {
-                    error!("Failed to remove peer job for {}: {}", name, e);
-                }
+            if let Some((_, job_uuid)) = self.peer_jobs.remove(&name)
+                && let Err(e) = self.scheduler.remove(&job_uuid).await
+            {
+                error!("Failed to remove peer job for {}: {}", name, e);
             }
         }
 

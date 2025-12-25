@@ -56,6 +56,16 @@ impl ArticleQueue {
     pub fn receiver(&self) -> Receiver<QueuedArticle> {
         self.receiver.clone()
     }
+
+    /// Returns true if the queue is empty
+    pub fn is_empty(&self) -> bool {
+        self.sender.is_empty()
+    }
+
+    /// Returns the number of items in the queue
+    pub fn len(&self) -> usize {
+        self.sender.len()
+    }
 }
 
 /// Article worker pool configuration
