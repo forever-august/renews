@@ -1,16 +1,16 @@
 //! Tests for XOVER command implementation
 
-use renews::ConnectionState;
 use renews::auth::sqlite::SqliteAuth;
-use renews::handlers::{HandlerContext, dispatch_command};
+use renews::handlers::{DynReader, DynWriter, HandlerContext, dispatch_command};
 use renews::queue::ArticleQueue;
+use renews::session::Session;
 use renews::storage::open;
 use renews::{Message, parse_command};
 use smallvec::smallvec;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tokio::io::{self, AsyncWrite};
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 // Helper to create a test article
 fn create_test_article(subject: &str, from: &str, message_id: &str, group: &str) -> Message {
@@ -29,29 +29,30 @@ fn create_test_article(subject: &str, from: &str, message_id: &str, group: &str)
     }
 }
 
-// Helper to create a mock writer that captures output
+// Helper to create a mock writer that captures output using shared buffer
 struct MockWriter {
-    buffer: Vec<u8>,
+    buffer: Arc<Mutex<Vec<u8>>>,
 }
 
 impl MockWriter {
-    fn new() -> Self {
-        Self { buffer: Vec::new() }
-    }
-
-    fn output(&self) -> String {
-        String::from_utf8_lossy(&self.buffer).to_string()
+    fn new(buffer: Arc<Mutex<Vec<u8>>>) -> Self {
+        Self { buffer }
     }
 }
 
 impl AsyncWrite for MockWriter {
     fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
+        self: std::pin::Pin<&mut Self>,
         _: &mut std::task::Context<'_>,
         buf: &[u8],
     ) -> std::task::Poll<Result<usize, io::Error>> {
-        self.buffer.extend_from_slice(buf);
-        std::task::Poll::Ready(Ok(buf.len()))
+        // Use blocking lock since we're in a poll context
+        if let Ok(mut buffer) = self.buffer.try_lock() {
+            buffer.extend_from_slice(buf);
+            std::task::Poll::Ready(Ok(buf.len()))
+        } else {
+            std::task::Poll::Pending
+        }
     }
 
     fn poll_flush(
@@ -101,8 +102,9 @@ async fn test_xover_command_basic() {
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
 
-    let reader = io::empty();
-    let writer = MockWriter::new();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let reader: DynReader = Box::pin(io::empty());
+    let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
     let mut ctx = HandlerContext {
         reader,
@@ -110,10 +112,10 @@ async fn test_xover_command_basic() {
         storage,
         auth: Arc::new(auth),
         config,
-        state: ConnectionState {
-            current_group: Some("test.group".to_string()),
-            current_article: Some(1),
-            ..Default::default()
+        session: {
+            let mut s = Session::new(false, false);
+            s.select_group("test.group".to_string(), Some(1));
+            s
         },
         queue,
     };
@@ -122,7 +124,8 @@ async fn test_xover_command_basic() {
     let (_, cmd) = parse_command("XOVER 1-2").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
 
-    let output = ctx.writer.output();
+    // Get output from the shared buffer
+    let output = String::from_utf8_lossy(&buffer.lock().await).to_string();
 
     // Verify output contains overview response
     assert!(output.contains("224 Overview information follows"));
@@ -147,8 +150,9 @@ async fn test_xover_without_group() {
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
 
-    let reader = io::empty();
-    let writer = MockWriter::new();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let reader: DynReader = Box::pin(io::empty());
+    let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
     let mut ctx = HandlerContext {
         reader,
@@ -156,7 +160,7 @@ async fn test_xover_without_group() {
         storage,
         auth: Arc::new(auth),
         config,
-        state: ConnectionState::default(),
+        session: Session::new(false, false),
         queue,
     };
 
@@ -164,7 +168,7 @@ async fn test_xover_without_group() {
     let (_, cmd) = parse_command("XOVER 1-2").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
 
-    let output = ctx.writer.output();
+    let output = String::from_utf8_lossy(&buffer.lock().await).to_string();
 
     // Should get appropriate error response
     assert!(output.contains("412") || output.contains("500") || output.contains("501"));
@@ -194,8 +198,9 @@ async fn test_xover_single_article() {
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
 
-    let reader = io::empty();
-    let writer = MockWriter::new();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let reader: DynReader = Box::pin(io::empty());
+    let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
     let mut ctx = HandlerContext {
         reader,
@@ -203,10 +208,10 @@ async fn test_xover_single_article() {
         storage,
         auth: Arc::new(auth),
         config,
-        state: ConnectionState {
-            current_group: Some("test.group".to_string()),
-            current_article: Some(1),
-            ..Default::default()
+        session: {
+            let mut s = Session::new(false, false);
+            s.select_group("test.group".to_string(), Some(1));
+            s
         },
         queue,
     };
@@ -215,7 +220,7 @@ async fn test_xover_single_article() {
     let (_, cmd) = parse_command("XOVER 1").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
 
-    let output = ctx.writer.output();
+    let output = String::from_utf8_lossy(&buffer.lock().await).to_string();
 
     // Verify output
     assert!(output.contains("224 Overview information follows"));
@@ -249,8 +254,9 @@ async fn test_xover_current_article() {
     let auth = SqliteAuth::new(":memory:").await.unwrap();
     let queue = ArticleQueue::new(1000);
 
-    let reader = io::empty();
-    let writer = MockWriter::new();
+    let buffer = Arc::new(Mutex::new(Vec::new()));
+    let reader: DynReader = Box::pin(io::empty());
+    let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
     let mut ctx = HandlerContext {
         reader,
@@ -258,10 +264,10 @@ async fn test_xover_current_article() {
         storage,
         auth: Arc::new(auth),
         config,
-        state: ConnectionState {
-            current_group: Some("test.group".to_string()),
-            current_article: Some(1),
-            ..Default::default()
+        session: {
+            let mut s = Session::new(false, false);
+            s.select_group("test.group".to_string(), Some(1));
+            s
         },
         queue,
     };
@@ -270,7 +276,7 @@ async fn test_xover_current_article() {
     let (_, cmd) = parse_command("XOVER").unwrap();
     dispatch_command(&mut ctx, &cmd).await.unwrap();
 
-    let output = ctx.writer.output();
+    let output = String::from_utf8_lossy(&buffer.lock().await).to_string();
 
     // Verify output
     assert!(output.contains("224 Overview information follows"));

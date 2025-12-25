@@ -62,6 +62,96 @@ async fn test_hdr_command_insufficient_args() {
 }
 
 #[tokio::test]
+async fn test_hdr_command_no_group_selected() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        // HDR with article number but no group selected should return 412
+        .expect("HDR Subject 1", "412 no newsgroup selected")
+        .expect("HDR Subject 1-10", "412 no newsgroup selected")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_hdr_command_no_current_article() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        .expect("GROUP test.group", "211 0 0 0 test.group")
+        // HDR without article specifier but no current article
+        .expect("HDR Subject", "420 no current article selected")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_hdr_command_invalid_message_id() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        .expect("GROUP test.group", "211 0 0 0 test.group")
+        // HDR with non-existent message-id should return 430
+        .expect("HDR Subject <nonexistent@test>", "430 no such article")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_hdr_command_invalid_article_number() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        .expect("GROUP test.group", "211 0 0 0 test.group")
+        // HDR with non-existent article number should return 423
+        .expect(
+            "HDR Subject 999",
+            "423 no such article number in this group",
+        )
+        .expect(
+            "HDR Subject 999-1000",
+            "423 no such article number in this group",
+        )
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_xpat_command_no_group_selected() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        // XPAT with article number range but no group selected should return 412
+        .expect("XPAT Subject 1-10 *", "412 no newsgroup selected")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_xpat_command_invalid_message_id() {
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    ClientMock::new()
+        .expect("GROUP test.group", "211 0 0 0 test.group")
+        // XPAT with non-existent message-id should return 430
+        .expect("XPAT Subject <nonexistent@test> *", "430 no such article")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
 async fn test_xpat_command_insufficient_args() {
     let (storage, auth) = setup().await;
 
@@ -266,6 +356,47 @@ async fn test_malformed_commands() {
         .expect("", "500 Syntax error")
         .expect("INVALID@COMMAND", "500 command not recognized")
         .expect("123COMMAND", "500 Syntax error")
+        .expect("QUIT", "205 closing connection")
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
+async fn test_hdr_command_large_header_values() {
+    use renews::parse_message;
+
+    let (storage, auth) = setup().await;
+    storage.add_group("test.group", false).await.unwrap();
+
+    // Create an article with a very long References header (common in threading)
+    // References headers can contain many message-IDs, easily exceeding 64 bytes
+    let long_references = (1..=20)
+        .map(|i| format!("<msg{i}@example.com>"))
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let article = format!(
+        "Message-ID: <test@example.com>\r\n\
+         Newsgroups: test.group\r\n\
+         Subject: Test\r\n\
+         From: user@example.com\r\n\
+         References: {}\r\n\
+         \r\n\
+         Body content",
+        long_references
+    );
+
+    let (_, msg) = parse_message(&article).unwrap();
+    storage.store_article(&msg).await.unwrap();
+
+    // HDR should handle large header values without error
+    // The References header here is ~400 bytes, well over the old 64-byte limit
+    ClientMock::new()
+        .expect("GROUP test.group", "211 1 1 1 test.group")
+        .expect_multi(
+            "HDR References 1",
+            vec!["225 Headers follow", &format!("1 {}", long_references), "."],
+        )
         .expect("QUIT", "205 closing connection")
         .run(storage, auth)
         .await;

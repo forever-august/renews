@@ -1,13 +1,13 @@
 //! Tests for the allow-posting-insecure-connections feature
 
-use renews::{ConnectionState, config::Config};
+use renews::{config::Config, session::Session};
 
 mod utils;
 use utils::{create_insecure_posting_config, create_minimal_config};
 
-/// Test that the connection state logic works correctly for secure mode
+/// Test that the session logic works correctly for secure mode
 #[tokio::test]
-async fn test_connection_state_secure_mode() {
+async fn test_session_secure_mode() {
     let config = create_minimal_config();
     assert!(!config.allow_posting_insecure_connections);
 
@@ -15,28 +15,23 @@ async fn test_connection_state_secure_mode() {
     let is_tls = false;
     let allow_posting_insecure = config.allow_posting_insecure_connections;
 
-    let state = ConnectionState {
-        is_tls,
-        allow_posting_insecure,
-        ..Default::default()
-    };
+    let session = Session::new(is_tls, allow_posting_insecure);
 
     // In secure mode, non-TLS should not allow posting
-    assert!(!state.is_tls);
-    assert!(!state.allow_posting_insecure);
+    assert!(!session.is_tls());
+    assert!(!session.allows_posting_attempt());
 
     // POST should be rejected (simulating the logic in PostHandler)
-    let should_allow_post = state.is_tls || state.allow_posting_insecure;
-    assert!(!should_allow_post);
+    // can_post() requires authentication, so we test allows_posting_attempt() instead
+    assert!(!session.allows_posting_attempt());
 
     // MODE READER should return "posting prohibited"
-    let posting_allowed = state.is_tls || state.allow_posting_insecure;
-    assert!(!posting_allowed);
+    assert!(!session.allows_posting_attempt());
 }
 
-/// Test that the connection state logic works correctly for insecure mode
+/// Test that the session logic works correctly for insecure mode
 #[tokio::test]
-async fn test_connection_state_insecure_mode() {
+async fn test_session_insecure_mode() {
     let config = create_insecure_posting_config();
     assert!(config.allow_posting_insecure_connections);
 
@@ -44,23 +39,14 @@ async fn test_connection_state_insecure_mode() {
     let is_tls = false;
     let allow_posting_insecure = config.allow_posting_insecure_connections;
 
-    let state = ConnectionState {
-        is_tls,
-        allow_posting_insecure,
-        ..Default::default()
-    };
+    let session = Session::new(is_tls, allow_posting_insecure);
 
-    // In insecure mode, non-TLS should allow posting
-    assert!(!state.is_tls);
-    assert!(state.allow_posting_insecure);
-
-    // POST should be allowed (simulating the logic in PostHandler)
-    let should_allow_post = state.is_tls || state.allow_posting_insecure;
-    assert!(should_allow_post);
+    // In insecure mode, non-TLS should allow posting attempt
+    assert!(!session.is_tls());
+    assert!(session.allows_posting_attempt());
 
     // MODE READER should return "posting allowed"
-    let posting_allowed = state.is_tls || state.allow_posting_insecure;
-    assert!(posting_allowed);
+    assert!(session.allows_posting_attempt());
 }
 
 /// Test that TLS connections always allow posting regardless of the flag
@@ -73,23 +59,16 @@ async fn test_tls_always_allows_posting() {
     let is_tls = true;
     let allow_posting_insecure = config.allow_posting_insecure_connections;
 
-    let state = ConnectionState {
-        is_tls,
-        allow_posting_insecure,
-        ..Default::default()
-    };
+    let session = Session::new(is_tls, allow_posting_insecure);
 
-    // TLS should always allow posting
-    assert!(state.is_tls);
-    assert!(!state.allow_posting_insecure); // Flag is still false
+    // TLS should always allow posting attempt
+    assert!(session.is_tls());
 
-    // POST should be allowed because of TLS
-    let should_allow_post = state.is_tls || state.allow_posting_insecure;
-    assert!(should_allow_post);
+    // POST should be allowed because of TLS (after authentication)
+    assert!(session.allows_posting_attempt());
 
     // MODE READER should return "posting allowed"
-    let posting_allowed = state.is_tls || state.allow_posting_insecure;
-    assert!(posting_allowed);
+    assert!(session.allows_posting_attempt());
 }
 
 /// Test connection greeting logic for secure mode
