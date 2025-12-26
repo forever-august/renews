@@ -189,7 +189,7 @@ impl Server {
             loop {
                 match listener.accept().await {
                     Ok((socket, _)) => {
-                        info!("accepted connection");
+                        info!(is_tls = false, "Connection accepted");
                         handle_connection(
                             socket,
                             storage.clone(),
@@ -200,7 +200,7 @@ impl Server {
                         )
                         .await;
                     }
-                    Err(e) => error!("failed to accept connection: {e}"),
+                    Err(e) => error!(error = %e, "Failed to accept connection"),
                 }
             }
         });
@@ -235,7 +235,7 @@ impl Server {
             loop {
                 match tls_listener.accept().await {
                     Ok((socket, _)) => {
-                        info!("accepted TLS connection");
+                        info!(is_tls = true, "Connection accepted");
                         let storage_clone = storage.clone();
                         let auth_clone = auth.clone();
                         let config_clone = config.clone();
@@ -255,11 +255,11 @@ impl Server {
                                     )
                                     .await;
                                 }
-                                Err(e) => error!("tls error: {e}"),
+                                Err(e) => error!(error = %e, "TLS handshake failed"),
                             }
                         });
                     }
-                    Err(e) => error!("failed to accept TLS connection: {e}"),
+                    Err(e) => error!(error = %e, "Failed to accept TLS connection"),
                 }
             }
         });

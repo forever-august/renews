@@ -12,7 +12,7 @@ use anyhow::Result;
 use flume::{Receiver, Sender};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, info_span, Instrument};
 
 /// An article queued for processing
 #[derive(Debug, Clone)]
@@ -112,7 +112,7 @@ impl WorkerPool {
             handles.push(handle);
         }
 
-        info!("Started {} article processing workers", self.worker_count);
+        info!(worker_count = self.worker_count, "Article processing workers started");
         handles
     }
 }
@@ -125,17 +125,44 @@ async fn worker_task(
     auth: DynAuth,
     config: Arc<RwLock<Config>>,
 ) {
-    info!("Article worker {} started", worker_id);
+    debug!(worker_id = worker_id, "Article worker started");
 
     while let Ok(queued_article) = receiver.recv_async().await {
-        debug!("Worker {} processing article", worker_id);
+        let message_id = queued_article
+            .message
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+            .map(|(_, v)| v.as_str())
+            .unwrap_or("<unknown>");
+        
+        let span = info_span!(
+            "queue.process",
+            worker_id = worker_id,
+            message_id = message_id,
+            size_bytes = queued_article.size,
+            is_control = queued_article.is_control,
+            outcome = tracing::field::Empty,
+        );
 
-        if let Err(e) = process_article(&queued_article, &storage, &auth, &config).await {
-            error!("Worker {} failed to process article: {}", worker_id, e);
+        async {
+            let start = std::time::Instant::now();
+            match process_article(&queued_article, &storage, &auth, &config).await {
+                Ok(()) => {
+                    tracing::Span::current().record("outcome", "success");
+                    debug!(duration_ms = start.elapsed().as_millis() as u64, "Article processed");
+                }
+                Err(e) => {
+                    tracing::Span::current().record("outcome", "failed");
+                    error!(error = %e, duration_ms = start.elapsed().as_millis() as u64, "Article processing failed");
+                }
+            }
         }
+        .instrument(span)
+        .await;
     }
 
-    info!("Article worker {} stopped", worker_id);
+    debug!(worker_id = worker_id, "Article worker stopped");
 }
 
 /// Process a single article: comprehensive validation and storage

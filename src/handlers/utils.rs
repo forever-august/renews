@@ -8,6 +8,7 @@ use smallvec::SmallVec;
 use std::error::Error;
 use std::fmt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
+use tracing::Span;
 
 /// Extract newsgroups from message headers.
 /// Returns a collection of newsgroup names parsed from the Newsgroups header.
@@ -225,6 +226,15 @@ impl ArticleOperation {
             ArticleOperation::Stat => "article exists",
         }
     }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArticleOperation::Full => "full",
+            ArticleOperation::Headers => "headers",
+            ArticleOperation::Body => "body",
+            ArticleOperation::Stat => "stat",
+        }
+    }
 }
 
 /// Generic handler for article operations (ARTICLE, HEAD, BODY, STAT).
@@ -237,10 +247,28 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
 ) -> Result<()> {
     use crate::responses::*;
 
+    // Record operation type in current span
+    Span::current().record("operation", operation.as_str());
+
+    // Record the argument (message-id or article number) if provided
+    if let Some(arg) = args.first() {
+        if arg.starts_with('<') && arg.ends_with('>') {
+            Span::current().record("message_id", arg.as_str());
+        } else {
+            Span::current().record("article_number", arg.as_str());
+        }
+    }
+
     match resolve_articles(storage, session, args.first().map(String::as_str)).await {
         Ok(articles) => {
             for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or_default();
+                
+                // Record resolved message_id if we didn't have it from args
+                if args.first().is_none_or(|a| !a.starts_with('<')) {
+                    Span::current().record("message_id", id.as_str());
+                }
+                
                 // Use format! to handle arbitrarily long message-IDs
                 let response_line = format!(
                     "{} {} {} {}\r\n",
@@ -271,6 +299,7 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
                     }
                 }
             }
+            Span::current().record("outcome", "success");
         }
         Err(error) => handle_article_error(writer, error).await?,
     }
@@ -283,6 +312,16 @@ pub async fn handle_article_error<W: AsyncWrite + Unpin>(
     error: ArticleQueryError,
 ) -> Result<()> {
     use crate::responses::*;
+
+    let outcome = match &error {
+        ArticleQueryError::NoGroup => "no_group",
+        ArticleQueryError::InvalidId => "invalid_id",
+        ArticleQueryError::RangeEmpty => "range_empty",
+        ArticleQueryError::NotFoundByNumber => "not_found_by_number",
+        ArticleQueryError::MessageIdNotFound => "not_found_by_id",
+        ArticleQueryError::NoCurrentArticle => "no_current_article",
+    };
+    Span::current().record("outcome", outcome);
 
     match error {
         ArticleQueryError::NoGroup => {

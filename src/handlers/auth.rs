@@ -4,6 +4,7 @@ use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::error::AuthError;
 use crate::responses::*;
+use tracing::Span;
 
 /// Handler for the AUTHINFO command.
 pub struct AuthInfoHandler;
@@ -12,6 +13,7 @@ impl CommandHandler for AuthInfoHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         // Reject authentication on insecure connections unless explicitly allowed
         if !ctx.session.can_authenticate() {
+            Span::current().record("outcome", "rejected_insecure");
             write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
             return Ok(());
         }
@@ -40,13 +42,20 @@ impl CommandHandler for AuthInfoHandler {
                     let username = username.to_string(); // Clone to avoid borrow issues
                     if ctx.auth.verify_user(&username, &args[1]).await? {
                         ctx.session.confirm_authentication();
+                        Span::current().record("outcome", "success");
+                        // Log username only at debug level for GDPR compliance
+                        tracing::debug!(username = %username, "User authenticated");
                         write_simple(&mut ctx.writer, RESP_281_AUTH_OK).await?;
                     } else {
-                        let err = AuthError::InvalidCredentials(username);
-                        tracing::info!(error = %err, "Authentication failed");
+                        let err = AuthError::InvalidCredentials(username.clone());
+                        // Log failure at info level without username, debug level with username
+                        tracing::info!("Authentication failed");
+                        tracing::debug!(username = %username, error = %err, "Authentication failed details");
+                        Span::current().record("outcome", "rejected_invalid");
                         write_simple(&mut ctx.writer, RESP_481_AUTH_REJECTED).await?;
                     }
                 } else {
+                    Span::current().record("outcome", "rejected_no_user");
                     write_simple(&mut ctx.writer, RESP_481_AUTH_REJECTED).await?;
                 }
             }

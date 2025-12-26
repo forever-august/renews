@@ -32,10 +32,10 @@ use crate::session::Session;
 use crate::storage::DynStorage;
 use anyhow::Result;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
-use tracing::debug;
+use tracing::{debug, info_span, Instrument};
 
 /// Per-connection cached configuration values.
 /// These are read once at connection start and not updated mid-connection.
@@ -51,7 +51,6 @@ struct ConnectionConfig {
 ///
 /// Returns an error if there's a problem handling the client connection,
 /// such as network I/O errors or protocol violations.
-#[tracing::instrument(skip(socket, storage, auth, cfg, queue))]
 pub async fn handle_client<S>(
     socket: S,
     storage: DynStorage,
@@ -81,72 +80,117 @@ where
         )
     };
 
-    let mut ctx = HandlerContext {
-        reader: Box::pin(reader),
-        writer: Box::pin(write_half),
-        storage,
-        auth,
-        config: cfg,
-        session: Session::new(is_tls, allow_auth_insecure, allow_anonymous_posting),
-        queue,
-    };
+    let session = Session::new(is_tls, allow_auth_insecure, allow_anonymous_posting);
+    let session_id = session.session_id();
 
-    // Send greeting - reflects current posting ability
-    if ctx.session.can_post() {
-        ctx.writer.write_all(RESP_200_READY.as_bytes()).await?;
-    } else {
-        ctx.writer
-            .write_all(RESP_201_READY_NO_POST.as_bytes())
-            .await?;
-    }
+    // Create session span - NO client_addr for GDPR compliance
+    let session_span = info_span!(
+        "session",
+        session_id = %session_id,
+        is_tls = is_tls,
+        commands_processed = tracing::field::Empty,
+        duration_ms = tracing::field::Empty,
+    );
 
-    let mut line = String::new();
-    loop {
-        line.clear();
+    // Run the connection handling within the session span
+    async move {
+        let start = Instant::now();
+        let mut commands_processed: u64 = 0;
 
-        // Apply timeout to the read operation using cached idle_timeout
-        let read_result = tokio::time::timeout(
-            connection_config.idle_timeout,
-            ctx.reader.read_line(&mut line),
-        )
-        .await;
+        let mut ctx = HandlerContext {
+            reader: Box::pin(reader),
+            writer: Box::pin(write_half),
+            storage,
+            auth,
+            config: cfg,
+            session,
+            queue,
+        };
 
-        let n = match read_result {
-            Ok(Ok(n)) => n,
-            Ok(Err(e)) => return Err(e.into()),
-            Err(_) => {
-                // Timeout occurred
-                debug!(
-                    "Connection timed out after {} seconds",
-                    connection_config.idle_timeout.as_secs()
-                );
+        // Send greeting - reflects current posting ability
+        if ctx.session.can_post() {
+            ctx.writer.write_all(RESP_200_READY.as_bytes()).await?;
+        } else {
+            ctx.writer
+                .write_all(RESP_201_READY_NO_POST.as_bytes())
+                .await?;
+        }
+
+        let mut line = String::new();
+        loop {
+            line.clear();
+
+            // Apply timeout to the read operation using cached idle_timeout
+            let read_result = tokio::time::timeout(
+                connection_config.idle_timeout,
+                ctx.reader.read_line(&mut line),
+            )
+            .await;
+
+            let n = match read_result {
+                Ok(Ok(n)) => n,
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => {
+                    // Timeout occurred
+                    debug!(
+                        timeout_secs = connection_config.idle_timeout.as_secs(),
+                        "Connection timed out"
+                    );
+                    break;
+                }
+            };
+
+            if n == 0 {
                 break;
             }
-        };
 
-        if n == 0 {
-            break;
+            let trimmed = line.trim_end_matches(['\r', '\n']);
+            let Ok((_, cmd)) = parse_command(trimmed) else {
+                ctx.writer.write_all(RESP_500_SYNTAX.as_bytes()).await?;
+                continue;
+            };
+
+            commands_processed += 1;
+
+            // Create command span with timing
+            let cmd_span = info_span!(
+                "command",
+                name = %cmd.name,
+                duration_ms = tracing::field::Empty,
+            );
+            let cmd_start = Instant::now();
+
+            // Handle QUIT specially since it needs to break the loop
+            if cmd.name.as_str() == "QUIT" {
+                async {
+                    ctx.writer.write_all(RESP_205_CLOSING.as_bytes()).await
+                }
+                .instrument(cmd_span.clone())
+                .await?;
+                cmd_span.record("duration_ms", cmd_start.elapsed().as_millis() as u64);
+                break;
+            }
+
+            // Dispatch command within span
+            let result = async { dispatch_command(&mut ctx, &cmd).await }
+                .instrument(cmd_span.clone())
+                .await;
+
+            cmd_span.record("duration_ms", cmd_start.elapsed().as_millis() as u64);
+
+            if let Err(e) = result {
+                // Log the error but continue processing other commands
+                debug!(command = %cmd.name, error = %e, "Command failed");
+            }
         }
 
-        let trimmed = line.trim_end_matches(['\r', '\n']);
-        let Ok((_, cmd)) = parse_command(trimmed) else {
-            ctx.writer.write_all(RESP_500_SYNTAX.as_bytes()).await?;
-            continue;
-        };
+        // Record final session metrics
+        tracing::Span::current().record("commands_processed", commands_processed);
+        tracing::Span::current().record("duration_ms", start.elapsed().as_millis() as u64);
+        tracing::info!("Session ended");
 
-        debug!("command" = %cmd.name);
-
-        // Handle QUIT specially since it needs to break the loop
-        if cmd.name.as_str() == "QUIT" {
-            ctx.writer.write_all(RESP_205_CLOSING.as_bytes()).await?;
-            break;
-        }
-
-        if let Err(e) = dispatch_command(&mut ctx, &cmd).await {
-            // Log the error but continue processing other commands
-            debug!("Command {} failed: {}", cmd.name, e);
-        }
+        Ok(())
     }
-
-    Ok(())
+    .instrument(session_span)
+    .await
 }

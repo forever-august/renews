@@ -21,6 +21,7 @@ use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
 };
+use tracing::{info_span, Instrument};
 use uuid;
 
 use crate::storage::DynStorage;
@@ -420,9 +421,9 @@ pub async fn add_peer_job(
     let schedule = peer.sync_schedule.as_deref().unwrap_or(&default_schedule);
 
     tracing::info!(
-        "Adding peer sync job for {} with schedule '{}'",
-        peer.sitename,
-        schedule
+        peer_name = peer.sitename.as_str(),
+        schedule = schedule,
+        "Adding peer sync job"
     );
 
     let peer_clone = peer.clone();
@@ -437,30 +438,41 @@ pub async fn add_peer_job(
         let site_name = site_name_clone.clone();
 
         Box::pin(async move {
-            let sync_start = std::time::Instant::now();
+            let span = info_span!(
+                "peer.sync",
+                peer_name = peer.sitename.as_str(),
+                groups_processed = tracing::field::Empty,
+                articles_synced = tracing::field::Empty,
+                articles_skipped = tracing::field::Empty,
+                errors = tracing::field::Empty,
+                duration_ms = tracing::field::Empty,
+            );
 
-            match sync_peer_once(&peer, &db, &storage, &site_name).await {
-                Ok(()) => {
-                    let duration = sync_start.elapsed();
-                    tracing::debug!(
-                        "Peer sync completed successfully for {} in {:?}",
-                        peer.sitename,
-                        duration
-                    );
+            async {
+                let sync_start = std::time::Instant::now();
+
+                match sync_peer_once(&peer, &db, &storage, &site_name).await {
+                    Ok(stats) => {
+                        let duration_ms = sync_start.elapsed().as_millis() as u64;
+                        tracing::Span::current().record("groups_processed", stats.groups_processed);
+                        tracing::Span::current().record("articles_synced", stats.articles_sent);
+                        tracing::Span::current().record("articles_skipped", stats.articles_skipped);
+                        tracing::Span::current().record("errors", stats.errors);
+                        tracing::Span::current().record("duration_ms", duration_ms);
+                        tracing::debug!(duration_ms = duration_ms, "Peer sync completed");
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "Peer sync failed");
+                    }
                 }
-                Err(e) => {
-                    tracing::error!("Peer sync failed for {}: {}", peer.sitename, e);
+
+                // Update last sync time regardless of success/failure
+                if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
+                    tracing::error!(error = %e, "Failed to update last sync time");
                 }
             }
-
-            // Update last sync time regardless of success/failure
-            if let Err(e) = db.update_last_sync(&peer.sitename, Utc::now()).await {
-                tracing::error!(
-                    "Failed to update last sync time for {}: {}",
-                    peer.sitename,
-                    e
-                );
-            }
+            .instrument(span)
+            .await;
         })
     })?;
 
@@ -468,9 +480,9 @@ pub async fn add_peer_job(
     scheduler.add(job).await?;
 
     tracing::debug!(
-        "Added peer sync job for {} with UUID {}",
-        peer.sitename,
-        job_uuid
+        peer_name = peer.sitename.as_str(),
+        job_uuid = %job_uuid,
+        "Peer sync job added"
     );
     Ok(job_uuid)
 }
@@ -487,10 +499,35 @@ async fn send_article_to_peer(host: &str, article: &Message) -> PeerResult<()> {
     let result = connection.transfer_article(article, &msg_id).await;
 
     if let Err(close_err) = connection.close().await {
-        tracing::warn!("Failed to close connection to {}: {}", host, close_err);
+        tracing::warn!(peer = host, error = %close_err, "Failed to close connection");
     }
 
     result
+}
+
+/// Statistics from a peer sync operation.
+#[derive(Debug, Default)]
+struct SyncStats {
+    groups_processed: u64,
+    articles_sent: u64,
+    articles_skipped: u64,
+    errors: u64,
+}
+
+impl SyncStats {
+    fn merge(&mut self, other: GroupSyncStats) {
+        self.articles_sent += other.sent;
+        self.articles_skipped += other.skipped;
+        self.errors += other.errors;
+    }
+}
+
+/// Statistics from syncing a single group.
+#[derive(Debug, Default)]
+struct GroupSyncStats {
+    sent: u64,
+    skipped: u64,
+    errors: u64,
 }
 
 async fn sync_peer_once(
@@ -498,8 +535,10 @@ async fn sync_peer_once(
     db: &PeerDb,
     storage: &DynStorage,
     site_name: &str,
-) -> PeerResult<()> {
+) -> PeerResult<SyncStats> {
     let last_sync = db.get_last_sync(&peer.sitename).await?;
+    let mut stats = SyncStats::default();
+    
     let mut groups = storage.list_groups();
     while let Some(result) = groups.next().await {
         let group = result?;
@@ -514,10 +553,12 @@ async fn sync_peer_once(
         };
         let article_ids = article_ids_stream.try_collect::<Vec<String>>().await?;
 
-        process_group_articles(peer, storage, site_name, &group, article_ids).await?;
+        let group_stats = process_group_articles(peer, storage, site_name, &group, article_ids).await?;
+        stats.merge(group_stats);
+        stats.groups_processed += 1;
     }
 
-    Ok(())
+    Ok(stats)
 }
 
 /// Process and send articles from a specific group to a peer.
@@ -527,21 +568,19 @@ async fn process_group_articles(
     site_name: &str,
     group: &str,
     article_ids: Vec<String>,
-) -> PeerResult<()> {
+) -> PeerResult<GroupSyncStats> {
     if article_ids.is_empty() {
-        return Ok(());
+        return Ok(GroupSyncStats::default());
     }
 
     tracing::debug!(
-        "Processing {} articles from group {} for peer {}",
-        article_ids.len(),
-        group,
-        peer.sitename
+        peer_name = peer.sitename.as_str(),
+        group = group,
+        article_count = article_ids.len(),
+        "Processing articles for peer"
     );
 
-    let mut sent_count = 0;
-    let mut skipped_count = 0;
-    let mut error_count = 0;
+    let mut stats = GroupSyncStats::default();
     let mut found_ids = std::collections::HashSet::new();
 
     // Use batch fetching for better performance
@@ -554,43 +593,47 @@ async fn process_group_articles(
                 found_ids.insert(article_id.clone());
                 match process_fetched_article(peer, site_name, &article_id, &original_article).await
                 {
-                    Ok(ArticleProcessResult::Sent) => sent_count += 1,
-                    Ok(ArticleProcessResult::Skipped) => skipped_count += 1,
+                    Ok(ArticleProcessResult::Sent) => stats.sent += 1,
+                    Ok(ArticleProcessResult::Skipped) => stats.skipped += 1,
                     Err(e) => {
-                        error_count += 1;
+                        stats.errors += 1;
                         tracing::warn!(
-                            "Failed to process article {} for peer {}: {}",
-                            article_id,
-                            peer.sitename,
-                            e
+                            peer_name = peer.sitename.as_str(),
+                            article_id = article_id.as_str(),
+                            error = %e,
+                            "Failed to process article"
                         );
                     }
                 }
             }
             Err(e) => {
-                error_count += 1;
-                tracing::warn!("Failed to fetch article for peer {}: {}", peer.sitename, e);
+                stats.errors += 1;
+                tracing::warn!(
+                    peer_name = peer.sitename.as_str(),
+                    error = %e,
+                    "Failed to fetch article"
+                );
             }
         }
     }
 
-    // Log articles that weren't found
+    // Log articles that weren't found at debug level
     for article_id in &article_ids {
         if !found_ids.contains(article_id) {
-            tracing::debug!("Article {} not found in storage", article_id);
+            tracing::debug!(article_id = article_id.as_str(), "Article not found in storage");
         }
     }
 
     tracing::info!(
-        "Completed processing for peer {} in group {}: {} sent, {} skipped, {} errors",
-        peer.sitename,
-        group,
-        sent_count,
-        skipped_count,
-        error_count
+        peer_name = peer.sitename.as_str(),
+        group = group,
+        articles_sent = stats.sent,
+        articles_skipped = stats.skipped,
+        errors = stats.errors,
+        "Group sync complete"
     );
 
-    Ok(())
+    Ok(stats)
 }
 
 /// Result of processing a single article.
@@ -609,9 +652,9 @@ async fn process_fetched_article(
 ) -> PeerResult<ArticleProcessResult> {
     if should_skip_article(original_article, &peer.sitename) {
         tracing::debug!(
-            "Skipping article {} for peer {} (already in path)",
-            article_id,
-            peer.sitename
+            article_id = article_id,
+            peer_name = peer.sitename.as_str(),
+            "Skipping article (already in path)"
         );
         return Ok(ArticleProcessResult::Skipped);
     }
@@ -619,9 +662,9 @@ async fn process_fetched_article(
     let peer_article = create_peer_article(original_article, site_name)?;
     send_article_to_peer(&peer.sitename, &peer_article).await?;
     tracing::debug!(
-        "Successfully sent article {} to {}",
-        article_id,
-        peer.sitename
+        article_id = article_id,
+        peer_name = peer.sitename.as_str(),
+        "Article sent"
     );
 
     Ok(ArticleProcessResult::Sent)

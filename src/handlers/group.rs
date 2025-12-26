@@ -7,6 +7,7 @@ use crate::responses::*;
 use crate::{parse_datetime, wildmat};
 use futures_util::{StreamExt, TryStreamExt};
 use tokio::io::AsyncWriteExt;
+use tracing::Span;
 
 /// Handler for the GROUP command.
 pub struct GroupHandler;
@@ -14,10 +15,13 @@ pub struct GroupHandler;
 impl CommandHandler for GroupHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(group_name) = args.first() {
+            Span::current().record("group", group_name.as_str());
+            
             // Check if the group exists using the storage interface
             if !ctx.storage.group_exists(group_name).await? {
                 let err = StorageError::GroupNotFound(group_name.clone());
                 tracing::debug!(error = %err, "Group lookup failed");
+                Span::current().record("outcome", "not_found");
                 write_simple(&mut ctx.writer, RESP_411_NO_SUCH_GROUP).await?;
                 return Ok(());
             }
@@ -31,6 +35,9 @@ impl CommandHandler for GroupHandler {
             ctx.session
                 .select_group(group_name.clone(), nums.first().copied());
 
+            Span::current().record("article_count", count as u64);
+            Span::current().record("outcome", "success");
+            
             write_simple(
                 &mut ctx.writer,
                 &format!("211 {count} {low} {high} {group_name}\r\n"),

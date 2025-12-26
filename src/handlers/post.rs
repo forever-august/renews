@@ -7,6 +7,7 @@ use crate::prelude::*;
 use crate::queue::QueuedArticle;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
+use tracing::Span;
 
 /// Handler for the POST command.
 pub struct PostHandler;
@@ -20,11 +21,13 @@ impl CommandHandler for PostHandler {
                 // Non-TLS connection - check if posting would be allowed with TLS
                 // If anonymous posting is enabled, the issue is connection security
                 // Otherwise, the issue could be either, but we prioritize the security message
+                Span::current().record("outcome", "rejected_insecure");
                 write_simple(&mut ctx.writer, RESP_483_SECURE_REQ).await?;
             } else {
                 // TLS connection but not authenticated (and anonymous posting disabled)
                 let err = NntpError::Auth(AuthError::Required);
                 tracing::debug!(error = %err, "Post rejected: authentication required");
+                Span::current().record("outcome", "rejected_auth");
                 write_simple(&mut ctx.writer, &err.to_response()).await?;
             }
             return Ok(());
@@ -34,6 +37,7 @@ impl CommandHandler for PostHandler {
 
         let msg = read_message(&mut ctx.reader).await?;
         let Ok((_, mut message)) = parse_message(&msg) else {
+            Span::current().record("outcome", "rejected_parse");
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
         };
@@ -47,14 +51,22 @@ impl CommandHandler for PostHandler {
         parse::ensure_date(&mut message);
         parse::escape_message_id_header(&mut message);
 
-        // Comprehensive validation before queuing for POST (to maintain expected behavior)
+        // Record article metadata in current span
+        if let Some(msg_id) = message.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("Message-ID")).map(|(_, v)| v.as_str()) {
+            Span::current().record("message_id", msg_id);
+        }
         let size = msg.len() as u64;
+        Span::current().record("size_bytes", size);
+        Span::current().record("is_control", is_control);
+
+        // Comprehensive validation before queuing for POST (to maintain expected behavior)
         match comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
             .await
         {
             Ok(()) => { /* validation passed, continue */ }
             Err(e) => {
                 tracing::info!(error = %e, "Article validation failed");
+                Span::current().record("outcome", "rejected_validation");
                 write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
                 return Ok(());
             }
@@ -70,10 +82,12 @@ impl CommandHandler for PostHandler {
         };
 
         if ctx.queue.submit(queued_article).await.is_err() {
+            Span::current().record("outcome", "rejected_queue_full");
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
         }
 
+        Span::current().record("outcome", "accepted");
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;
         Ok(())
     }

@@ -157,7 +157,9 @@ pub async fn verify_pgp(
                 Ok(()) => {
                     // Verification succeeded, update stored key
                     if let Err(e) = auth.update_pgp_key(user, &discovered_key).await {
-                        tracing::warn!("Failed to update PGP key for {}: {}", user, e);
+                        // Log at info without username for GDPR, debug with username
+                        tracing::info!(error = %e, "Failed to update PGP key");
+                        tracing::debug!(user = user, error = %e, "Failed to update PGP key details");
                         // Continue anyway since verification succeeded
                     }
                     Ok(())

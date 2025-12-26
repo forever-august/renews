@@ -63,7 +63,7 @@ impl Default for DefaultPgpKeyDiscovery {
 #[async_trait]
 impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
     async fn discover_key(&self, user: &str) -> Result<Option<String>> {
-        tracing::debug!("Attempting key discovery for user: {}", user);
+        tracing::debug!("Attempting key discovery");
 
         // Use pgp-lib's HTTP key discovery functionality
         match pgp::http::get_one(user.to_string(), self.key_servers.clone()).await {
@@ -71,17 +71,17 @@ impl PgpKeyDiscovery for DefaultPgpKeyDiscovery {
                 // Convert the SignedPublicKey to armored string format
                 match public_key.to_armored_string(None) {
                     Ok(armored_key) => {
-                        tracing::debug!("Successfully discovered key for user: {}", user);
+                        tracing::debug!("Successfully discovered key");
                         Ok(Some(armored_key))
                     }
                     Err(e) => {
-                        tracing::warn!("Failed to serialize discovered key for {}: {}", user, e);
+                        tracing::warn!(error = %e, "Failed to serialize discovered key");
                         Err(anyhow::anyhow!("Failed to serialize discovered key: {e}"))
                     }
                 }
             }
             Err(e) => {
-                tracing::debug!("No key found for user {}: {}", user, e);
+                tracing::debug!(error = %e, "No key found during discovery");
                 Ok(None)
             }
         }
