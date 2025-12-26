@@ -1,7 +1,10 @@
 //! Connection session state management
 
+use uuid::Uuid;
+
 /// Encapsulated session state for a client connection
 pub struct Session {
+    session_id: Uuid,
     current_group: Option<String>,
     current_article: Option<u64>,
     authenticated: bool,
@@ -15,6 +18,7 @@ pub struct Session {
 impl Session {
     pub fn new(is_tls: bool, allow_auth_insecure: bool, allow_anonymous_posting: bool) -> Self {
         Self {
+            session_id: Uuid::new_v4(),
             current_group: None,
             current_article: None,
             authenticated: false,
@@ -24,6 +28,11 @@ impl Session {
             allow_auth_insecure,
             allow_anonymous_posting,
         }
+    }
+
+    /// Get the unique session identifier for this connection
+    pub fn session_id(&self) -> Uuid {
+        self.session_id
     }
 
     // Group management
