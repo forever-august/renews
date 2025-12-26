@@ -567,6 +567,7 @@ pub fn create_minimal_config() -> Config {
         allow_auth_insecure_connections: false,
         allow_anonymous_posting: false,
         runtime_threads: 4,
+        logging: Default::default(),
     }
 }
 

@@ -42,6 +42,14 @@ fn default_site_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".into())
 }
 
+/// Default log format
+fn default_log_format() -> String {
+    "json".to_string()
+}
+
+/// Default log level filter
+pub const DEFAULT_LOG_FILTER: &str = "renews=info,sqlx=warn";
+
 pub fn default_pgp_key_servers() -> Vec<String> {
     vec![
         "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>".to_string(),
@@ -190,6 +198,10 @@ pub struct Config {
 
     #[serde(default)]
     pub allow_anonymous_posting: bool,
+
+    /// Logging configuration
+    #[serde(default)]
+    pub logging: LoggingConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -218,6 +230,28 @@ pub struct FilterConfig {
     pub name: String,
     #[serde(flatten)]
     pub parameters: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Logging configuration
+#[derive(Debug, Deserialize, Clone)]
+pub struct LoggingConfig {
+    /// Log format: "text" (human-readable) or "json" (structured)
+    #[serde(default = "default_log_format")]
+    pub format: String,
+
+    /// Log level filter (e.g., "renews=debug,sqlx=warn")
+    /// If not set, uses RUST_LOG env var or default
+    #[serde(default)]
+    pub level: Option<String>,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            format: default_log_format(),
+            level: None,
+        }
+    }
 }
 
 impl Config {

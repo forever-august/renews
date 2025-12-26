@@ -2,9 +2,10 @@ use anyhow::Result;
 
 use clap::{Parser, Subcommand};
 use tokio::runtime::Runtime;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use renews::auth;
-use renews::config::Config;
+use renews::config::{Config, DEFAULT_LOG_FILTER};
 use renews::server;
 use renews::storage;
 
@@ -137,24 +138,62 @@ async fn run_init(cfg: &Config) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_lines)]
-fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+/// Initialize the tracing subscriber based on configuration.
+///
+/// Priority for log level: config file > RUST_LOG env var > default
+/// Priority for log format: config file (default: "json")
+fn init_tracing(config: &Config) {
+    // Determine log level filter
+    let filter = config
+        .logging
+        .level
+        .clone()
+        .or_else(|| std::env::var("RUST_LOG").ok())
+        .unwrap_or_else(|| DEFAULT_LOG_FILTER.to_string());
 
-    // Initialize systemd socket support
-    if let Err(e) = systemd_socket::init() {
-        eprintln!("Warning: Failed to initialize systemd socket support: {e}");
+    let env_filter = EnvFilter::new(&filter);
+
+    // Build subscriber based on configured format
+    if config.logging.format == "json" {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer().json())
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(tracing_subscriber::fmt::layer())
+            .init();
     }
 
+    tracing::info!(
+        format = %config.logging.format,
+        filter = %filter,
+        "Logging initialized"
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+fn main() -> Result<()> {
+    // Parse args first to get config path
     let args = Args::parse();
     let cfg_path = args.config.clone();
 
+    // Load configuration
     let cfg_initial = match Config::from_file(&cfg_path) {
         Ok(config) => config,
         Err(e) => {
             eprintln!("Error: {e}");
             std::process::exit(1);
         }
+    };
+
+    // Initialize tracing based on configuration
+    init_tracing(&cfg_initial);
+
+    // Initialize systemd socket support
+    if let Err(e) = systemd_socket::init() {
+        tracing::warn!(error = %e, "Failed to initialize systemd socket support");
     };
 
     // Create the runtime based on the configuration
