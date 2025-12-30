@@ -3,6 +3,7 @@
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::error::{AuthError, NntpError};
+use crate::limits::LimitCheckResult;
 use crate::prelude::*;
 use crate::queue::QueuedArticle;
 use crate::responses::*;
@@ -33,6 +34,17 @@ impl CommandHandler for PostHandler {
             return Ok(());
         }
 
+        // Check per-user posting permission (only for authenticated non-admin users)
+        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+            if let Some(username) = ctx.session.username() {
+                if ctx.usage_tracker.can_post(username).await == LimitCheckResult::PostingDisabled {
+                    Span::current().record("outcome", "rejected_posting_disabled");
+                    write_simple(&mut ctx.writer, RESP_440_POST_PROHIBITED).await?;
+                    return Ok(());
+                }
+            }
+        }
+
         write_simple(&mut ctx.writer, RESP_340_SEND_ARTICLE).await?;
 
         let msg = read_message(&mut ctx.reader).await?;
@@ -52,12 +64,30 @@ impl CommandHandler for PostHandler {
         parse::escape_message_id_header(&mut message);
 
         // Record article metadata in current span
-        if let Some(msg_id) = message.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case("Message-ID")).map(|(_, v)| v.as_str()) {
+        if let Some(msg_id) = message
+            .headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+            .map(|(_, v)| v.as_str())
+        {
             Span::current().record("message_id", msg_id);
         }
         let size = msg.len() as u64;
         Span::current().record("size_bytes", size);
         Span::current().record("is_control", is_control);
+
+        // Check per-user bandwidth limit (only for authenticated non-admin users)
+        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+            if let Some(username) = ctx.session.username() {
+                if ctx.usage_tracker.check_bandwidth(username, size).await
+                    == LimitCheckResult::BandwidthExceeded
+                {
+                    Span::current().record("outcome", "rejected_bandwidth");
+                    write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
+                    return Ok(());
+                }
+            }
+        }
 
         // Comprehensive validation before queuing for POST (to maintain expected behavior)
         match comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &message, size)
@@ -85,6 +115,15 @@ impl CommandHandler for PostHandler {
             Span::current().record("outcome", "rejected_queue_full");
             write_simple(&mut ctx.writer, RESP_441_POSTING_FAILED).await?;
             return Ok(());
+        }
+
+        // Record bandwidth usage for authenticated non-admin users
+        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+            if let Some(username) = ctx.session.username() {
+                ctx.usage_tracker
+                    .record_bandwidth(username, size, true)
+                    .await;
+            }
         }
 
         Span::current().record("outcome", "accepted");

@@ -1,4 +1,5 @@
 use super::{AuthProvider, async_trait};
+use crate::limits::{UserLimits, UserUsage};
 use crate::migrations::Migrator;
 use anyhow::Result;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
@@ -24,6 +25,24 @@ const MODERATORS_TABLE: &str = "CREATE TABLE IF NOT EXISTS moderators (
         username TEXT REFERENCES users(username),
         pattern TEXT,
         PRIMARY KEY(username, pattern)
+    )";
+
+const USER_LIMITS_TABLE: &str = "CREATE TABLE IF NOT EXISTS user_limits (
+        username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+        can_post INTEGER,
+        max_connections INTEGER,
+        bandwidth_limit_bytes INTEGER,
+        bandwidth_period_secs INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )";
+
+const USER_USAGE_TABLE: &str = "CREATE TABLE IF NOT EXISTS user_usage (
+        username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+        bytes_uploaded INTEGER NOT NULL DEFAULT 0,
+        bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+        window_start_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )";
 
 #[derive(Clone)]
@@ -91,15 +110,21 @@ Possible causes:
             sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
                 anyhow::anyhow!("Failed to create moderators table in SQLite authentication database '{path}': {e}")
             })?;
+            sqlx::query(USER_LIMITS_TABLE).execute(&pool).await.map_err(|e| {
+                anyhow::anyhow!("Failed to create user_limits table in SQLite authentication database '{path}': {e}")
+            })?;
+            sqlx::query(USER_USAGE_TABLE).execute(&pool).await.map_err(|e| {
+                anyhow::anyhow!("Failed to create user_usage table in SQLite authentication database '{path}': {e}")
+            })?;
 
-            // Set current version (since pre-1.0, we use version 1 as the baseline)
-            migrator.set_version(1).await.map_err(|e| {
+            // Set current version to latest (version 2 includes limits/usage tables)
+            migrator.set_version(2).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to set initial schema version for SQLite auth database '{path}': {e}"
                 )
             })?;
 
-            tracing::info!("Successfully initialized SQLite authentication database at version 1");
+            tracing::info!("Successfully initialized SQLite authentication database at version 2");
         } else {
             // Existing database: apply any pending migrations
             tracing::info!(
@@ -273,5 +298,138 @@ impl AuthProvider for SqliteAuth {
             }
         }
         Ok(false)
+    }
+
+    // User limits methods
+
+    async fn get_user_limits(&self, username: &str) -> Result<Option<UserLimits>> {
+        let row = sqlx::query(
+            "SELECT can_post, max_connections, bandwidth_limit_bytes, bandwidth_period_secs 
+             FROM user_limits WHERE username = ?",
+        )
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let can_post: Option<i64> = row.try_get("can_post")?;
+            let max_connections: Option<i64> = row.try_get("max_connections")?;
+            let bandwidth_limit: Option<i64> = row.try_get("bandwidth_limit_bytes")?;
+            let bandwidth_period: Option<i64> = row.try_get("bandwidth_period_secs")?;
+
+            Ok(Some(UserLimits {
+                can_post: can_post.map(|v| v != 0).unwrap_or(true),
+                max_connections: max_connections.map(|v| v as u32),
+                bandwidth_limit: bandwidth_limit.map(|v| v as u64),
+                bandwidth_period_secs: bandwidth_period.map(|v| v as u64),
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn set_user_limits(&self, username: &str, limits: &UserLimits) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO user_limits (username, can_post, max_connections, bandwidth_limit_bytes, bandwidth_period_secs, updated_at)
+             VALUES (?, ?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(username) DO UPDATE SET
+                can_post = excluded.can_post,
+                max_connections = excluded.max_connections,
+                bandwidth_limit_bytes = excluded.bandwidth_limit_bytes,
+                bandwidth_period_secs = excluded.bandwidth_period_secs,
+                updated_at = datetime('now')"
+        )
+        .bind(username)
+        .bind(if limits.can_post { 1i64 } else { 0i64 })
+        .bind(limits.max_connections.map(|v| v as i64))
+        .bind(limits.bandwidth_limit.map(|v| v as i64))
+        .bind(limits.bandwidth_period_secs.map(|v| v as i64))
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn clear_user_limits(&self, username: &str) -> Result<()> {
+        sqlx::query("DELETE FROM user_limits WHERE username = ?")
+            .bind(username)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    // User usage methods
+
+    async fn get_user_usage(&self, username: &str) -> Result<UserUsage> {
+        let row = sqlx::query(
+            "SELECT bytes_uploaded, bytes_downloaded, window_start_at 
+             FROM user_usage WHERE username = ?",
+        )
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        if let Some(row) = row {
+            let bytes_uploaded: i64 = row.try_get("bytes_uploaded")?;
+            let bytes_downloaded: i64 = row.try_get("bytes_downloaded")?;
+            let window_start_str: String = row.try_get("window_start_at")?;
+
+            // Parse the datetime string
+            let window_start = chrono::DateTime::parse_from_rfc3339(&window_start_str)
+                .or_else(|_| {
+                    // Try SQLite datetime format
+                    chrono::NaiveDateTime::parse_from_str(&window_start_str, "%Y-%m-%d %H:%M:%S")
+                        .map(|dt| dt.and_utc().fixed_offset())
+                })
+                .ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc));
+
+            Ok(UserUsage {
+                bytes_uploaded: bytes_uploaded as u64,
+                bytes_downloaded: bytes_downloaded as u64,
+                window_start,
+            })
+        } else {
+            Ok(UserUsage::default())
+        }
+    }
+
+    async fn set_user_usage(&self, username: &str, usage: &UserUsage) -> Result<()> {
+        let window_start = usage
+            .window_start
+            .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
+            .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+
+        sqlx::query(
+            "INSERT INTO user_usage (username, bytes_uploaded, bytes_downloaded, window_start_at, updated_at)
+             VALUES (?, ?, ?, ?, datetime('now'))
+             ON CONFLICT(username) DO UPDATE SET
+                bytes_uploaded = excluded.bytes_uploaded,
+                bytes_downloaded = excluded.bytes_downloaded,
+                window_start_at = excluded.window_start_at,
+                updated_at = datetime('now')"
+        )
+        .bind(username)
+        .bind(usage.bytes_uploaded as i64)
+        .bind(usage.bytes_downloaded as i64)
+        .bind(&window_start)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn reset_user_usage(&self, username: &str) -> Result<()> {
+        sqlx::query(
+            "INSERT INTO user_usage (username, bytes_uploaded, bytes_downloaded, window_start_at, updated_at)
+             VALUES (?, 0, 0, datetime('now'), datetime('now'))
+             ON CONFLICT(username) DO UPDATE SET
+                bytes_uploaded = 0,
+                bytes_downloaded = 0,
+                window_start_at = datetime('now'),
+                updated_at = datetime('now')"
+        )
+        .bind(username)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
     }
 }

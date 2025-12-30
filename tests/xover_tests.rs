@@ -2,6 +2,7 @@
 
 use renews::auth::sqlite::SqliteAuth;
 use renews::handlers::{DynReader, DynWriter, HandlerContext, dispatch_command};
+use renews::limits::UsageTracker;
 use renews::queue::ArticleQueue;
 use renews::session::Session;
 use renews::storage::open;
@@ -106,11 +107,14 @@ async fn test_xover_command_basic() {
     let reader: DynReader = Box::pin(io::empty());
     let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
+    let auth = Arc::new(auth);
+    let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), Default::default()));
+
     let mut ctx = HandlerContext {
         reader,
         writer,
         storage,
-        auth: Arc::new(auth),
+        auth,
         config,
         session: {
             let mut s = Session::new(false, false, false);
@@ -118,6 +122,7 @@ async fn test_xover_command_basic() {
             s
         },
         queue,
+        usage_tracker,
     };
 
     // Test XOVER command with range
@@ -154,14 +159,18 @@ async fn test_xover_without_group() {
     let reader: DynReader = Box::pin(io::empty());
     let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
+    let auth = Arc::new(auth);
+    let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), Default::default()));
+
     let mut ctx = HandlerContext {
         reader,
         writer,
         storage,
-        auth: Arc::new(auth),
+        auth,
         config,
         session: Session::new(false, false, false),
         queue,
+        usage_tracker,
     };
 
     // Test XOVER command without current group
@@ -202,11 +211,14 @@ async fn test_xover_single_article() {
     let reader: DynReader = Box::pin(io::empty());
     let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
+    let auth = Arc::new(auth);
+    let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), Default::default()));
+
     let mut ctx = HandlerContext {
         reader,
         writer,
         storage,
-        auth: Arc::new(auth),
+        auth,
         config,
         session: {
             let mut s = Session::new(false, false, false);
@@ -214,6 +226,7 @@ async fn test_xover_single_article() {
             s
         },
         queue,
+        usage_tracker,
     };
 
     // Test XOVER command with single article
@@ -258,11 +271,14 @@ async fn test_xover_current_article() {
     let reader: DynReader = Box::pin(io::empty());
     let writer: DynWriter = Box::pin(MockWriter::new(buffer.clone()));
 
+    let auth = Arc::new(auth);
+    let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), Default::default()));
+
     let mut ctx = HandlerContext {
         reader,
         writer,
         storage,
-        auth: Arc::new(auth),
+        auth,
         config,
         session: {
             let mut s = Session::new(false, false, false);
@@ -270,6 +286,7 @@ async fn test_xover_current_article() {
             s
         },
         queue,
+        usage_tracker,
     };
 
     // Test XOVER command without arguments (current article)

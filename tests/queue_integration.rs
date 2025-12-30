@@ -5,6 +5,7 @@ mod utils;
 use renews::{
     auth::{AuthProvider, sqlite::SqliteAuth},
     config::Config,
+    limits::UsageTracker,
     queue::{ArticleQueue, WorkerPool},
     storage::{Storage, sqlite::SqliteStorage},
 };
@@ -45,6 +46,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
         allow_auth_insecure_connections: false,
         allow_anonymous_posting: false,
         logging: Default::default(),
+        user_limits: Default::default(),
     };
 
     // Since we can't easily test with TLS in this setup, we'll create a simplified server
@@ -71,6 +73,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
     let auth_clone = auth.clone();
     let config_clone = config_arc.clone();
     let queue_clone = queue;
+    let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), Default::default()));
 
     tokio::spawn(async move {
         if let Ok((socket, _)) = listener.accept().await {
@@ -81,6 +84,7 @@ async fn setup_queue_enabled_server() -> (std::net::SocketAddr, Arc<dyn Storage>
                 config_clone,
                 true, // TLS mode for posting
                 queue_clone,
+                usage_tracker,
             )
             .await;
         }

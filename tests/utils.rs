@@ -4,6 +4,7 @@ use rcgen::{CertifiedKey, generate_simple_self_signed};
 use renews::auth::AuthProvider;
 use renews::config::Config;
 use renews::handle_client;
+use renews::limits::UsageTracker;
 use renews::queue::ArticleQueue;
 use renews::storage::Storage;
 use std::sync::Arc;
@@ -37,6 +38,14 @@ pub async fn create_test_auth() -> renews::auth::DynAuth {
 /// Create a test article queue (legacy function - does not start workers)
 pub fn create_test_queue() -> ArticleQueue {
     ArticleQueue::new(10) // Small capacity for tests
+}
+
+/// Create a test usage tracker
+pub fn create_test_usage_tracker(
+    auth: renews::auth::DynAuth,
+    config: &Config,
+) -> Arc<UsageTracker> {
+    Arc::new(UsageTracker::new(auth, config.user_limits.clone()))
 }
 
 /// Lines returned by the CAPABILITIES command.
@@ -124,6 +133,9 @@ pub async fn setup_server(
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let queue = create_test_queue();
+    let cfg_read = cfg.read().await;
+    let usage_tracker = create_test_usage_tracker(auth.clone(), &cfg_read);
+    drop(cfg_read);
 
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
@@ -137,9 +149,17 @@ pub async fn setup_server(
 
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false, queue)
-            .await
-            .unwrap();
+        handle_client(
+            sock,
+            store_clone,
+            auth_clone,
+            cfg,
+            false,
+            queue,
+            usage_tracker,
+        )
+        .await
+        .unwrap();
     });
     (addr, handle)
 }
@@ -154,6 +174,9 @@ pub async fn setup_server_with_cfg(
     let store_clone = storage.clone();
     let auth_clone = auth.clone();
     let queue = create_test_queue();
+    let cfg_read = cfg.read().await;
+    let usage_tracker = create_test_usage_tracker(auth.clone(), &cfg_read);
+    drop(cfg_read);
 
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
@@ -167,9 +190,17 @@ pub async fn setup_server_with_cfg(
 
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
-        handle_client(sock, store_clone, auth_clone, cfg, false, queue)
-            .await
-            .unwrap();
+        handle_client(
+            sock,
+            store_clone,
+            auth_clone,
+            cfg,
+            false,
+            queue,
+            usage_tracker,
+        )
+        .await
+        .unwrap();
     });
     (addr, handle)
 }
@@ -203,6 +234,9 @@ pub async fn setup_tls_server_with_cert(
     let auth_clone = auth.clone();
     let cfg: Arc<RwLock<Config>> = Arc::new(RwLock::new(toml::from_str("addr=\":119\"").unwrap()));
     let queue = create_test_queue();
+    let cfg_read = cfg.read().await;
+    let usage_tracker = create_test_usage_tracker(auth.clone(), &cfg_read);
+    drop(cfg_read);
 
     // Start worker pool for queue processing
     let worker_pool = renews::queue::WorkerPool::new(
@@ -217,9 +251,17 @@ pub async fn setup_tls_server_with_cert(
     let handle = tokio::spawn(async move {
         let (sock, _) = listener.accept().await.unwrap();
         let stream = acceptor.accept(sock).await.unwrap();
-        handle_client(stream, store_clone, auth_clone, cfg, true, queue)
-            .await
-            .unwrap();
+        handle_client(
+            stream,
+            store_clone,
+            auth_clone,
+            cfg,
+            true,
+            queue,
+            usage_tracker,
+        )
+        .await
+        .unwrap();
     });
     (addr, handle)
 }
@@ -284,6 +326,9 @@ pub async fn start_server(
             .unwrap();
         let acceptor = TlsAcceptor::from(Arc::new(tls_config));
         let queue = create_test_queue();
+        let cfg_read = cfg.read().await;
+        let usage_tracker = create_test_usage_tracker(auth.clone(), &cfg_read);
+        drop(cfg_read);
 
         // Start worker pool for queue processing
         let worker_pool = renews::queue::WorkerPool::new(
@@ -298,13 +343,24 @@ pub async fn start_server(
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
             let stream = acceptor.accept(sock).await.unwrap();
-            handle_client(stream, store_clone, auth_clone, cfg, true, queue)
-                .await
-                .unwrap();
+            handle_client(
+                stream,
+                store_clone,
+                auth_clone,
+                cfg,
+                true,
+                queue,
+                usage_tracker,
+            )
+            .await
+            .unwrap();
         });
         (addr, Some((cert, pem)), handle)
     } else {
         let queue = create_test_queue();
+        let cfg_read = cfg.read().await;
+        let usage_tracker = create_test_usage_tracker(auth.clone(), &cfg_read);
+        drop(cfg_read);
 
         // Start worker pool for queue processing
         let worker_pool = renews::queue::WorkerPool::new(
@@ -318,9 +374,17 @@ pub async fn start_server(
 
         let handle = tokio::spawn(async move {
             let (sock, _) = listener.accept().await.unwrap();
-            handle_client(sock, store_clone, auth_clone, cfg, false, queue)
-                .await
-                .unwrap();
+            handle_client(
+                sock,
+                store_clone,
+                auth_clone,
+                cfg,
+                false,
+                queue,
+                usage_tracker,
+            )
+            .await
+            .unwrap();
         });
         (addr, None, handle)
     }
@@ -568,6 +632,7 @@ pub fn create_minimal_config() -> Config {
         allow_anonymous_posting: false,
         runtime_threads: 4,
         logging: Default::default(),
+        user_limits: Default::default(),
     }
 }
 

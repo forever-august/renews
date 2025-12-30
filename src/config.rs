@@ -50,6 +50,152 @@ fn default_log_format() -> String {
 /// Default log level filter
 pub const DEFAULT_LOG_FILTER: &str = "renews=info,sqlx=warn";
 
+/// Default bandwidth period (30 days in seconds)
+fn default_bandwidth_period_secs() -> Option<u64> {
+    Some(30 * 24 * 60 * 60) // 30 days
+}
+
+/// Default allow_posting value
+fn default_true() -> bool {
+    true
+}
+
+/// Parse a duration string like "30d", "1h", "30m", "1w" into seconds.
+/// Returns None for empty string (meaning absolute/no period).
+/// Returns Some(seconds) for valid duration strings.
+pub fn parse_duration_secs(input: &str) -> Option<u64> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed == "0" {
+        return None;
+    }
+
+    let (digits, factor) = match trimmed.chars().last()? {
+        's' | 'S' => (&trimmed[..trimmed.len() - 1], 1u64),
+        'm' | 'M' => (&trimmed[..trimmed.len() - 1], 60u64),
+        'h' | 'H' => (&trimmed[..trimmed.len() - 1], 60u64 * 60),
+        'd' | 'D' => (&trimmed[..trimmed.len() - 1], 60u64 * 60 * 24),
+        'w' | 'W' => (&trimmed[..trimmed.len() - 1], 60u64 * 60 * 24 * 7),
+        '0'..='9' => (trimmed, 1u64), // Plain number = seconds
+        _ => return None,
+    };
+
+    digits
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(factor))
+}
+
+fn deserialize_duration_secs<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct DurationVisitor;
+
+    impl Visitor<'_> for DurationVisitor {
+        type Value = Option<u64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter
+                .write_str("a duration string like '30d', '1h', '30m', '1w', or empty for absolute")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+            if v == 0 { Ok(None) } else { Ok(Some(v)) }
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v < 0 {
+                Err(de::Error::custom("duration must be positive"))
+            } else if v == 0 {
+                Ok(None)
+            } else {
+                Ok(Some(u64::try_from(v).map_err(de::Error::custom)?))
+            }
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v.is_empty() {
+                Ok(None)
+            } else {
+                Ok(parse_duration_secs(v))
+            }
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_any(DurationVisitor)
+}
+
+/// Deserialize a bandwidth limit, where 0 or empty means unlimited (None).
+fn deserialize_bandwidth_limit<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct BandwidthVisitor;
+
+    impl Visitor<'_> for BandwidthVisitor {
+        type Value = Option<u64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a size like '1G', '500M', '0' for unlimited, or empty")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> {
+            if v == 0 { Ok(None) } else { Ok(Some(v)) }
+        }
+
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v < 0 {
+                Err(de::Error::custom("size must be positive"))
+            } else if v == 0 {
+                Ok(None)
+            } else {
+                Ok(Some(u64::try_from(v).map_err(de::Error::custom)?))
+            }
+        }
+
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            if v.is_empty() || v == "0" {
+                Ok(None)
+            } else {
+                parse_size(v)
+                    .map(|size| if size == 0 { None } else { Some(size) })
+                    .ok_or_else(|| de::Error::custom(format!("invalid size: {v}")))
+            }
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+    }
+
+    deserializer.deserialize_any(BandwidthVisitor)
+}
+
 pub fn default_pgp_key_servers() -> Vec<String> {
     vec![
         "hkps://keys.openpgp.org/pks/lookup?op=get&search=<email>".to_string(),
@@ -85,7 +231,10 @@ fn expand_placeholders(text: &str) -> Result<String> {
     Ok(out)
 }
 
-fn parse_size(input: &str) -> Option<u64> {
+/// Parse a size string with optional K/M/G suffix into bytes.
+/// Returns None for empty string.
+/// Returns Some(bytes) for valid size strings.
+pub fn parse_size(input: &str) -> Option<u64> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         return None;
@@ -202,6 +351,10 @@ pub struct Config {
     /// Logging configuration
     #[serde(default)]
     pub logging: LoggingConfig,
+
+    /// Default user limits configuration
+    #[serde(default)]
+    pub user_limits: UserLimitsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -230,6 +383,57 @@ pub struct FilterConfig {
     pub name: String,
     #[serde(flatten)]
     pub parameters: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Default user limits configuration
+///
+/// These defaults are applied when no per-user limits are configured in the database.
+#[derive(Debug, Deserialize, Clone)]
+pub struct UserLimitsConfig {
+    /// Whether users can post by default
+    #[serde(default = "default_true")]
+    pub allow_posting: bool,
+
+    /// Maximum simultaneous connections per user (0 = unlimited)
+    #[serde(default)]
+    pub max_connections: u32,
+
+    /// Combined bandwidth limit in bytes (None/0 = unlimited)
+    #[serde(default, deserialize_with = "deserialize_bandwidth_limit")]
+    pub bandwidth_limit: Option<u64>,
+
+    /// Bandwidth period in seconds (None = absolute, Some = rolling window)
+    /// Default is 30 days
+    #[serde(
+        default = "default_bandwidth_period_secs",
+        deserialize_with = "deserialize_duration_secs"
+    )]
+    pub bandwidth_period: Option<u64>,
+}
+
+impl Default for UserLimitsConfig {
+    fn default() -> Self {
+        Self {
+            allow_posting: true,
+            max_connections: 0,
+            bandwidth_limit: None,
+            bandwidth_period: default_bandwidth_period_secs(),
+        }
+    }
+}
+
+impl UserLimitsConfig {
+    /// Check if max_connections represents unlimited
+    #[must_use]
+    pub fn is_connections_unlimited(&self) -> bool {
+        self.max_connections == 0
+    }
+
+    /// Check if bandwidth is unlimited
+    #[must_use]
+    pub fn is_bandwidth_unlimited(&self) -> bool {
+        self.bandwidth_limit.is_none()
+    }
 }
 
 /// Logging configuration
@@ -433,6 +637,7 @@ See 'examples/config.toml' for a valid configuration example."
         self.pgp_key_servers = other.pgp_key_servers;
         self.allow_auth_insecure_connections = other.allow_auth_insecure_connections;
         self.allow_anonymous_posting = other.allow_anonymous_posting;
+        self.user_limits = other.user_limits;
     }
 }
 
@@ -465,6 +670,7 @@ pub struct DynamicConfig {
     pub peers: Vec<PeerRule>,
     pub peer_sync_schedule: Option<String>,
     pub pgp_key_servers: Vec<String>,
+    pub user_limits: UserLimitsConfig,
 }
 
 /// Combined server configuration
@@ -504,6 +710,7 @@ impl From<&Config> for DynamicConfig {
             peers: cfg.peers.clone(),
             peer_sync_schedule: Some(cfg.peer_sync_schedule.clone()),
             pgp_key_servers: cfg.pgp_key_servers.clone(),
+            user_limits: cfg.user_limits.clone(),
         }
     }
 }

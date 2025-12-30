@@ -13,6 +13,7 @@ pub struct Session {
     in_stream_mode: bool,
     allow_auth_insecure: bool,
     allow_anonymous_posting: bool,
+    is_admin: bool,
 }
 
 impl Session {
@@ -27,6 +28,7 @@ impl Session {
             in_stream_mode: false,
             allow_auth_insecure,
             allow_anonymous_posting,
+            is_admin: false,
         }
     }
 
@@ -76,6 +78,13 @@ impl Session {
         self.username = Some(username);
     }
 
+    /// Authenticate user with admin status
+    pub fn authenticate_with_admin(&mut self, username: String, is_admin: bool) {
+        self.authenticated = true;
+        self.username = Some(username);
+        self.is_admin = is_admin;
+    }
+
     /// Mark the session as authenticated (username should already be set).
     pub fn confirm_authentication(&mut self) {
         self.authenticated = true;
@@ -114,5 +123,16 @@ impl Session {
 
     pub fn is_stream_mode(&self) -> bool {
         self.in_stream_mode
+    }
+
+    // Admin status
+    /// Check if the authenticated user is an admin
+    pub fn is_admin(&self) -> bool {
+        self.is_admin
+    }
+
+    /// Set admin status (called after authentication verifies admin status)
+    pub fn set_admin(&mut self, is_admin: bool) {
+        self.is_admin = is_admin;
     }
 }

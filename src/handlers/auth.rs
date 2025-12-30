@@ -3,6 +3,7 @@
 use super::utils::write_simple;
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::error::AuthError;
+use crate::limits::LimitCheckResult;
 use crate::responses::*;
 use tracing::Span;
 
@@ -41,10 +42,31 @@ impl CommandHandler for AuthInfoHandler {
                 if let Some(username) = ctx.session.pending_username() {
                     let username = username.to_string(); // Clone to avoid borrow issues
                     if ctx.auth.verify_user(&username, &args[1]).await? {
-                        ctx.session.confirm_authentication();
+                        // Check if user is admin
+                        let is_admin = ctx.auth.is_admin(&username).await.unwrap_or(false);
+
+                        // Check connection limits (admins bypass)
+                        if !is_admin {
+                            let limit_result = ctx.usage_tracker.try_connect(&username).await;
+                            if limit_result == LimitCheckResult::ConnectionLimitExceeded {
+                                Span::current().record("outcome", "rejected_connection_limit");
+                                tracing::debug!(username = %username, "Connection limit exceeded");
+                                write_simple(&mut ctx.writer, RESP_481_CONN_LIMIT).await?;
+                                return Ok(());
+                            }
+
+                            // Load usage data from database for this user
+                            if let Err(e) = ctx.usage_tracker.load_user(&username).await {
+                                tracing::warn!(username = %username, error = %e, "Failed to load user usage");
+                            }
+                        }
+
+                        // Set session state with admin status
+                        ctx.session
+                            .authenticate_with_admin(username.clone(), is_admin);
                         Span::current().record("outcome", "success");
                         // Log username only at debug level for GDPR compliance
-                        tracing::debug!(username = %username, "User authenticated");
+                        tracing::debug!(username = %username, is_admin = is_admin, "User authenticated");
                         write_simple(&mut ctx.writer, RESP_281_AUTH_OK).await?;
                     } else {
                         let err = AuthError::InvalidCredentials(username.clone());

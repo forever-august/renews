@@ -90,3 +90,21 @@ max_article_bytes = "1M"
 
 # [[filters]]
 # name = "ModerationFilter"
+
+# Per-user limits (defaults applied to all users unless overridden per-user via CLI)
+# Admin users bypass all limits. Unauthenticated users have no limits.
+# Per-user limits can be set with: renews admin set-limits <user> [options]
+[user_limits]
+# Whether users are allowed to post articles (default: true)
+allow_posting = true
+
+# Maximum simultaneous connections per user (0 = unlimited)
+max_connections = 0
+
+# Combined upload+download bandwidth limit (e.g., "10G", "500M", 0 = unlimited)
+# bandwidth_limit = "10G"
+
+# Time period for bandwidth limit (e.g., "30d", "1w", "24h")
+# When the period expires, the counter resets completely
+# If not set or empty, the limit is absolute/lifetime
+# bandwidth_period = "30d"

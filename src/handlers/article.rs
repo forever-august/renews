@@ -1,8 +1,8 @@
 //! Article retrieval command handlers.
 
 use super::utils::{
-    ArticleOperation, get_header_value, handle_article_operation, metadata_value, resolve_articles,
-    write_response_with_values, write_simple,
+    ArticleOperation, BandwidthContext, get_header_value, handle_article_operation, metadata_value,
+    resolve_articles, write_response_with_values, write_simple,
 };
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::responses::*;
@@ -15,12 +15,23 @@ macro_rules! article_handler {
 
         impl CommandHandler for $name {
             async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
+                // Create bandwidth context for authenticated non-admin users
+                let bandwidth_ctx = if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+                    ctx.session.username().map(|username| BandwidthContext {
+                        tracker: ctx.usage_tracker.clone(),
+                        username: username.to_string(),
+                    })
+                } else {
+                    None
+                };
+
                 handle_article_operation(
                     &mut ctx.writer,
                     &ctx.storage,
                     &mut ctx.session,
                     args,
                     $operation,
+                    bandwidth_ctx,
                 )
                 .await
             }

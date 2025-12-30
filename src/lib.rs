@@ -10,6 +10,7 @@ pub mod control;
 pub mod error;
 pub mod filters;
 pub mod handlers;
+pub mod limits;
 mod migrations;
 pub mod overview;
 pub mod peers;
@@ -27,6 +28,7 @@ pub mod ws;
 use crate::auth::DynAuth;
 use crate::config::Config;
 use crate::handlers::{HandlerContext, dispatch_command};
+use crate::limits::UsageTracker;
 use crate::queue::ArticleQueue;
 use crate::session::Session;
 use crate::storage::DynStorage;
@@ -35,7 +37,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{self, AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::sync::RwLock;
-use tracing::{debug, info_span, Instrument};
+use tracing::{Instrument, debug, info_span};
 
 /// Per-connection cached configuration values.
 /// These are read once at connection start and not updated mid-connection.
@@ -58,6 +60,7 @@ pub async fn handle_client<S>(
     cfg: Arc<RwLock<Config>>,
     is_tls: bool,
     queue: ArticleQueue,
+    usage_tracker: Arc<UsageTracker>,
 ) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -105,6 +108,7 @@ where
             config: cfg,
             session,
             queue,
+            usage_tracker,
         };
 
         // Send greeting - reflects current posting ability
@@ -163,7 +167,8 @@ where
             // Handle QUIT specially since it needs to break the loop
             if cmd.name.as_str() == "QUIT" {
                 async {
-                    ctx.writer.write_all(RESP_205_CLOSING.as_bytes()).await
+                    ctx.writer.write_all(RESP_205_CLOSING.as_bytes()).await?;
+                    ctx.writer.flush().await
                 }
                 .instrument(cmd_span.clone())
                 .await?;
@@ -187,6 +192,14 @@ where
         // Record final session metrics
         tracing::Span::current().record("commands_processed", commands_processed);
         tracing::Span::current().record("duration_ms", start.elapsed().as_millis() as u64);
+
+        // Clean up connection tracking for authenticated users (admins are not tracked)
+        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+            if let Some(username) = ctx.session.username() {
+                ctx.usage_tracker.disconnect(username);
+            }
+        }
+
         tracing::info!("Session ended");
 
         Ok(())

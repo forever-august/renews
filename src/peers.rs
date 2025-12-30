@@ -21,7 +21,7 @@ use tokio_rustls::{
     TlsConnector,
     rustls::{self, RootCertStore},
 };
-use tracing::{info_span, Instrument};
+use tracing::{Instrument, info_span};
 use uuid;
 
 use crate::storage::DynStorage;
@@ -538,7 +538,7 @@ async fn sync_peer_once(
 ) -> PeerResult<SyncStats> {
     let last_sync = db.get_last_sync(&peer.sitename).await?;
     let mut stats = SyncStats::default();
-    
+
     let mut groups = storage.list_groups();
     while let Some(result) = groups.next().await {
         let group = result?;
@@ -553,7 +553,8 @@ async fn sync_peer_once(
         };
         let article_ids = article_ids_stream.try_collect::<Vec<String>>().await?;
 
-        let group_stats = process_group_articles(peer, storage, site_name, &group, article_ids).await?;
+        let group_stats =
+            process_group_articles(peer, storage, site_name, &group, article_ids).await?;
         stats.merge(group_stats);
         stats.groups_processed += 1;
     }
@@ -620,7 +621,10 @@ async fn process_group_articles(
     // Log articles that weren't found at debug level
     for article_id in &article_ids {
         if !found_ids.contains(article_id) {
-            tracing::debug!(article_id = article_id.as_str(), "Article not found in storage");
+            tracing::debug!(
+                article_id = article_id.as_str(),
+                "Article not found in storage"
+            );
         }
     }
 

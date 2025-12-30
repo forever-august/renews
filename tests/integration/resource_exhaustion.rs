@@ -1,6 +1,6 @@
 //! Tests for resource exhaustion and queue failure modes
 
-use crate::utils::{ClientMock, create_malformed_article, setup};
+use crate::utils::{self, ClientMock, create_malformed_article, setup};
 use renews::{
     Message,
     queue::{ArticleQueue, QueuedArticle},
@@ -141,7 +141,7 @@ async fn test_large_article_handling() {
     // Create a very large article (10KB) to test server's handling of large content
     let large_body = "x".repeat(10000);
     let large_article = format!(
-        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{large_body}\r\n.\r\n"
+        "From: test@example.com\r\nSubject: Large Article\r\nNewsgroups: test.group\r\nMessage-ID: <large@example.com>\r\n\r\n{large_body}\r\n."
     );
 
     ClientMock::new()
@@ -152,9 +152,10 @@ async fn test_large_article_handling() {
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
         .expect_request_multi(
-            vec![large_article],
+            utils::request_lines(&large_article),
             vec!["240 article received"], // Server accepts large articles without default size limits
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }
@@ -176,9 +177,10 @@ async fn test_malformed_article_submission() {
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
         .expect_request_multi(
-            vec![malformed_article],
+            utils::request_lines(malformed_article.trim_end_matches("\r\n")),
             vec!["441 posting failed"], // Should fail due to malformed headers
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }
@@ -190,7 +192,7 @@ async fn test_missing_required_headers() {
     auth.add_user("testuser", "password").await.unwrap();
 
     // Article missing From header
-    let article_no_from = "Subject: Test\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n";
+    let article_no_from = "Subject: Test\r\nNewsgroups: test.group\r\n\r\nBody\r\n.";
 
     ClientMock::new()
         .expect("AUTHINFO USER testuser", "381 password required")
@@ -200,9 +202,10 @@ async fn test_missing_required_headers() {
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
         .expect_request_multi(
-            vec![article_no_from.to_string()],
+            utils::request_lines(article_no_from),
             vec!["441 posting failed"],
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }
@@ -254,7 +257,7 @@ async fn test_extremely_long_headers() {
     // Create an article with extremely long header values
     let long_subject = "x".repeat(10000);
     let article_long_header = format!(
-        "From: test@example.com\r\nSubject: {long_subject}\r\nNewsgroups: test.group\r\n\r\nBody\r\n.\r\n"
+        "From: test@example.com\r\nSubject: {long_subject}\r\nNewsgroups: test.group\r\n\r\nBody\r\n."
     );
 
     ClientMock::new()
@@ -265,9 +268,10 @@ async fn test_extremely_long_headers() {
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
         .expect_request_multi(
-            vec![article_long_header],
+            utils::request_lines(&article_long_header),
             vec!["240 article received"], // Might succeed or fail depending on implementation
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }
@@ -279,7 +283,7 @@ async fn test_null_bytes_in_article() {
     auth.add_user("testuser", "password").await.unwrap();
 
     // Create an article with null bytes (binary content)
-    let article_with_nulls = "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody with \0 null byte\r\n.\r\n";
+    let article_with_nulls = "From: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nBody with \0 null byte\r\n.";
 
     ClientMock::new()
         .expect("AUTHINFO USER testuser", "381 password required")
@@ -289,9 +293,10 @@ async fn test_null_bytes_in_article() {
             "340 send article to be posted. End with <CR-LF>.<CR-LF>",
         )
         .expect_request_multi(
-            vec![article_with_nulls.to_string()],
+            utils::request_lines(article_with_nulls),
             vec!["240 article received"], // Behavior depends on implementation
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }

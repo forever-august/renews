@@ -2,10 +2,11 @@ use anyhow::Result;
 
 use clap::{Parser, Subcommand};
 use tokio::runtime::Runtime;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use renews::auth;
-use renews::config::{Config, DEFAULT_LOG_FILTER};
+use renews::config::{Config, DEFAULT_LOG_FILTER, parse_duration_secs, parse_size};
+use renews::limits::UserLimits;
 use renews::server;
 use renews::storage;
 
@@ -67,6 +68,38 @@ enum AdminCommand {
     AddModerator { user: String, group: String },
     /// Remove a moderator for a group
     RemoveModerator { user: String, group: String },
+    /// Set per-user limits (posting permission, bandwidth, connections)
+    SetLimits {
+        /// Username to set limits for
+        user: String,
+        /// Allow/disallow posting (true/false)
+        #[arg(long)]
+        allow_posting: Option<String>,
+        /// Max simultaneous connections (0 = unlimited)
+        #[arg(long)]
+        max_connections: Option<u32>,
+        /// Bandwidth limit (e.g., "10G", "500M", 0 = unlimited)
+        #[arg(long)]
+        bandwidth_limit: Option<String>,
+        /// Bandwidth period (e.g., "30d", "1w", empty = absolute/lifetime)
+        #[arg(long)]
+        bandwidth_period: Option<String>,
+    },
+    /// Clear per-user limits (revert to defaults)
+    ClearLimits {
+        /// Username to clear limits for
+        user: String,
+    },
+    /// Show current usage for a user
+    ShowUsage {
+        /// Username to show usage for
+        user: String,
+    },
+    /// Reset usage counters for a user
+    ResetUsage {
+        /// Username to reset usage for
+        user: String,
+    },
 }
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
@@ -125,8 +158,136 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
         AdminCommand::RemoveModerator { user, group } => {
             auth.remove_moderator(&user, &group).await?;
         }
+        AdminCommand::SetLimits {
+            user,
+            allow_posting,
+            max_connections,
+            bandwidth_limit,
+            bandwidth_period,
+        } => {
+            // Get existing limits or create new ones
+            let existing = auth.get_user_limits(&user).await?.unwrap_or_default();
+
+            // Parse allow_posting
+            let can_post = if let Some(ref val) = allow_posting {
+                match val.to_lowercase().as_str() {
+                    "true" | "yes" | "1" => true,
+                    "false" | "no" | "0" => false,
+                    _ => {
+                        return Err(anyhow::anyhow!(
+                            "Invalid boolean value: '{val}'. Use 'true' or 'false'."
+                        ));
+                    }
+                }
+            } else {
+                existing.can_post
+            };
+
+            // Parse max_connections (0 = unlimited)
+            let max_conn = max_connections
+                .map(|c| if c == 0 { None } else { Some(c) })
+                .unwrap_or(existing.max_connections);
+
+            // Parse bandwidth_limit
+            let bw_limit = if let Some(ref val) = bandwidth_limit {
+                if val == "0" || val.is_empty() {
+                    None
+                } else {
+                    parse_size(val)
+                }
+            } else {
+                existing.bandwidth_limit
+            };
+
+            // Parse bandwidth_period
+            let bw_period = if let Some(ref val) = bandwidth_period {
+                parse_duration_secs(val)
+            } else {
+                existing.bandwidth_period_secs
+            };
+
+            let limits = UserLimits {
+                can_post,
+                max_connections: max_conn,
+                bandwidth_limit: bw_limit,
+                bandwidth_period_secs: bw_period,
+            };
+
+            auth.set_user_limits(&user, &limits).await?;
+            println!("Limits set for user '{user}':");
+            println!("  can_post: {can_post}");
+            println!(
+                "  max_connections: {}",
+                max_conn.map_or("unlimited".to_string(), |c| c.to_string())
+            );
+            println!(
+                "  bandwidth_limit: {}",
+                bw_limit.map_or("unlimited".to_string(), format_bytes)
+            );
+            println!(
+                "  bandwidth_period: {}",
+                bw_period.map_or("absolute".to_string(), format_duration)
+            );
+        }
+        AdminCommand::ClearLimits { user } => {
+            auth.clear_user_limits(&user).await?;
+            println!("Limits cleared for user '{user}' (will use defaults)");
+        }
+        AdminCommand::ShowUsage { user } => {
+            let usage = auth.get_user_usage(&user).await?;
+            println!("Usage for user '{user}':");
+            println!("  uploaded: {}", format_bytes(usage.bytes_uploaded));
+            println!("  downloaded: {}", format_bytes(usage.bytes_downloaded));
+            println!("  total: {}", format_bytes(usage.total_bandwidth()));
+            if let Some(ws) = usage.window_start {
+                println!("  window_start: {ws}");
+            } else {
+                println!("  window_start: (not set)");
+            }
+        }
+        AdminCommand::ResetUsage { user } => {
+            auth.reset_user_usage(&user).await?;
+            println!("Usage counters reset for user '{user}'");
+        }
     }
     Ok(())
+}
+
+/// Format bytes into a human-readable string.
+fn format_bytes(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.2} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.2} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
+/// Format seconds into a human-readable duration string.
+fn format_duration(secs: u64) -> String {
+    const MINUTE: u64 = 60;
+    const HOUR: u64 = 60 * MINUTE;
+    const DAY: u64 = 24 * HOUR;
+    const WEEK: u64 = 7 * DAY;
+
+    if secs >= WEEK && secs % WEEK == 0 {
+        format!("{} week(s)", secs / WEEK)
+    } else if secs >= DAY && secs % DAY == 0 {
+        format!("{} day(s)", secs / DAY)
+    } else if secs >= HOUR && secs % HOUR == 0 {
+        format!("{} hour(s)", secs / HOUR)
+    } else if secs >= MINUTE && secs % MINUTE == 0 {
+        format!("{} minute(s)", secs / MINUTE)
+    } else {
+        format!("{secs} second(s)")
+    }
 }
 
 async fn run_init(cfg: &Config) -> Result<()> {

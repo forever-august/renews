@@ -17,6 +17,9 @@ pub enum NntpError {
     #[error("Authentication error: {0}")]
     Auth(#[from] AuthError),
 
+    #[error("Limit error: {0}")]
+    Limit(#[from] LimitError),
+
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
@@ -76,6 +79,18 @@ pub enum AuthError {
 }
 
 #[derive(Error, Debug)]
+pub enum LimitError {
+    #[error("Posting disabled for user")]
+    PostingDisabled,
+
+    #[error("Bandwidth limit exceeded")]
+    BandwidthExceeded,
+
+    #[error("Connection limit exceeded")]
+    ConnectionLimitExceeded,
+}
+
+#[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Invalid configuration: {0}")]
     Invalid(String),
@@ -100,6 +115,10 @@ impl NntpError {
             NntpError::Auth(AuthError::Required) => 480,
             NntpError::Auth(_) => 481,
 
+            NntpError::Limit(LimitError::PostingDisabled) => 440,
+            NntpError::Limit(LimitError::BandwidthExceeded) => 403,
+            NntpError::Limit(LimitError::ConnectionLimitExceeded) => 481,
+
             NntpError::Config(_) => 403,
             NntpError::Io(_) => 403,
             NntpError::Protocol(_) => 500,
@@ -117,6 +136,10 @@ impl NntpError {
 
             NntpError::Auth(AuthError::Required) => "authentication required",
             NntpError::Auth(_) => "Authentication failed",
+
+            NntpError::Limit(LimitError::PostingDisabled) => "posting not allowed",
+            NntpError::Limit(LimitError::BandwidthExceeded) => "bandwidth limit exceeded",
+            NntpError::Limit(LimitError::ConnectionLimitExceeded) => "connection limit exceeded",
 
             NntpError::Config(_) => "Service temporarily unavailable",
             NntpError::Io(_) => "Service temporarily unavailable",

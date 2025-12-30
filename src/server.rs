@@ -39,6 +39,7 @@ use tokio_cron_scheduler::JobScheduler;
 
 use crate::auth::{self, AuthProvider};
 use crate::config::Config;
+use crate::limits::UsageTracker;
 use crate::peers::{PeerConfig, PeerDb, add_peer_job};
 use crate::queue::{ArticleQueue, WorkerPool};
 use crate::retention::cleanup_expired_articles;
@@ -101,6 +102,7 @@ struct ServerComponents {
     auth: Arc<dyn AuthProvider>,
     config: Arc<RwLock<Config>>,
     queue: ArticleQueue,
+    usage_tracker: Arc<UsageTracker>,
 }
 
 /// Server handles all lifecycle management
@@ -146,11 +148,15 @@ impl Server {
         // Create article queue with configurable capacity
         let queue = ArticleQueue::new(cfg.article_queue_capacity);
 
+        // Create usage tracker with auth provider and default limits
+        let usage_tracker = Arc::new(UsageTracker::new(auth.clone(), cfg.user_limits.clone()));
+
         Ok(ServerComponents {
             storage,
             auth,
             config,
             queue,
+            usage_tracker,
         })
     }
 
@@ -184,6 +190,7 @@ impl Server {
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
         let queue = self.components.queue.clone();
+        let usage_tracker = self.components.usage_tracker.clone();
 
         let handle = tokio::spawn(async move {
             loop {
@@ -197,6 +204,7 @@ impl Server {
                             config.clone(),
                             false,
                             queue.clone(),
+                            usage_tracker.clone(),
                         )
                         .await;
                     }
@@ -230,6 +238,7 @@ impl Server {
         let auth = self.components.auth.clone();
         let config = self.components.config.clone();
         let queue = self.components.queue.clone();
+        let usage_tracker = self.components.usage_tracker.clone();
 
         let handle = tokio::spawn(async move {
             loop {
@@ -241,6 +250,7 @@ impl Server {
                         let config_clone = config.clone();
                         let acceptor_clone = acceptor.clone();
                         let queue_clone = queue.clone();
+                        let usage_tracker_clone = usage_tracker.clone();
 
                         tokio::spawn(async move {
                             match acceptor_clone.accept(socket).await {
@@ -252,6 +262,7 @@ impl Server {
                                         config_clone,
                                         true,
                                         queue_clone,
+                                        usage_tracker_clone,
                                     )
                                     .await;
                                 }
@@ -313,6 +324,24 @@ impl Server {
         Ok(handle)
     }
 
+    /// Start usage persistence task to periodically save usage data
+    async fn start_usage_persistence(&self) -> ServerResult<tokio::task::JoinHandle<()>> {
+        let usage_tracker = self.components.usage_tracker.clone();
+
+        let handle = tokio::spawn(async move {
+            loop {
+                // Persist usage data every 60 seconds
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+                if let Err(e) = usage_tracker.persist().await {
+                    error!("usage persistence error: {e}");
+                }
+            }
+        });
+
+        Ok(handle)
+    }
+
     /// Start configuration reload handler
     async fn start_config_reload_handler(
         &self,
@@ -359,6 +388,7 @@ impl Server {
         let _ws_handle = self.start_websocket_bridge().await?;
         let _retention_handle = self.start_retention_cleanup().await?;
         let _config_handle = self.start_config_reload_handler(cfg_path).await?;
+        let _usage_handle = self.start_usage_persistence().await?;
 
         // Wait for shutdown signal
         tokio::signal::ctrl_c().await?;
@@ -758,11 +788,14 @@ async fn handle_connection<S>(
     config: Arc<RwLock<Config>>,
     is_tls: bool,
     queue: ArticleQueue,
+    usage_tracker: Arc<UsageTracker>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
-        if let Err(e) = crate::handle_client(socket, storage, auth, config, is_tls, queue).await {
+        if let Err(e) =
+            crate::handle_client(socket, storage, auth, config, is_tls, queue, usage_tracker).await
+        {
             error!("client error: {e}");
         }
     });

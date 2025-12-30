@@ -51,6 +51,7 @@ pub const RESP_335_SEND_IT: &str = "335 Send it; end with <CR-LF>.<CR-LF>\r\n";
 pub const RESP_381_PASSWORD_REQ: &str = "381 password required\r\n";
 
 // 4xx error responses
+pub const RESP_403_BANDWIDTH_EXCEEDED: &str = "403 bandwidth limit exceeded\r\n";
 pub const RESP_411_NO_SUCH_GROUP: &str = "411 no such newsgroup\r\n";
 pub const RESP_412_NO_GROUP: &str = "412 no newsgroup selected\r\n";
 pub const RESP_420_NO_CURRENT: &str = "420 no current article selected\r\n";
@@ -63,9 +64,11 @@ pub const RESP_435_NOT_WANTED: &str = "435 article not wanted\r\n";
 pub const RESP_437_REJECTED: &str = "437 article rejected\r\n";
 pub const RESP_438_CHECK_REJECT: &str = "438";
 pub const RESP_439_TAKETHIS_REJECT: &str = "439";
+pub const RESP_440_POST_PROHIBITED: &str = "440 posting not allowed\r\n";
 pub const RESP_441_POSTING_FAILED: &str = "441 posting failed\r\n";
 pub const RESP_480_AUTH_REQUIRED: &str = "480 authentication required\r\n";
 pub const RESP_481_AUTH_REJECTED: &str = "481 Authentication rejected\r\n";
+pub const RESP_481_CONN_LIMIT: &str = "481 connection limit exceeded\r\n";
 pub const RESP_483_SECURE_REQ: &str = "483 Secure connection required\r\n";
 
 // 5xx error responses

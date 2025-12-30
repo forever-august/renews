@@ -16,7 +16,7 @@ impl CommandHandler for GroupHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(group_name) = args.first() {
             Span::current().record("group", group_name.as_str());
-            
+
             // Check if the group exists using the storage interface
             if !ctx.storage.group_exists(group_name).await? {
                 let err = StorageError::GroupNotFound(group_name.clone());
@@ -37,7 +37,7 @@ impl CommandHandler for GroupHandler {
 
             Span::current().record("article_count", count as u64);
             Span::current().record("outcome", "success");
-            
+
             write_simple(
                 &mut ctx.writer,
                 &format!("211 {count} {low} {high} {group_name}\r\n"),

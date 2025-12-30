@@ -8,6 +8,60 @@ const CREATE_VERSION_TABLE_SQLITE: &str = "CREATE TABLE IF NOT EXISTS schema_ver
     version INTEGER PRIMARY KEY
 )";
 
+/// Migration to version 2: Add user_limits and user_usage tables
+struct MigrationV2 {
+    pool: SqlitePool,
+}
+
+impl MigrationV2 {
+    fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+}
+
+#[async_trait]
+impl Migration for MigrationV2 {
+    fn target_version(&self) -> u32 {
+        2
+    }
+
+    fn description(&self) -> &str {
+        "Add user_limits and user_usage tables for per-user limits"
+    }
+
+    async fn apply(&self) -> Result<()> {
+        // Create user_limits table for per-user limit overrides
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS user_limits (
+                username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+                can_post INTEGER,
+                max_connections INTEGER,
+                bandwidth_limit_bytes INTEGER,
+                bandwidth_period_secs INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        // Create user_usage table for usage tracking
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS user_usage (
+                username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
+                bytes_uploaded INTEGER NOT NULL DEFAULT 0,
+                bytes_downloaded INTEGER NOT NULL DEFAULT 0,
+                window_start_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )",
+        )
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+}
+
 /// SQLite auth migrator
 pub struct SqliteAuthMigrator {
     pool: SqlitePool,
@@ -64,9 +118,7 @@ impl Migrator for SqliteAuthMigrator {
     }
 
     fn get_migrations(&self) -> Vec<Box<dyn Migration>> {
-        // Since this is pre-1.0, no migrations exist yet
-        // This will serve as a template for future migrations
-        vec![]
+        vec![Box::new(MigrationV2::new(self.pool.clone()))]
     }
 }
 
@@ -116,22 +168,54 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sqlite_auth_migrator_no_migrations() {
+    async fn test_sqlite_auth_migrator_migrations() {
         let temp_file = NamedTempFile::new().unwrap();
         let db_path = format!("sqlite://{}", temp_file.path().display());
 
         let pool = sqlx::SqlitePool::connect(&db_path).await.unwrap();
         let migrator = SqliteAuthMigrator::new(pool.clone());
 
-        // Pre-1.0, so no migrations should exist
+        // Should have migrations available
         let migrations = migrator.get_migrations();
-        assert!(migrations.is_empty());
+        assert!(!migrations.is_empty());
 
-        // Migration should be a no-op
-        migrator.set_version(1).await.unwrap(); // Simulate fresh initialization
+        // V2 migration should be present
+        assert_eq!(migrations[0].target_version(), 2);
+
+        // Set up base schema (version 1 - simulates existing database)
+        // First create the users table that user_limits references
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS users (
+            username TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            key TEXT
+        )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        migrator.set_version(1).await.unwrap();
+
+        // Run migration
         migrator.migrate_to_latest().await.unwrap();
 
         let version = migrator.get_current_version().await.unwrap();
-        assert_eq!(version, 1); // Should remain at 1
+        assert_eq!(version, 2);
+
+        // Verify tables were created
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_limits'")
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(result.is_some());
+
+        let result =
+            sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name='user_usage'")
+                .fetch_optional(&pool)
+                .await
+                .unwrap();
+        assert!(result.is_some());
     }
 }

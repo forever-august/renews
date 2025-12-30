@@ -87,6 +87,7 @@ async fn post_requires_approval_for_moderated_group() {
             ),
             "441 posting failed",
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
     assert!(
@@ -119,6 +120,7 @@ async fn post_with_approval_succeeds() {
             utils::request_lines(article.trim_end_matches("\r\n")),
             vec!["240 article received"],
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
 
@@ -160,6 +162,7 @@ async fn cross_post_different_moderators() {
             utils::request_lines(article.trim_end_matches("\r\n")),
             vec!["240 article received"],
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
 

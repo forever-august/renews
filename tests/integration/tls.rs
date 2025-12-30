@@ -19,6 +19,7 @@ async fn tls_mode_reader() {
         .expect("AUTHINFO USER user", "381 password required")
         .expect("AUTHINFO PASS pass", "281 authentication accepted")
         .expect("MODE READER", "200 Posting allowed")
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage, auth)
         .await;
 }
@@ -32,6 +33,7 @@ async fn tls_post_requires_auth() {
         .expect("MODE READER", "201 Posting prohibited")
         .expect("GROUP misc", "211 0 0 0 misc")
         .expect("POST", "480 authentication required")
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth)
         .await;
     assert!(
@@ -112,6 +114,7 @@ async fn post_without_msgid_generates_one() {
             utils::request_lines(article.trim_end_matches("\r\n")),
             vec!["240 article received"],
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth.clone())
         .await;
 
@@ -154,6 +157,7 @@ async fn post_without_date_adds_header() {
             utils::request_lines(article.trim_end_matches("\r\n")),
             vec!["240 article received"],
         )
+        .expect("QUIT", "205 closing connection")
         .run_tls(storage.clone(), auth.clone())
         .await;
 

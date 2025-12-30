@@ -2,6 +2,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::sync::Arc;
 
+use crate::limits::{UserLimits, UserUsage};
+
 #[async_trait]
 pub trait AuthProvider: Send + Sync {
     async fn add_user(&self, username: &str, password: &str) -> Result<()>;
@@ -23,6 +25,30 @@ pub trait AuthProvider: Send + Sync {
     async fn add_moderator(&self, username: &str, pattern: &str) -> Result<()>;
     async fn remove_moderator(&self, username: &str, pattern: &str) -> Result<()>;
     async fn is_moderator(&self, username: &str, group: &str) -> Result<bool>;
+
+    // User limits methods
+
+    /// Get per-user limit overrides from the database.
+    ///
+    /// Returns `None` if no per-user overrides exist (use defaults).
+    async fn get_user_limits(&self, username: &str) -> Result<Option<UserLimits>>;
+
+    /// Set per-user limit overrides in the database.
+    async fn set_user_limits(&self, username: &str, limits: &UserLimits) -> Result<()>;
+
+    /// Clear per-user limit overrides (user will use defaults).
+    async fn clear_user_limits(&self, username: &str) -> Result<()>;
+
+    // User usage methods
+
+    /// Get current usage data for a user from the database.
+    async fn get_user_usage(&self, username: &str) -> Result<UserUsage>;
+
+    /// Persist usage data for a user to the database.
+    async fn set_user_usage(&self, username: &str, usage: &UserUsage) -> Result<()>;
+
+    /// Reset usage counters for a user.
+    async fn reset_user_usage(&self, username: &str) -> Result<()>;
 }
 
 pub type DynAuth = Arc<dyn AuthProvider>;

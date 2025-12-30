@@ -1,12 +1,14 @@
 //! Utility functions for command handlers.
 
 use crate::Message;
+use crate::limits::{LimitCheckResult, UsageTracker};
 use crate::session::Session;
 use crate::storage::DynStorage;
 use anyhow::Result;
 use smallvec::SmallVec;
 use std::error::Error;
 use std::fmt;
+use std::sync::Arc;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
 use tracing::Span;
 
@@ -82,7 +84,9 @@ impl Error for ArticleQueryError {}
 
 /// Write a simple response line to the writer.
 pub async fn write_simple<W: AsyncWrite + Unpin>(writer: &mut W, response: &str) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
     writer.write_all(response.as_bytes()).await?;
+    writer.flush().await?;
     Ok(())
 }
 
@@ -237,6 +241,13 @@ impl ArticleOperation {
     }
 }
 
+/// Bandwidth tracking context for article operations.
+#[derive(Clone)]
+pub struct BandwidthContext {
+    pub tracker: Arc<UsageTracker>,
+    pub username: String,
+}
+
 /// Generic handler for article operations (ARTICLE, HEAD, BODY, STAT).
 pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
     writer: &mut W,
@@ -244,6 +255,7 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
     session: &mut Session,
     args: &[String],
     operation: ArticleOperation,
+    bandwidth_ctx: Option<BandwidthContext>,
 ) -> Result<()> {
     use crate::responses::*;
 
@@ -263,12 +275,51 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
         Ok(articles) => {
             for (num, article) in articles {
                 let id = extract_message_id(&article).unwrap_or_default();
-                
+
                 // Record resolved message_id if we didn't have it from args
                 if args.first().is_none_or(|a| !a.starts_with('<')) {
                     Span::current().record("message_id", id.as_str());
                 }
-                
+
+                // Calculate article size for bandwidth tracking
+                // Only track bandwidth for Full, Headers, and Body operations (not Stat)
+                let article_size = match operation {
+                    ArticleOperation::Full => {
+                        let header_size: usize = article
+                            .headers
+                            .iter()
+                            .map(|(k, v)| k.len() + 2 + v.len() + 2)
+                            .sum();
+                        (header_size + 2 + article.body.len() + 5) as u64 // +2 for CRLF, +5 for .\r\n
+                    }
+                    ArticleOperation::Headers => {
+                        let header_size: usize = article
+                            .headers
+                            .iter()
+                            .map(|(k, v)| k.len() + 2 + v.len() + 2)
+                            .sum();
+                        (header_size + 3) as u64 // +3 for .\r\n
+                    }
+                    ArticleOperation::Body => (article.body.len() + 5) as u64, // +5 for .\r\n
+                    ArticleOperation::Stat => 0,
+                };
+
+                // Check bandwidth limit before sending (if applicable)
+                if article_size > 0 {
+                    if let Some(ref bw_ctx) = bandwidth_ctx {
+                        if bw_ctx
+                            .tracker
+                            .check_bandwidth(&bw_ctx.username, article_size)
+                            .await
+                            == LimitCheckResult::BandwidthExceeded
+                        {
+                            Span::current().record("outcome", "rejected_bandwidth");
+                            write_simple(writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
+                            return Ok(());
+                        }
+                    }
+                }
+
                 // Use format! to handle arbitrarily long message-IDs
                 let response_line = format!(
                     "{} {} {} {}\r\n",
@@ -296,6 +347,16 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
                     }
                     ArticleOperation::Stat => {
                         // STAT just sends the status line, no content
+                    }
+                }
+
+                // Record bandwidth usage after successful send
+                if article_size > 0 {
+                    if let Some(ref bw_ctx) = bandwidth_ctx {
+                        bw_ctx
+                            .tracker
+                            .record_bandwidth(&bw_ctx.username, article_size, false)
+                            .await;
                     }
                 }
             }

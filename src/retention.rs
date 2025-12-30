@@ -4,7 +4,7 @@ use crate::storage::Storage;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
-use tracing::{debug, info, info_span, warn, Instrument};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 /// Clean up expired articles based on retention policies.
 ///
@@ -22,14 +22,14 @@ pub async fn cleanup_expired_articles(storage: &dyn Storage, cfg: &Config) -> Re
         articles_deleted = tracing::field::Empty,
         duration_ms = tracing::field::Empty,
     );
-    
+
     async {
         let start = std::time::Instant::now();
         info!("Starting retention cleanup");
         let now = Utc::now();
         let mut groups_processed = 0u64;
         let mut total_deleted = 0u64;
-        
+
         let mut groups = storage.list_groups();
         while let Some(result) = groups.next().await {
             let group = result?;
@@ -40,7 +40,9 @@ pub async fn cleanup_expired_articles(storage: &dyn Storage, cfg: &Config) -> Re
             // Remove articles with expired Expires headers
             match cleanup_group_by_expires_header(storage, group.as_str(), now).await {
                 Ok(deleted) => total_deleted += deleted,
-                Err(e) => warn!(group = group.as_str(), error = %e, "Failed to clean up expired articles"),
+                Err(e) => {
+                    warn!(group = group.as_str(), error = %e, "Failed to clean up expired articles")
+                }
             }
             groups_processed += 1;
             debug!(group = group.as_str(), "Finished cleanup for group");
@@ -53,7 +55,11 @@ pub async fn cleanup_expired_articles(storage: &dyn Storage, cfg: &Config) -> Re
         tracing::Span::current().record("groups_processed", groups_processed);
         tracing::Span::current().record("articles_deleted", total_deleted);
         tracing::Span::current().record("duration_ms", start.elapsed().as_millis() as u64);
-        info!(groups_processed = groups_processed, articles_deleted = total_deleted, "Retention cleanup complete");
+        info!(
+            groups_processed = groups_processed,
+            articles_deleted = total_deleted,
+            "Retention cleanup complete"
+        );
         Ok(())
     }
     .instrument(span)
@@ -123,7 +129,11 @@ async fn cleanup_group_by_expires_header(
     }
 
     if expired_count > 0 {
-        debug!(group = group, articles_deleted = expired_count, "Removed articles with expired Expires headers");
+        debug!(
+            group = group,
+            articles_deleted = expired_count,
+            "Removed articles with expired Expires headers"
+        );
     }
 
     Ok(expired_count)

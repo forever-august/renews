@@ -12,7 +12,7 @@ use anyhow::Result;
 use flume::{Receiver, Sender};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, info_span, Instrument};
+use tracing::{Instrument, debug, error, info, info_span};
 
 /// An article queued for processing
 #[derive(Debug, Clone)]
@@ -112,7 +112,10 @@ impl WorkerPool {
             handles.push(handle);
         }
 
-        info!(worker_count = self.worker_count, "Article processing workers started");
+        info!(
+            worker_count = self.worker_count,
+            "Article processing workers started"
+        );
         handles
     }
 }
@@ -135,7 +138,7 @@ async fn worker_task(
             .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
             .map(|(_, v)| v.as_str())
             .unwrap_or("<unknown>");
-        
+
         let span = info_span!(
             "queue.process",
             worker_id = worker_id,

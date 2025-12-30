@@ -2,6 +2,7 @@
 
 use super::utils::{comprehensive_validate_article, read_message, write_simple};
 use super::{CommandHandler, HandlerContext, HandlerResult};
+use crate::limits::LimitCheckResult;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use tracing::Span;
@@ -13,7 +14,7 @@ impl CommandHandler for IHaveHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             Span::current().record("message_id", id.as_str());
-            
+
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 Span::current().record("outcome", "already_have");
                 write_simple(&mut ctx.writer, RESP_435_NOT_WANTED).await?;
@@ -53,7 +54,20 @@ impl CommandHandler for IHaveHandler {
             // Comprehensive validation before queuing for IHAVE (non-control messages)
             let size = msg.len() as u64;
             Span::current().record("size_bytes", size);
-            
+
+            // Check per-user bandwidth limit (only for authenticated non-admin users)
+            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+                if let Some(username) = ctx.session.username() {
+                    if ctx.usage_tracker.check_bandwidth(username, size).await
+                        == LimitCheckResult::BandwidthExceeded
+                    {
+                        Span::current().record("outcome", "rejected_bandwidth");
+                        write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
+                        return Ok(());
+                    }
+                }
+            }
+
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
@@ -81,6 +95,16 @@ impl CommandHandler for IHaveHandler {
 
             // Also queue for background processing consistency
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
+
+            // Record bandwidth usage for authenticated non-admin users
+            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+                if let Some(username) = ctx.session.username() {
+                    ctx.usage_tracker
+                        .record_bandwidth(username, size, true)
+                        .await;
+                }
+            }
+
             Span::current().record("outcome", "accepted");
             write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
         } else {
@@ -97,7 +121,7 @@ impl CommandHandler for CheckHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             Span::current().record("message_id", id.as_str());
-            
+
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 Span::current().record("outcome", "already_have");
                 write_simple(&mut ctx.writer, &format!("438 {id}\r\n")).await?;
@@ -119,7 +143,7 @@ impl CommandHandler for TakeThisHandler {
     async fn handle(ctx: &mut HandlerContext, args: &[String]) -> HandlerResult {
         if let Some(id) = args.first() {
             Span::current().record("message_id", id.as_str());
-            
+
             let msg = read_message(&mut ctx.reader).await?;
             let Ok((_, mut article)) = parse_message(&msg) else {
                 Span::current().record("outcome", "rejected_parse");
@@ -158,7 +182,20 @@ impl CommandHandler for TakeThisHandler {
             // Comprehensive validation before queuing for TAKETHIS (non-control messages)
             let size = msg.len() as u64;
             Span::current().record("size_bytes", size);
-            
+
+            // Check per-user bandwidth limit (only for authenticated non-admin users)
+            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+                if let Some(username) = ctx.session.username() {
+                    if ctx.usage_tracker.check_bandwidth(username, size).await
+                        == LimitCheckResult::BandwidthExceeded
+                    {
+                        Span::current().record("outcome", "rejected_bandwidth");
+                        write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
+                        return Ok(());
+                    }
+                }
+            }
+
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
                 .await
                 .is_err()
@@ -186,6 +223,16 @@ impl CommandHandler for TakeThisHandler {
 
             // Also queue for background processing consistency
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
+
+            // Record bandwidth usage for authenticated non-admin users
+            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
+                if let Some(username) = ctx.session.username() {
+                    ctx.usage_tracker
+                        .record_bandwidth(username, size, true)
+                        .await;
+                }
+            }
+
             Span::current().record("outcome", "accepted");
             write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
         } else {

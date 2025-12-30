@@ -13,6 +13,7 @@ pub mod utils;
 use crate::Command;
 use crate::auth::DynAuth;
 use crate::config::Config;
+use crate::limits::UsageTracker;
 use crate::queue::ArticleQueue;
 use crate::session::Session;
 use crate::storage::DynStorage;
@@ -40,6 +41,7 @@ pub struct HandlerContext {
     pub config: Arc<RwLock<Config>>,
     pub session: Session,
     pub queue: ArticleQueue,
+    pub usage_tracker: Arc<UsageTracker>,
 }
 
 /// Trait for command handlers.
