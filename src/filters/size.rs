@@ -2,12 +2,8 @@
 //!
 //! Validates that articles are within configured size limits.
 
-use super::ArticleFilter;
-use crate::Message;
-use crate::auth::DynAuth;
-use crate::config::Config;
+use super::{ArticleFilter, FilterContext};
 use crate::handlers::utils::extract_newsgroups;
-use crate::storage::DynStorage;
 use anyhow::Result;
 
 /// Filter that validates article size limits
@@ -15,21 +11,14 @@ pub struct SizeFilter;
 
 #[async_trait::async_trait]
 impl ArticleFilter for SizeFilter {
-    async fn validate(
-        &self,
-        _storage: &DynStorage,
-        _auth: &DynAuth,
-        cfg: &Config,
-        article: &Message,
-        size: u64,
-    ) -> Result<()> {
+    async fn validate(&self, ctx: &FilterContext<'_>) -> Result<()> {
         // Extract newsgroups from the article
-        let newsgroups = extract_newsgroups(article);
+        let newsgroups = extract_newsgroups(ctx.article);
 
         // Check size limit for each newsgroup
         for group in &newsgroups {
-            if let Some(max_size) = cfg.max_size_for_group(group)
-                && size > max_size
+            if let Some(max_size) = ctx.cfg.max_size_for_group(group)
+                && ctx.size > max_size
             {
                 return Err(anyhow::anyhow!("article too large for group {group}"));
             }

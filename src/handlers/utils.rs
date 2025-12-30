@@ -46,9 +46,9 @@ pub fn get_header_values(article: &Message, header_name: &str) -> SmallVec<[Stri
 }
 
 /// Extract Message-ID from an article.
-pub fn extract_message_id(article: &Message) -> Option<String> {
-    get_header_value(article, "Message-ID")
-}
+///
+/// Re-exports [`crate::storage::common::extract_message_id`] for convenience.
+pub use crate::storage::common::extract_message_id;
 
 /// Errors that can occur when querying for articles.
 #[derive(Debug, Clone)]
@@ -365,6 +365,48 @@ pub async fn handle_article_operation<W: AsyncWrite + Unpin>(
         Err(error) => handle_article_error(writer, error).await?,
     }
     Ok(())
+}
+
+/// Check bandwidth limit for authenticated non-admin users.
+///
+/// Returns `true` if the request was rejected (response already sent),
+/// `false` if the request can proceed.
+pub async fn check_bandwidth_rejected<W: AsyncWrite + Unpin>(
+    writer: &mut W,
+    session: &Session,
+    usage_tracker: &std::sync::Arc<UsageTracker>,
+    size: u64,
+) -> Result<bool> {
+    use crate::responses::RESP_403_BANDWIDTH_EXCEEDED;
+
+    if session.is_authenticated() && !session.is_admin() {
+        if let Some(username) = session.username() {
+            if usage_tracker.check_bandwidth(username, size).await
+                == LimitCheckResult::BandwidthExceeded
+            {
+                Span::current().record("outcome", "rejected_bandwidth");
+                write_simple(writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Record bandwidth usage for authenticated non-admin users.
+pub async fn record_bandwidth_usage(
+    session: &Session,
+    usage_tracker: &std::sync::Arc<UsageTracker>,
+    size: u64,
+    is_upload: bool,
+) {
+    if session.is_authenticated() && !session.is_admin() {
+        if let Some(username) = session.username() {
+            usage_tracker
+                .record_bandwidth(username, size, is_upload)
+                .await;
+        }
+    }
 }
 
 /// Handle errors from article queries consistently.

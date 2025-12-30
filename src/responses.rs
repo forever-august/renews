@@ -139,3 +139,13 @@ pub const RESP_REFERENCES: &str = "References:\r\n";
 pub const RESP_BYTES: &str = ":bytes\r\n";
 pub const RESP_LINES: &str = ":lines\r\n";
 pub const RESP_COLON: &str = ":\r\n";
+
+/// Format a streaming protocol response (CHECK/TAKETHIS).
+///
+/// Used for responses that include a message-id, such as:
+/// - 238/438 for CHECK
+/// - 239/439 for TAKETHIS
+#[inline]
+pub fn streaming_response(code: u16, message_id: &str) -> String {
+    format!("{code} {message_id}\r\n")
+}

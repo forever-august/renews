@@ -1,6 +1,9 @@
 //! Posting command handlers.
 
-use super::utils::{comprehensive_validate_article, read_message, write_simple};
+use super::utils::{
+    check_bandwidth_rejected, comprehensive_validate_article, read_message, record_bandwidth_usage,
+    write_simple,
+};
 use super::{CommandHandler, HandlerContext, HandlerResult};
 use crate::error::{AuthError, NntpError};
 use crate::limits::LimitCheckResult;
@@ -77,16 +80,9 @@ impl CommandHandler for PostHandler {
         Span::current().record("is_control", is_control);
 
         // Check per-user bandwidth limit (only for authenticated non-admin users)
-        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-            if let Some(username) = ctx.session.username() {
-                if ctx.usage_tracker.check_bandwidth(username, size).await
-                    == LimitCheckResult::BandwidthExceeded
-                {
-                    Span::current().record("outcome", "rejected_bandwidth");
-                    write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
-                    return Ok(());
-                }
-            }
+        if check_bandwidth_rejected(&mut ctx.writer, &ctx.session, &ctx.usage_tracker, size).await?
+        {
+            return Ok(());
         }
 
         // Comprehensive validation before queuing for POST (to maintain expected behavior)
@@ -118,13 +114,7 @@ impl CommandHandler for PostHandler {
         }
 
         // Record bandwidth usage for authenticated non-admin users
-        if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-            if let Some(username) = ctx.session.username() {
-                ctx.usage_tracker
-                    .record_bandwidth(username, size, true)
-                    .await;
-            }
-        }
+        record_bandwidth_usage(&ctx.session, &ctx.usage_tracker, size, true).await;
 
         Span::current().record("outcome", "accepted");
         write_simple(&mut ctx.writer, RESP_240_ARTICLE_RECEIVED).await?;

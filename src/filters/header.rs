@@ -2,12 +2,8 @@
 //!
 //! Validates that articles have required headers (From, Subject, Newsgroups).
 
-use super::ArticleFilter;
-use crate::Message;
-use crate::auth::DynAuth;
-use crate::config::Config;
+use super::{ArticleFilter, FilterContext};
 use crate::handlers::utils::{extract_newsgroups, has_header};
-use crate::storage::DynStorage;
 use anyhow::Result;
 
 /// Filter that validates required article headers
@@ -15,18 +11,11 @@ pub struct HeaderFilter;
 
 #[async_trait::async_trait]
 impl ArticleFilter for HeaderFilter {
-    async fn validate(
-        &self,
-        _storage: &DynStorage,
-        _auth: &DynAuth,
-        _cfg: &Config,
-        article: &Message,
-        _size: u64,
-    ) -> Result<()> {
+    async fn validate(&self, ctx: &FilterContext<'_>) -> Result<()> {
         // Check required headers
-        let has_from = has_header(article, "From");
-        let has_subject = has_header(article, "Subject");
-        let newsgroups = extract_newsgroups(article);
+        let has_from = has_header(ctx.article, "From");
+        let has_subject = has_header(ctx.article, "Subject");
+        let newsgroups = extract_newsgroups(ctx.article);
 
         if !has_from || !has_subject || newsgroups.is_empty() {
             return Err(anyhow::anyhow!("missing required headers"));

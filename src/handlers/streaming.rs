@@ -1,8 +1,10 @@
 //! Streaming command handlers (IHAVE, CHECK, TAKETHIS).
 
-use super::utils::{comprehensive_validate_article, read_message, write_simple};
+use super::utils::{
+    check_bandwidth_rejected, comprehensive_validate_article, read_message, record_bandwidth_usage,
+    write_simple,
+};
 use super::{CommandHandler, HandlerContext, HandlerResult};
-use crate::limits::LimitCheckResult;
 use crate::responses::*;
 use crate::{control, ensure_message_id, parse, parse_message};
 use tracing::Span;
@@ -56,16 +58,10 @@ impl CommandHandler for IHaveHandler {
             Span::current().record("size_bytes", size);
 
             // Check per-user bandwidth limit (only for authenticated non-admin users)
-            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-                if let Some(username) = ctx.session.username() {
-                    if ctx.usage_tracker.check_bandwidth(username, size).await
-                        == LimitCheckResult::BandwidthExceeded
-                    {
-                        Span::current().record("outcome", "rejected_bandwidth");
-                        write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
-                        return Ok(());
-                    }
-                }
+            if check_bandwidth_rejected(&mut ctx.writer, &ctx.session, &ctx.usage_tracker, size)
+                .await?
+            {
+                return Ok(());
             }
 
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
@@ -97,13 +93,7 @@ impl CommandHandler for IHaveHandler {
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
 
             // Record bandwidth usage for authenticated non-admin users
-            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-                if let Some(username) = ctx.session.username() {
-                    ctx.usage_tracker
-                        .record_bandwidth(username, size, true)
-                        .await;
-                }
-            }
+            record_bandwidth_usage(&ctx.session, &ctx.usage_tracker, size, true).await;
 
             Span::current().record("outcome", "accepted");
             write_simple(&mut ctx.writer, RESP_235_TRANSFER_OK).await?;
@@ -124,10 +114,10 @@ impl CommandHandler for CheckHandler {
 
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 Span::current().record("outcome", "already_have");
-                write_simple(&mut ctx.writer, &format!("438 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(438, id)).await?;
             } else {
                 Span::current().record("outcome", "send_it");
-                write_simple(&mut ctx.writer, &format!("238 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(238, id)).await?;
             }
         } else {
             write_simple(&mut ctx.writer, RESP_501_MSGID_REQUIRED).await?;
@@ -147,13 +137,13 @@ impl CommandHandler for TakeThisHandler {
             let msg = read_message(&mut ctx.reader).await?;
             let Ok((_, mut article)) = parse_message(&msg) else {
                 Span::current().record("outcome", "rejected_parse");
-                write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(439, id)).await?;
                 return Ok(());
             };
 
             if ctx.storage.get_article_by_id(id).await?.is_some() {
                 Span::current().record("outcome", "already_have");
-                write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(439, id)).await?;
                 return Ok(());
             }
 
@@ -170,11 +160,11 @@ impl CommandHandler for TakeThisHandler {
             if is_control {
                 if control::handle_control(&article, &ctx.storage, &ctx.auth, &cfg_guard).await? {
                     Span::current().record("outcome", "accepted_control");
-                    write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
+                    write_simple(&mut ctx.writer, &streaming_response(239, id)).await?;
                     return Ok(());
                 } else {
                     Span::current().record("outcome", "rejected_control");
-                    write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                    write_simple(&mut ctx.writer, &streaming_response(439, id)).await?;
                     return Ok(());
                 }
             }
@@ -184,16 +174,10 @@ impl CommandHandler for TakeThisHandler {
             Span::current().record("size_bytes", size);
 
             // Check per-user bandwidth limit (only for authenticated non-admin users)
-            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-                if let Some(username) = ctx.session.username() {
-                    if ctx.usage_tracker.check_bandwidth(username, size).await
-                        == LimitCheckResult::BandwidthExceeded
-                    {
-                        Span::current().record("outcome", "rejected_bandwidth");
-                        write_simple(&mut ctx.writer, RESP_403_BANDWIDTH_EXCEEDED).await?;
-                        return Ok(());
-                    }
-                }
+            if check_bandwidth_rejected(&mut ctx.writer, &ctx.session, &ctx.usage_tracker, size)
+                .await?
+            {
+                return Ok(());
             }
 
             if comprehensive_validate_article(&ctx.storage, &ctx.auth, &cfg_guard, &article, size)
@@ -201,7 +185,7 @@ impl CommandHandler for TakeThisHandler {
                 .is_err()
             {
                 Span::current().record("outcome", "rejected_validation");
-                write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(439, id)).await?;
                 return Ok(());
             }
             drop(cfg_guard);
@@ -217,7 +201,7 @@ impl CommandHandler for TakeThisHandler {
             // Store immediately for protocol compliance (duplicate TAKETHIS should be detected)
             if ctx.storage.store_article(&article).await.is_err() {
                 Span::current().record("outcome", "rejected_storage");
-                write_simple(&mut ctx.writer, &format!("439 {id}\r\n")).await?;
+                write_simple(&mut ctx.writer, &streaming_response(439, id)).await?;
                 return Ok(());
             }
 
@@ -225,16 +209,10 @@ impl CommandHandler for TakeThisHandler {
             let _ = ctx.queue.submit(queued_article).await; // Don't fail if queue is full since we already stored
 
             // Record bandwidth usage for authenticated non-admin users
-            if ctx.session.is_authenticated() && !ctx.session.is_admin() {
-                if let Some(username) = ctx.session.username() {
-                    ctx.usage_tracker
-                        .record_bandwidth(username, size, true)
-                        .await;
-                }
-            }
+            record_bandwidth_usage(&ctx.session, &ctx.usage_tracker, size, true).await;
 
             Span::current().record("outcome", "accepted");
-            write_simple(&mut ctx.writer, &format!("239 {id}\r\n")).await?;
+            write_simple(&mut ctx.writer, &streaming_response(239, id)).await?;
         } else {
             write_simple(&mut ctx.writer, RESP_501_MSGID_REQUIRED).await?;
         }

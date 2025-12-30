@@ -3,11 +3,8 @@
 //! Integrates with external Milter servers to filter news articles using the
 //! industry-standard Milter protocol, supporting both plain TCP and TLS connections.
 
-use super::ArticleFilter;
+use super::{ArticleFilter, FilterContext};
 use crate::Message;
-use crate::auth::DynAuth;
-use crate::config::Config;
-use crate::storage::DynStorage;
 use anyhow::Result;
 use serde::Deserialize;
 use std::error::Error;
@@ -273,15 +270,8 @@ impl MilterFilter {
 
 #[async_trait::async_trait]
 impl ArticleFilter for MilterFilter {
-    async fn validate(
-        &self,
-        _storage: &DynStorage,
-        _auth: &DynAuth,
-        _cfg: &Config,
-        article: &Message,
-        _size: u64,
-    ) -> Result<()> {
-        self.process_article(article).await?;
+    async fn validate(&self, ctx: &FilterContext<'_>) -> Result<()> {
+        self.process_article(ctx.article).await?;
         Ok(())
     }
 

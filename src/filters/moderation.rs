@@ -2,12 +2,8 @@
 //!
 //! Validates moderated group approval and PGP signatures.
 
-use super::ArticleFilter;
-use crate::Message;
-use crate::auth::DynAuth;
-use crate::config::Config;
+use super::{ArticleFilter, FilterContext};
 use crate::handlers::utils::{extract_newsgroups, get_header_values};
-use crate::storage::DynStorage;
 use anyhow::Result;
 use smallvec::SmallVec;
 
@@ -16,30 +12,23 @@ pub struct ModerationFilter;
 
 #[async_trait::async_trait]
 impl ArticleFilter for ModerationFilter {
-    async fn validate(
-        &self,
-        storage: &DynStorage,
-        auth: &DynAuth,
-        _cfg: &Config,
-        article: &Message,
-        _size: u64,
-    ) -> Result<()> {
+    async fn validate(&self, ctx: &FilterContext<'_>) -> Result<()> {
         // Get newsgroups from the article
-        let newsgroups = extract_newsgroups(article);
+        let newsgroups = extract_newsgroups(ctx.article);
 
         // Get all approved values and signatures
-        let approved_values = get_header_values(article, "Approved");
-        let sig_headers = get_header_values(article, "X-PGP-Sig");
+        let approved_values = get_header_values(ctx.article, "Approved");
+        let sig_headers = get_header_values(ctx.article, "X-PGP-Sig");
 
         // Check each newsgroup for moderation requirements
         for group in &newsgroups {
-            if storage.is_group_moderated(group).await? {
+            if ctx.storage.is_group_moderated(group).await? {
                 // Find moderators for this specific group
                 let mut group_moderators = SmallVec::<[String; 2]>::new();
                 let mut group_signatures = SmallVec::<[String; 2]>::new();
 
                 for (i, approved) in approved_values.iter().enumerate() {
-                    if auth.is_moderator(approved, group).await? {
+                    if ctx.auth.is_moderator(approved, group).await? {
                         group_moderators.push(approved.clone());
                         if let Some(sig) = sig_headers.get(i) {
                             group_signatures.push(sig.clone());
@@ -70,7 +59,8 @@ impl ArticleFilter for ModerationFilter {
                         .ok_or_else(|| anyhow::anyhow!("bad signature"))?;
                     let sig_rest = words.collect::<Vec<_>>().join("\n");
 
-                    let mut tmp_headers: SmallVec<[(String, String); 8]> = article
+                    let mut tmp_headers: SmallVec<[(String, String); 8]> = ctx
+                        .article
                         .headers
                         .iter()
                         .filter(|(k, _)| !k.eq_ignore_ascii_case("Approved"))
@@ -80,17 +70,17 @@ impl ArticleFilter for ModerationFilter {
 
                     let tmp_msg = crate::Message {
                         headers: tmp_headers,
-                        body: article.body.clone(),
+                        body: ctx.article.body.clone(),
                     };
 
                     crate::control::verify_pgp(
                         &tmp_msg,
-                        auth,
+                        ctx.auth,
                         approved,
                         version,
                         signed,
                         &sig_rest,
-                        &_cfg.pgp_key_servers,
+                        &ctx.cfg.pgp_key_servers,
                     )
                     .await?;
                 }
