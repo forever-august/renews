@@ -1,6 +1,6 @@
 use renews::filters::header::HeaderFilter;
 use renews::filters::size::SizeFilter;
-use renews::filters::{ArticleFilter, FilterChain};
+use renews::filters::{ArticleFilter, FilterChain, FilterContext};
 use renews::{Message, config::Config};
 use smallvec::smallvec;
 use std::sync::Arc;
@@ -21,7 +21,14 @@ async fn test_header_filter_valid() {
         body: "Test body".to_string(),
     };
 
-    let result = filter.validate(&storage, &auth, &cfg, &article, 100).await;
+    let ctx = FilterContext {
+        storage: &storage,
+        auth: &auth,
+        cfg: &cfg,
+        article: &article,
+        size: 100,
+    };
+    let result = filter.validate(&ctx).await;
     assert!(result.is_ok());
 }
 
@@ -40,7 +47,14 @@ async fn test_header_filter_missing_from() {
         body: "Test body".to_string(),
     };
 
-    let result = filter.validate(&storage, &auth, &cfg, &article, 100).await;
+    let ctx = FilterContext {
+        storage: &storage,
+        auth: &auth,
+        cfg: &cfg,
+        article: &article,
+        size: 100,
+    };
+    let result = filter.validate(&ctx).await;
     assert!(result.is_err());
     assert_eq!(result.unwrap_err().to_string(), "missing required headers");
 }
@@ -63,7 +77,14 @@ async fn test_size_filter_within_limit() {
         body: "Test body".to_string(),
     };
 
-    let result = filter.validate(&storage, &auth, &cfg, &article, 500).await;
+    let ctx = FilterContext {
+        storage: &storage,
+        auth: &auth,
+        cfg: &cfg,
+        article: &article,
+        size: 500,
+    };
+    let result = filter.validate(&ctx).await;
     assert!(result.is_ok());
 }
 
@@ -85,7 +106,14 @@ async fn test_size_filter_exceeds_limit() {
         body: "Test body".to_string(),
     };
 
-    let result = filter.validate(&storage, &auth, &cfg, &article, 1500).await;
+    let ctx = FilterContext {
+        storage: &storage,
+        auth: &auth,
+        cfg: &cfg,
+        article: &article,
+        size: 1500,
+    };
+    let result = filter.validate(&ctx).await;
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err().to_string(),

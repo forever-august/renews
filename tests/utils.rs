@@ -489,6 +489,44 @@ impl ClientMock {
         Self { steps: Vec::new() }
     }
 
+    /// Create a ClientMock that sends AUTHINFO USER/PASS commands first.
+    ///
+    /// This is a convenience constructor for tests that require authentication.
+    pub fn with_auth(username: &str, password: &str) -> Self {
+        Self::new()
+            .expect(
+                &format!("AUTHINFO USER {username}"),
+                "381 password required",
+            )
+            .expect(
+                &format!("AUTHINFO PASS {password}"),
+                "281 authentication accepted",
+            )
+    }
+
+    /// Create a ClientMock that sends MODE READER first.
+    ///
+    /// This is a convenience constructor for tests that use reader mode.
+    /// The `can_post` parameter determines the expected response.
+    pub fn with_mode_reader(can_post: bool) -> Self {
+        let response = if can_post {
+            "200 Posting allowed"
+        } else {
+            "201 Posting prohibited"
+        };
+        Self::new().expect("MODE READER", response)
+    }
+
+    /// Create a ClientMock that sends MODE READER followed by GROUP.
+    ///
+    /// This is a convenience constructor for tests that need to select a group.
+    pub fn with_group(group: &str, count: u64, low: u64, high: u64) -> Self {
+        Self::with_mode_reader(false).expect(
+            &format!("GROUP {group}"),
+            &format!("211 {count} {low} {high} {group}"),
+        )
+    }
+
     /// Expect a command with a single-line response.
     pub fn expect(mut self, cmd: &str, resp: &str) -> Self {
         self.steps
@@ -647,4 +685,87 @@ pub fn create_failure_test_config(
     config.article_queue_capacity = queue_capacity;
     config.article_worker_count = 1;
     config
+}
+
+// =============================================================================
+// Test Article Helpers
+// =============================================================================
+
+/// Store a test article from raw text and return the parsed message.
+///
+/// This is a convenience wrapper around `parse_message` + `store_article` that
+/// is commonly used in tests.
+pub async fn store_test_article(storage: &dyn Storage, text: &str) -> renews::Message {
+    let (_, msg) = renews::parse_message(text).expect("parse_message");
+    storage.store_article(&msg).await.expect("store_article");
+    msg
+}
+
+/// Create a queued article for testing queue-based processing.
+///
+/// Returns a `QueuedArticle` ready to be submitted to an `ArticleQueue`.
+pub fn create_test_queued_article(
+    message_id: &str,
+    newsgroups: &str,
+    body: &str,
+) -> renews::queue::QueuedArticle {
+    let text = format!(
+        "Message-ID: {message_id}\r\nNewsgroups: {newsgroups}\r\nFrom: test@example.com\r\nSubject: Test\r\n\r\n{body}"
+    );
+    let (_, msg) = renews::parse_message(&text).expect("parse_message");
+    let size = text.len() as u64;
+    renews::queue::QueuedArticle {
+        message: msg,
+        size,
+        is_control: false,
+        already_validated: false,
+    }
+}
+
+/// Collect all groups from storage into a Vec.
+///
+/// This is a convenience wrapper for the common pattern of collecting
+/// stream results into a Vec.
+pub async fn collect_groups(storage: &dyn Storage) -> Vec<String> {
+    use futures_util::StreamExt;
+    let mut groups = Vec::new();
+    let mut stream = storage.list_groups();
+    while let Some(result) = stream.next().await {
+        groups.push(result.expect("list_groups"));
+    }
+    groups
+}
+
+/// Collect all article numbers from a group into a Vec.
+///
+/// This is a convenience wrapper for the common pattern of collecting
+/// stream results into a Vec.
+pub async fn collect_article_numbers(storage: &dyn Storage, group: &str) -> Vec<u64> {
+    use futures_util::StreamExt;
+    let mut numbers = Vec::new();
+    let mut stream = storage.list_article_numbers(group);
+    while let Some(result) = stream.next().await {
+        numbers.push(result.expect("list_article_numbers"));
+    }
+    numbers
+}
+
+/// Extract Message-ID header value from a message.
+///
+/// Convenience function for tests that need to verify Message-ID values.
+pub fn get_message_id(msg: &renews::Message) -> Option<String> {
+    msg.headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
+        .map(|(_, v)| v.clone())
+}
+
+/// Extract a header value from a message (case-insensitive).
+///
+/// Convenience function for tests that need to verify header values.
+pub fn get_header(msg: &renews::Message, name: &str) -> Option<String> {
+    msg.headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.clone())
 }
