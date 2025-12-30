@@ -1,8 +1,7 @@
-use futures_util::StreamExt;
 use renews::control::canonical_text;
 use renews::parse_message;
 
-use crate::utils::{self, ClientMock, build_sig};
+use crate::utils::{self, ClientMock, build_sig, collect_article_numbers};
 
 const ADMIN_PUB: &str = include_str!("../data/admin.pub.asc");
 
@@ -169,17 +168,9 @@ async fn cross_post_different_moderators() {
     // Wait for queue processing
     tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
 
-    let mut mod_one_nums = Vec::new();
-    let mut stream = storage.list_article_numbers("mod.one");
-    while let Some(result) = stream.next().await {
-        mod_one_nums.push(result.unwrap());
-    }
+    let mod_one_nums = collect_article_numbers(&*storage, "mod.one").await;
     assert_eq!(mod_one_nums, vec![1]);
 
-    let mut mod_two_nums = Vec::new();
-    let mut stream = storage.list_article_numbers("mod.two");
-    while let Some(result) = stream.next().await {
-        mod_two_nums.push(result.unwrap());
-    }
+    let mod_two_nums = collect_article_numbers(&*storage, "mod.two").await;
     assert_eq!(mod_two_nums, vec![1]);
 }

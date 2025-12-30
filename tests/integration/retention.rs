@@ -1,7 +1,7 @@
+use crate::utils::store_test_article;
 use renews::retention::cleanup_expired_articles;
 use renews::{
     config::Config,
-    parse_message,
     storage::{Storage, sqlite::SqliteStorage},
 };
 use std::sync::Arc;
@@ -21,8 +21,11 @@ retention_days = 0
     .unwrap();
     let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new("sqlite::memory:").await.unwrap());
     storage.add_group("misc", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nB").unwrap();
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(
+        &*storage,
+        "Message-ID: <1@test>\r\nNewsgroups: misc\r\n\r\nB",
+    )
+    .await;
     sleep(StdDuration::from_secs(1)).await;
     cleanup_expired_articles(&*storage, &cfg).await.unwrap();
     assert!(
@@ -50,8 +53,7 @@ retention_days = 10
     storage.add_group("misc", false).await.unwrap();
     let past = (chrono::Utc::now() - ChronoDuration::days(1)).to_rfc2822();
     let text = format!("Message-ID: <2@test>\r\nNewsgroups: misc\r\nExpires: {past}\r\n\r\nB");
-    let (_, msg) = parse_message(&text).unwrap();
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&*storage, &text).await;
     cleanup_expired_articles(&*storage, &cfg).await.unwrap();
     assert!(
         storage

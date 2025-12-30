@@ -1,8 +1,7 @@
-use futures_util::StreamExt;
 use renews::control::canonical_text;
 use renews::parse_message;
 
-use crate::utils::{self, ClientMock, build_sig};
+use crate::utils::{self, ClientMock, build_sig, collect_groups, store_test_article};
 
 const ADMIN_PUB: &str = include_str!("../data/admin.pub.asc");
 
@@ -46,11 +45,7 @@ async fn control_newgroup_and_rmgroup() {
         )
         .run(storage.clone(), auth.clone())
         .await;
-    let mut groups = Vec::new();
-    let mut stream = storage.list_groups();
-    while let Some(result) = stream.next().await {
-        groups.push(result.unwrap());
-    }
+    let groups = collect_groups(&*storage).await;
     assert!(groups.contains(&"test.group".to_string()));
 
     let article = build_control_article("rmgroup test.group", "rm body\n");
@@ -65,11 +60,7 @@ async fn control_newgroup_and_rmgroup() {
         )
         .run(storage.clone(), auth.clone())
         .await;
-    let mut groups = Vec::new();
-    let mut stream = storage.list_groups();
-    while let Some(result) = stream.next().await {
-        groups.push(result.unwrap());
-    }
+    let groups = collect_groups(&*storage).await;
     assert!(!groups.contains(&"test.group".to_string()));
 }
 
@@ -77,11 +68,11 @@ async fn control_newgroup_and_rmgroup() {
 async fn control_cancel_removes_article() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();
-    let (_, art) = parse_message(
+    store_test_article(
+        &*storage,
         "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nFrom: u@test\r\nSubject: t\r\n\r\nBody",
     )
-    .unwrap();
-    storage.store_article(&art).await.unwrap();
+    .await;
     auth.add_user("admin@example.org", "x").await.unwrap();
     auth.add_admin("admin@example.org", ADMIN_PUB)
         .await
@@ -119,8 +110,7 @@ async fn admin_cancel_ignores_lock() {
     let orig = format!(
         "Message-ID: <al@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
-    let (_, msg) = parse_message(&orig).unwrap();
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&*storage, &orig).await;
 
     // admin setup
     auth.add_user("admin@example.org", "x").await.unwrap();

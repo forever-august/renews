@@ -1,8 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use renews::parse_message;
 use sha2::{Digest, Sha256};
 
-use crate::utils::{self, ClientMock};
+use crate::utils::{self, ClientMock, store_test_article};
 
 #[tokio::test]
 async fn cancel_key_allows_cancel() {
@@ -16,8 +15,7 @@ async fn cancel_key_allows_cancel() {
     let orig = format!(
         "Message-ID: <a@test>\r\nNewsgroups: misc.test\r\nCancel-Lock: sha256:{lock_b64}\r\n\r\nBody"
     );
-    let (_, msg) = parse_message(&orig).unwrap();
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&*storage, &orig).await;
 
     let cancel = format!(
         "Message-ID: <c@test>\r\nNewsgroups: misc.test\r\nControl: cancel <a@test>\r\nCancel-Key: sha256:{key_b64}\r\n\r\n.\r\n"

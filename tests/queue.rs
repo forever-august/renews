@@ -4,13 +4,13 @@ mod utils;
 
 use renews::{
     auth::sqlite::SqliteAuth,
-    queue::{ArticleQueue, QueuedArticle, WorkerPool},
+    queue::{ArticleQueue, WorkerPool},
     storage::{Storage, sqlite::SqliteStorage},
 };
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::sync::RwLock;
-use utils::{connect, setup_server};
+use utils::{connect, create_test_queued_article, setup_server};
 
 #[tokio::test]
 async fn test_queue_functionality() {
@@ -34,21 +34,12 @@ async fn test_queue_functionality() {
     // Start workers
     let _worker_handles = worker_pool.start().await;
 
-    // Create a test article
-    let message = renews::parse_message(
-        "Message-ID: <test@example.com>\r\nFrom: test@example.com\r\nSubject: Test\r\nNewsgroups: test.group\r\n\r\nTest body"
-    ).unwrap().1;
-
     // Add the group first
     storage.add_group("test.group", false).await.unwrap();
 
     // Submit to queue
-    let queued_article = QueuedArticle {
-        message: message.clone(),
-        size: 100,
-        is_control: false,
-        already_validated: false,
-    };
+    let queued_article =
+        create_test_queued_article("<test@example.com>", "test.group", "Test body");
 
     queue.submit(queued_article).await.unwrap();
 

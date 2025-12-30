@@ -1,15 +1,11 @@
-use futures_util::StreamExt;
-use renews::{
-    parse_message,
-    storage::{Storage, sqlite::SqliteStorage},
-};
+use crate::utils::{collect_groups, get_header, get_message_id, store_test_article};
+use renews::storage::{Storage, sqlite::SqliteStorage};
 
 #[tokio::test]
 async fn store_and_retrieve_article() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
     let text = "Message-ID: <1@test>\r\nNewsgroups: group.test\r\nSubject: Hello\r\n\r\nBody";
-    let (_, msg) = parse_message(text).unwrap();
-    storage.store_article(&msg).await.unwrap();
+    let msg = store_test_article(&storage, text).await;
     let fetched = storage
         .get_article_by_number("group.test", 1)
         .await
@@ -21,19 +17,19 @@ async fn store_and_retrieve_article() {
         .await
         .unwrap()
         .expect("article by id");
-    assert_eq!(fetched_id.headers, fetched.headers);
+    assert_eq!(fetched_id.headers, msg.headers);
     // drop storage to close connections
 }
 
 #[tokio::test]
 async fn numbering_is_per_group() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
-    let (_, msg1) = parse_message("Message-ID: <1@test>\r\nNewsgroups: g1,g2\r\n\r\nA").unwrap();
-    let (_, msg2) = parse_message("Message-ID: <2@test>\r\nNewsgroups: g1\r\n\r\nB").unwrap();
-
-    // Store articles and verify numbering through retrieval
-    storage.store_article(&msg1).await.unwrap();
-    storage.store_article(&msg2).await.unwrap();
+    store_test_article(
+        &storage,
+        "Message-ID: <1@test>\r\nNewsgroups: g1,g2\r\n\r\nA",
+    )
+    .await;
+    store_test_article(&storage, "Message-ID: <2@test>\r\nNewsgroups: g1\r\n\r\nB").await;
 
     // Verify numbering is per group
     assert!(
@@ -84,30 +80,18 @@ async fn numbering_is_per_group() {
 #[tokio::test]
 async fn add_and_list_groups() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
-    let mut groups = Vec::new();
-    let mut stream = storage.list_groups();
-    while let Some(result) = stream.next().await {
-        groups.push(result.unwrap());
-    }
+    let groups = collect_groups(&storage).await;
     assert!(groups.is_empty());
 
     storage.add_group("g1", false).await.unwrap();
     storage.add_group("g2", false).await.unwrap();
 
-    let mut groups = Vec::new();
-    let mut stream = storage.list_groups();
-    while let Some(result) = stream.next().await {
-        groups.push(result.unwrap());
-    }
+    let groups = collect_groups(&storage).await;
     assert_eq!(groups, vec!["g1".to_string(), "g2".to_string()]);
 
     storage.remove_group("g1").await.unwrap();
 
-    let mut groups = Vec::new();
-    let mut stream = storage.list_groups();
-    while let Some(result) = stream.next().await {
-        groups.push(result.unwrap());
-    }
+    let groups = collect_groups(&storage).await;
     assert_eq!(groups, vec!["g2".to_string()]);
 }
 
@@ -120,8 +104,11 @@ async fn purge_old_articles() {
     let storage = SqliteStorage::new("sqlite::memory:").await.expect("init");
     storage.add_group("g1", false).await.unwrap();
     storage.add_group("g2", false).await.unwrap();
-    let (_, msg) = parse_message("Message-ID: <1@test>\r\nNewsgroups: g1,g2\r\n\r\nB").unwrap();
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(
+        &storage,
+        "Message-ID: <1@test>\r\nNewsgroups: g1,g2\r\n\r\nB",
+    )
+    .await;
 
     sleep(StdDuration::from_secs(1)).await;
     storage.purge_group_before("g1", Utc::now()).await.unwrap();
@@ -161,10 +148,7 @@ async fn store_article_in_multiple_groups() {
 
     // Create an article with multiple newsgroups
     let text = "Message-ID: <multi@test>\r\nNewsgroups: group1,group2,group3\r\nSubject: Multi\r\n\r\nBody";
-    let (_, msg) = parse_message(text).unwrap();
-
-    // Store the article - it should be automatically stored in all groups
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&storage, text).await;
 
     // Verify the article is in all three groups
     let article1 = storage
@@ -188,31 +172,9 @@ async fn store_article_in_multiple_groups() {
     assert_eq!(article3.body, "Body");
 
     // Verify they're the same message by checking Message-ID
-    let msg_id1 = article1
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
-        .unwrap()
-        .1
-        .clone();
-    let msg_id2 = article2
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
-        .unwrap()
-        .1
-        .clone();
-    let msg_id3 = article3
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
-        .unwrap()
-        .1
-        .clone();
-
-    assert_eq!(msg_id1, "<multi@test>");
-    assert_eq!(msg_id2, "<multi@test>");
-    assert_eq!(msg_id3, "<multi@test>");
+    assert_eq!(get_message_id(&article1), Some("<multi@test>".to_string()));
+    assert_eq!(get_message_id(&article2), Some("<multi@test>".to_string()));
+    assert_eq!(get_message_id(&article3), Some("<multi@test>".to_string()));
 }
 
 #[tokio::test]
@@ -222,10 +184,7 @@ async fn store_article_without_newsgroups_header() {
 
     // Create an article without Newsgroups header
     let text = "Message-ID: <no-groups@test>\r\nSubject: No Groups\r\n\r\nBody";
-    let (_, msg) = parse_message(text).unwrap();
-
-    // Store the article - should succeed but not be in any group
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&storage, text).await;
 
     // Verify the article is not retrievable by group (since it wasn't posted to any)
     let article = storage.get_article_by_number("test", 1).await.unwrap();
@@ -245,10 +204,7 @@ async fn store_article_multiple_groups_comma_separated() {
 
     // Create an article with multiple newsgroups in a single header (comma-separated)
     let text = "Message-ID: <multi@test>\r\nNewsgroups: group1,group2,group3\r\nSubject: Multi-post\r\n\r\nBody content";
-    let (_, msg) = parse_message(text).unwrap();
-
-    // Store the article - it should be automatically stored in all groups
-    storage.store_article(&msg).await.unwrap();
+    store_test_article(&storage, text).await;
 
     // Verify the article is in all three groups at position 1
     for group in ["group1", "group2", "group3"] {
@@ -260,23 +216,12 @@ async fn store_article_multiple_groups_comma_separated() {
         assert_eq!(article.body, "Body content");
 
         // Verify the Message-ID is consistent
-        let msg_id = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Message-ID"))
-            .unwrap()
-            .1
-            .clone();
-        assert_eq!(msg_id, "<multi@test>");
+        assert_eq!(get_message_id(&article), Some("<multi@test>".to_string()));
 
         // Verify the Newsgroups header contains all groups
-        let newsgroups = article
-            .headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case("Newsgroups"))
-            .unwrap()
-            .1
-            .clone();
-        assert_eq!(newsgroups, "group1,group2,group3");
+        assert_eq!(
+            get_header(&article, "Newsgroups"),
+            Some("group1,group2,group3".to_string())
+        );
     }
 }
