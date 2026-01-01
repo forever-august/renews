@@ -100,6 +100,112 @@ enum AdminCommand {
         /// Username to reset usage for
         user: String,
     },
+    /// Import newsgroups from a file (ISC format: group<whitespace>description). Use '-' for stdin.
+    ImportGroups {
+        /// Path to the newsgroups file, or '-' for stdin
+        file: std::path::PathBuf,
+    },
+    /// Export newsgroups to stdout (ISC format: group<tab>description)
+    ExportGroups,
+}
+
+/// Import newsgroups from a file in ISC format (group<whitespace>description).
+///
+/// Lines starting with '#' are treated as comments.
+/// Empty lines are skipped.
+/// If the description ends with "(Moderated)" (case-insensitive), the group
+/// is marked as moderated and the suffix is stripped from the description.
+/// If file is "-", reads from stdin.
+async fn import_groups(storage: &storage::DynStorage, file: &std::path::Path) -> Result<()> {
+    use std::io::BufRead;
+
+    let reader: Box<dyn BufRead> = if file.as_os_str() == "-" {
+        Box::new(std::io::BufReader::new(std::io::stdin()))
+    } else {
+        let file_handle = std::fs::File::open(file)
+            .map_err(|e| anyhow::anyhow!("Failed to open file '{}': {}", file.display(), e))?;
+        Box::new(std::io::BufReader::new(file_handle))
+    };
+
+    let mut imported = 0u64;
+    let mut skipped = 0u64;
+
+    for (line_num, line_result) in reader.lines().enumerate() {
+        let line = line_result
+            .map_err(|e| anyhow::anyhow!("Failed to read line {}: {}", line_num + 1, e))?;
+
+        // Trim trailing whitespace/newlines
+        let line = line.trim_end();
+
+        // Skip empty lines and comments
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Split on first whitespace to get group name and description
+        let (group_name, description) = if let Some(pos) = line.find([' ', '\t']) {
+            let name = line[..pos].trim();
+            let desc = line[pos..].trim();
+            (name, desc)
+        } else {
+            // No whitespace - entire line is the group name, empty description
+            (line.trim(), "")
+        };
+
+        // Validate group name
+        if group_name.is_empty() {
+            eprintln!("Warning: skipping line {}: empty group name", line_num + 1);
+            skipped += 1;
+            continue;
+        }
+
+        // Check for (Moderated) suffix (case-insensitive)
+        let (description, moderated) = if description.to_lowercase().ends_with("(moderated)") {
+            let desc = description[..description.len() - 11].trim_end();
+            (desc, true)
+        } else {
+            (description, false)
+        };
+
+        // Add or update the group
+        storage
+            .add_group_with_description(group_name, moderated, description)
+            .await?;
+        imported += 1;
+    }
+
+    println!("Imported {imported} groups, skipped {skipped} lines");
+    Ok(())
+}
+
+/// Export newsgroups to stdout in ISC format (group<tab>description).
+///
+/// For moderated groups, appends "(Moderated)" to the description if not already present.
+/// Groups with empty descriptions are output as just the group name.
+async fn export_groups(storage: &storage::DynStorage) -> Result<()> {
+    use futures_util::StreamExt;
+
+    let mut groups_stream = storage.list_groups_with_descriptions();
+    while let Some(result) = groups_stream.next().await {
+        let (group, description) = result?;
+        let moderated = storage.is_group_moderated(&group).await?;
+
+        let line = if description.is_empty() {
+            if moderated {
+                format!("{group}\t(Moderated)")
+            } else {
+                group
+            }
+        } else if moderated && !description.to_lowercase().ends_with("(moderated)") {
+            format!("{group}\t{description} (Moderated)")
+        } else {
+            format!("{group}\t{description}")
+        };
+
+        println!("{line}");
+    }
+
+    Ok(())
 }
 
 async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
@@ -248,6 +354,12 @@ async fn run_admin(cmd: AdminCommand, cfg: &Config) -> Result<()> {
         AdminCommand::ResetUsage { user } => {
             auth.reset_user_usage(&user).await?;
             println!("Usage counters reset for user '{user}'");
+        }
+        AdminCommand::ImportGroups { file } => {
+            import_groups(&storage, &file).await?;
+        }
+        AdminCommand::ExportGroups => {
+            export_groups(&storage).await?;
         }
     }
     Ok(())
