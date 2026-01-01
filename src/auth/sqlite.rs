@@ -1,6 +1,5 @@
 use super::{AuthProvider, async_trait};
 use crate::limits::{UserLimits, UserUsage};
-use crate::migrations::Migrator;
 use anyhow::Result;
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -9,41 +8,6 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
 };
 use std::str::FromStr;
-
-// SQL schemas for SQLite authentication
-const USERS_TABLE: &str = "CREATE TABLE IF NOT EXISTS users (
-        username TEXT PRIMARY KEY,
-        password_hash TEXT NOT NULL,
-        key TEXT
-    )";
-
-const ADMINS_TABLE: &str = "CREATE TABLE IF NOT EXISTS admins (
-        username TEXT PRIMARY KEY REFERENCES users(username)
-    )";
-
-const MODERATORS_TABLE: &str = "CREATE TABLE IF NOT EXISTS moderators (
-        username TEXT REFERENCES users(username),
-        pattern TEXT,
-        PRIMARY KEY(username, pattern)
-    )";
-
-const USER_LIMITS_TABLE: &str = "CREATE TABLE IF NOT EXISTS user_limits (
-        username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
-        can_post INTEGER,
-        max_connections INTEGER,
-        bandwidth_limit_bytes INTEGER,
-        bandwidth_period_secs INTEGER,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )";
-
-const USER_USAGE_TABLE: &str = "CREATE TABLE IF NOT EXISTS user_usage (
-        username TEXT PRIMARY KEY REFERENCES users(username) ON DELETE CASCADE,
-        bytes_uploaded INTEGER NOT NULL DEFAULT 0,
-        bytes_downloaded INTEGER NOT NULL DEFAULT 0,
-        window_start_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )";
 
 #[derive(Clone)]
 pub struct SqliteAuth {
@@ -88,52 +52,15 @@ Possible causes:
                 )
             })?;
 
-        // Set up migrator to check database state
-        let migrator = super::migrations::sqlite::SqliteAuthMigrator::new(pool.clone());
-
-        if migrator.is_fresh_database().await {
-            // Fresh database: initialize with current schema
-            tracing::info!(
-                "Initializing fresh SQLite authentication database at '{}'",
-                path
-            );
-
-            // Create authentication schema
-            sqlx::query(USERS_TABLE).execute(&pool).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to create users table in SQLite authentication database '{path}': {e}"
-                )
-            })?;
-            sqlx::query(ADMINS_TABLE).execute(&pool).await.map_err(|e| {
-                anyhow::anyhow!("Failed to create admins table in SQLite authentication database '{path}': {e}")
-            })?;
-            sqlx::query(MODERATORS_TABLE).execute(&pool).await.map_err(|e| {
-                anyhow::anyhow!("Failed to create moderators table in SQLite authentication database '{path}': {e}")
-            })?;
-            sqlx::query(USER_LIMITS_TABLE).execute(&pool).await.map_err(|e| {
-                anyhow::anyhow!("Failed to create user_limits table in SQLite authentication database '{path}': {e}")
-            })?;
-            sqlx::query(USER_USAGE_TABLE).execute(&pool).await.map_err(|e| {
-                anyhow::anyhow!("Failed to create user_usage table in SQLite authentication database '{path}': {e}")
-            })?;
-
-            // Set current version to latest (version 2 includes limits/usage tables)
-            migrator.set_version(2).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to set initial schema version for SQLite auth database '{path}': {e}"
-                )
-            })?;
-
-            tracing::info!("Successfully initialized SQLite authentication database at version 2");
-        } else {
-            // Existing database: apply any pending migrations
-            tracing::info!(
-                "Found existing SQLite authentication database, checking for migrations"
-            );
-            migrator.migrate_to_latest().await.map_err(|e| {
+        // Run migrations using sqlx's built-in migration system
+        sqlx::migrate!("src/auth/migrations/sqlite")
+            .run(&pool)
+            .await
+            .map_err(|e| {
                 anyhow::anyhow!("Failed to run auth migrations for SQLite database '{path}': {e}")
             })?;
-        }
+
+        tracing::info!("SQLite authentication database ready at '{}'", path);
 
         Ok(Self { pool })
     }

@@ -11,7 +11,6 @@ pub mod error;
 pub mod filters;
 pub mod handlers;
 pub mod limits;
-mod migrations;
 pub mod overview;
 pub mod peers;
 pub mod prelude;

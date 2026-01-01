@@ -3,7 +3,6 @@ use super::{
     U64Stream,
     common::{Headers, extract_message_id, parse_newsgroups_from_message},
 };
-use crate::migrations::Migrator;
 use anyhow::Result;
 use async_stream::stream;
 use async_trait::async_trait;
@@ -13,37 +12,6 @@ use sqlx::{
     postgres::{PgConnectOptions, PgPoolOptions},
 };
 use std::str::FromStr;
-
-// SQL schemas for PostgreSQL storage
-const MESSAGES_TABLE: &str = "CREATE TABLE IF NOT EXISTS messages (
-        message_id TEXT PRIMARY KEY,
-        headers TEXT,
-        body TEXT,
-        size BIGINT NOT NULL
-    )";
-
-const GROUP_ARTICLES_TABLE: &str = "CREATE TABLE IF NOT EXISTS group_articles (
-        group_name TEXT,
-        number BIGINT,
-        message_id TEXT,
-        inserted_at BIGINT NOT NULL,
-        PRIMARY KEY(group_name, number),
-        FOREIGN KEY(message_id) REFERENCES messages(message_id)
-    )";
-
-const GROUPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS groups (
-        name TEXT PRIMARY KEY,
-        created_at BIGINT NOT NULL,
-        moderated BOOLEAN NOT NULL DEFAULT FALSE,
-        description TEXT NOT NULL DEFAULT ''
-    )";
-
-const OVERVIEW_TABLE: &str = "CREATE TABLE IF NOT EXISTS overview (
-        group_name TEXT,
-        article_number BIGINT,
-        overview_data TEXT,
-        PRIMARY KEY(group_name, article_number)
-    )";
 
 #[derive(Clone)]
 pub struct PostgresStorage {
@@ -101,79 +69,19 @@ Please verify:
                 )
             })?;
 
-        // Set up migrator to check database state
-        let migrator = super::migrations::postgres::PostgresStorageMigrator::new(pool.clone());
-
-        if migrator.is_fresh_database().await {
-            // Fresh database: initialize with current schema
-            tracing::info!(
-                "Initializing fresh PostgreSQL storage database at '{}'",
-                uri
-            );
-
-            // Create database schema
-            sqlx::query(MESSAGES_TABLE)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to create messages table in PostgreSQL database '{}': {}",
-                        uri,
-                        e
-                    )
-                })?;
-            sqlx::query(GROUP_ARTICLES_TABLE)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to create group_articles table in PostgreSQL database '{}': {}",
-                        uri,
-                        e
-                    )
-                })?;
-            sqlx::query(GROUPS_TABLE)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to create groups table in PostgreSQL database '{}': {}",
-                        uri,
-                        e
-                    )
-                })?;
-            sqlx::query(OVERVIEW_TABLE)
-                .execute(&pool)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "Failed to create overview table in PostgreSQL database '{}': {}",
-                        uri,
-                        e
-                    )
-                })?;
-
-            // Set current version to the latest schema version
-            migrator.set_version(2).await.map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to set initial schema version for PostgreSQL storage database '{}': {}",
-                    uri,
-                    e
-                )
-            })?;
-
-            tracing::info!("Successfully initialized PostgreSQL storage database at version 2");
-        } else {
-            // Existing database: apply any pending migrations
-            tracing::info!("Found existing PostgreSQL storage database, checking for migrations");
-            migrator.migrate_to_latest().await.map_err(|e| {
+        // Run migrations using sqlx's built-in migration system
+        sqlx::migrate!("src/storage/migrations/postgres")
+            .run(&pool)
+            .await
+            .map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to run storage migrations for PostgreSQL database '{}': {}",
                     uri,
                     e
                 )
             })?;
-        }
+
+        tracing::info!("PostgreSQL storage database ready at '{}'", uri);
 
         Ok(Self { pool })
     }
