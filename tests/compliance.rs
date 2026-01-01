@@ -872,6 +872,31 @@ async fn list_newsgroups_returns_groups() {
 }
 
 #[tokio::test]
+async fn list_newsgroups_returns_descriptions() {
+    let (storage, auth) = utils::setup().await;
+    storage
+        .add_group_with_description("misc.test", false, "A test newsgroup")
+        .await
+        .unwrap();
+    storage
+        .add_group_with_description("alt.moderated", true, "A moderated group")
+        .await
+        .unwrap();
+    ClientMock::new()
+        .expect_multi(
+            "LIST NEWSGROUPS",
+            vec![
+                "215 descriptions follow",
+                "alt.moderated A moderated group",
+                "misc.test A test newsgroup",
+                ".",
+            ],
+        )
+        .run(storage, auth)
+        .await;
+}
+
+#[tokio::test]
 async fn list_all_keywords() {
     let (storage, auth) = utils::setup().await;
     storage.add_group("misc.test", false).await.unwrap();

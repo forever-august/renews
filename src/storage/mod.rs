@@ -10,6 +10,7 @@ type StringStream<'a> = Pin<Box<dyn Stream<Item = Result<String>> + Send + 'a>>;
 type U64Stream<'a> = Pin<Box<dyn Stream<Item = Result<u64>> + Send + 'a>>;
 type StringTimestampStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, i64)>> + Send + 'a>>;
 type ArticleStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, Message)>> + Send + 'a>>;
+type GroupDescriptionStream<'a> = Pin<Box<dyn Stream<Item = Result<(String, String)>> + Send + 'a>>;
 
 #[async_trait]
 pub trait Storage: Send + Sync {
@@ -85,6 +86,18 @@ pub trait Storage: Send + Sync {
 
     /// Check if a group exists.
     async fn group_exists(&self, group: &str) -> Result<bool>;
+
+    /// Add a newsgroup with a description. If the group already exists, updates
+    /// its moderation status and description.
+    async fn add_group_with_description(
+        &self,
+        group: &str,
+        moderated: bool,
+        description: &str,
+    ) -> Result<()>;
+
+    /// Retrieve all newsgroups with their descriptions
+    fn list_groups_with_descriptions(&self) -> GroupDescriptionStream<'_>;
 }
 
 pub type DynStorage = Arc<dyn Storage>;

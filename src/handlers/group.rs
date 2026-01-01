@@ -259,11 +259,11 @@ async fn handle_list_active(ctx: &mut HandlerContext, pattern: Option<&String>) 
 
 async fn handle_list_newsgroups(ctx: &mut HandlerContext) -> HandlerResult {
     write_simple(&mut ctx.writer, RESP_215_DESCRIPTIONS).await?;
-    let mut groups_stream = ctx.storage.list_groups();
+    let mut groups_stream = ctx.storage.list_groups_with_descriptions();
     while let Some(result) = groups_stream.next().await {
-        let group = result?;
+        let (group, description) = result?;
         ctx.writer
-            .write_all(format!("{group} \r\n").as_bytes())
+            .write_all(format!("{group} {description}\r\n").as_bytes())
             .await?;
     }
     ctx.writer.write_all(RESP_DOT_CRLF.as_bytes()).await?;

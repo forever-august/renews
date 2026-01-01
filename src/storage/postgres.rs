@@ -1,5 +1,6 @@
 use super::{
-    ArticleStream, Message, Storage, StringStream, StringTimestampStream, U64Stream,
+    ArticleStream, GroupDescriptionStream, Message, Storage, StringStream, StringTimestampStream,
+    U64Stream,
     common::{Headers, extract_message_id, parse_newsgroups_from_message},
 };
 use crate::migrations::Migrator;
@@ -33,7 +34,8 @@ const GROUP_ARTICLES_TABLE: &str = "CREATE TABLE IF NOT EXISTS group_articles (
 const GROUPS_TABLE: &str = "CREATE TABLE IF NOT EXISTS groups (
         name TEXT PRIMARY KEY,
         created_at BIGINT NOT NULL,
-        moderated BOOLEAN NOT NULL DEFAULT FALSE
+        moderated BOOLEAN NOT NULL DEFAULT FALSE,
+        description TEXT NOT NULL DEFAULT ''
     )";
 
 const OVERVIEW_TABLE: &str = "CREATE TABLE IF NOT EXISTS overview (
@@ -151,8 +153,8 @@ Please verify:
                     )
                 })?;
 
-            // Set current version (since pre-1.0, we use version 1 as the baseline)
-            migrator.set_version(1).await.map_err(|e| {
+            // Set current version to the latest schema version
+            migrator.set_version(2).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to set initial schema version for PostgreSQL storage database '{}': {}",
                     uri,
@@ -160,7 +162,7 @@ Please verify:
                 )
             })?;
 
-            tracing::info!("Successfully initialized PostgreSQL storage database at version 1");
+            tracing::info!("Successfully initialized PostgreSQL storage database at version 2");
         } else {
             // Existing database: apply any pending migrations
             tracing::info!("Found existing PostgreSQL storage database, checking for migrations");
@@ -405,6 +407,50 @@ impl Storage for PostgresStorage {
             .fetch_optional(&self.pool)
             .await?;
         Ok(row.is_some())
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn add_group_with_description(
+        &self,
+        group: &str,
+        moderated: bool,
+        description: &str,
+    ) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        // Use INSERT ... ON CONFLICT to upsert: if group exists, update moderated and description
+        sqlx::query(
+            "INSERT INTO groups (name, created_at, moderated, description) VALUES ($1, $2, $3, $4)
+             ON CONFLICT(name) DO UPDATE SET moderated = EXCLUDED.moderated, description = EXCLUDED.description",
+        )
+        .bind(group)
+        .bind(now)
+        .bind(moderated)
+        .bind(description)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip_all)]
+    fn list_groups_with_descriptions(&self) -> GroupDescriptionStream<'_> {
+        let pool = self.pool.clone();
+        Box::pin(stream! {
+            let mut rows = sqlx::query("SELECT name, description FROM groups ORDER BY name")
+                .fetch(&pool);
+
+            while let Some(row) = rows.next().await {
+                match row {
+                    Ok(r) => {
+                        match (r.try_get::<String, _>("name"), r.try_get::<String, _>("description")) {
+                            (Ok(name), Ok(desc)) => yield Ok((name, desc)),
+                            (Err(e), _) => yield Err(anyhow::Error::from(e)),
+                            (_, Err(e)) => yield Err(anyhow::Error::from(e)),
+                        }
+                    },
+                    Err(e) => yield Err(anyhow::Error::from(e)),
+                }
+            }
+        })
     }
 
     #[tracing::instrument(skip_all)]

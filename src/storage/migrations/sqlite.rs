@@ -8,6 +8,29 @@ const CREATE_VERSION_TABLE_SQLITE: &str = "CREATE TABLE IF NOT EXISTS schema_ver
     version INTEGER PRIMARY KEY
 )";
 
+/// Migration to add description column to groups table
+struct AddGroupDescriptionMigration {
+    pool: SqlitePool,
+}
+
+#[async_trait]
+impl Migration for AddGroupDescriptionMigration {
+    fn target_version(&self) -> u32 {
+        2
+    }
+
+    fn description(&self) -> &str {
+        "Add description column to groups table"
+    }
+
+    async fn apply(&self) -> Result<()> {
+        sqlx::query("ALTER TABLE groups ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
 /// SQLite storage migrator
 pub struct SqliteStorageMigrator {
     pool: SqlitePool,
@@ -64,9 +87,9 @@ impl Migrator for SqliteStorageMigrator {
     }
 
     fn get_migrations(&self) -> Vec<Box<dyn Migration>> {
-        // Since this is pre-1.0, no migrations exist yet
-        // This will serve as a template for future migrations
-        vec![]
+        vec![Box::new(AddGroupDescriptionMigration {
+            pool: self.pool.clone(),
+        })]
     }
 }
 
@@ -116,22 +139,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sqlite_storage_migrator_no_migrations() {
+    async fn test_sqlite_storage_migrator_has_migrations() {
         let temp_file = NamedTempFile::new().unwrap();
         let db_path = format!("sqlite://{}", temp_file.path().display());
 
         let pool = sqlx::SqlitePool::connect(&db_path).await.unwrap();
         let migrator = SqliteStorageMigrator::new(pool.clone());
 
-        // Pre-1.0, so no migrations should exist
+        // Verify we have the expected migrations
         let migrations = migrator.get_migrations();
-        assert!(migrations.is_empty());
-
-        // Migration should be a no-op
-        migrator.set_version(1).await.unwrap(); // Simulate fresh initialization
-        migrator.migrate_to_latest().await.unwrap();
-
-        let version = migrator.get_current_version().await.unwrap();
-        assert_eq!(version, 1); // Should remain at 1
+        assert_eq!(migrations.len(), 1);
+        assert_eq!(migrations[0].target_version(), 2);
+        assert_eq!(
+            migrations[0].description(),
+            "Add description column to groups table"
+        );
     }
 }

@@ -8,6 +8,31 @@ const CREATE_VERSION_TABLE_POSTGRES: &str = "CREATE TABLE IF NOT EXISTS schema_v
     version INTEGER PRIMARY KEY
 )";
 
+/// Migration to add description column to groups table
+#[cfg(feature = "postgres")]
+struct AddGroupDescriptionMigration {
+    pool: sqlx::PgPool,
+}
+
+#[cfg(feature = "postgres")]
+#[async_trait]
+impl Migration for AddGroupDescriptionMigration {
+    fn target_version(&self) -> u32 {
+        2
+    }
+
+    fn description(&self) -> &str {
+        "Add description column to groups table"
+    }
+
+    async fn apply(&self) -> Result<()> {
+        sqlx::query("ALTER TABLE groups ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
 /// PostgreSQL storage migrator
 #[cfg(feature = "postgres")]
 pub struct PostgresStorageMigrator {
@@ -67,9 +92,9 @@ impl Migrator for PostgresStorageMigrator {
     }
 
     fn get_migrations(&self) -> Vec<Box<dyn Migration>> {
-        // Since this is pre-1.0, no migrations exist yet
-        // This will serve as a template for future migrations
-        vec![]
+        vec![Box::new(AddGroupDescriptionMigration {
+            pool: self.pool.clone(),
+        })]
     }
 }
 
@@ -113,15 +138,13 @@ mod tests {
         let pool = sqlx::PgPool::connect(&db_url).await.unwrap();
         let migrator = PostgresStorageMigrator::new(pool.clone());
 
-        // Pre-1.0, so no migrations should exist
+        // Verify we have the expected migrations
         let migrations = migrator.get_migrations();
-        assert!(migrations.is_empty());
-
-        // Migration should be a no-op
-        migrator.set_version(1).await.unwrap(); // Simulate fresh initialization
-        migrator.migrate_to_latest().await.unwrap();
-
-        let version = migrator.get_current_version().await.unwrap();
-        assert_eq!(version, 1); // Should remain at 1
+        assert_eq!(migrations.len(), 1);
+        assert_eq!(migrations[0].target_version(), 2);
+        assert_eq!(
+            migrations[0].description(),
+            "Add description column to groups table"
+        );
     }
 }
